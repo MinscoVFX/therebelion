@@ -294,7 +294,7 @@ export default function CreatePool() {
                             className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
                             placeholder="e.g. INU or AI"
                             value={field.state.value}
-                            onChange={(e) => field.handleChange(e.target.value.toUpperCase())}
+                            onChange={(e) => field.handleChange(e.target.value)}
                             maxLength={4}
                           />
                         ),
