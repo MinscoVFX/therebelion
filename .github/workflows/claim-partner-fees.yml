@@ -4,26 +4,28 @@ on:
   workflow_dispatch:
     inputs:
       base_mint:
-        description: "Base mint (your token mint, e.g. 8Gu76c...hpYQ)"
+        description: "Base mint (your token mint, e.g. 8Gu76ci6eqLyVgKMjigyvXCczBVL6dkfrfJewbdbhpYQ)"
         required: true
         type: string
       quote_mint:
-        description: "Quote mint (e.g. WSOL or USDC mint)"
+        description: "Quote mint (WSOL: So11111111111111111111111111111111111111112, or USDC mint)"
         required: true
         type: string
 
 permissions:
   contents: read
 
+# 🚫 Critical: run EVERY step from /studio so the root/fun-launch never gets touched
 defaults:
   run:
-    working-directory: studio   # <- all commands run inside /studio
+    working-directory: studio
 
 jobs:
   claim:
     runs-on: ubuntu-latest
+    # 🚫 Kill pnpm's CI frozen lockfile behavior everywhere in this job
     env:
-      CI: 'false'                         # pnpm won't auto-freeze lockfile
+      CI: 'false'
       PNPM_CONFIG_FROZEN_LOCKFILE: 'false'
     steps:
       - uses: actions/checkout@v4
@@ -32,25 +34,29 @@ jobs:
         with:
           node-version: '20'
 
-      # Ensure pnpm is on PATH and matches your package.json
+      # Ensure pnpm 10.14.0 is on PATH (matches your packageManager)
       - name: Enable corepack & activate pnpm 10.14.0
         run: |
           corepack enable
           corepack prepare pnpm@10.14.0 --activate
           pnpm -v
 
-      # Install ONLY the studio workspace deps (no root, no fun-launch)
+      # ✅ Install ONLY studio deps (root is never touched)
       - name: Install deps (studio only)
         run: pnpm install --no-frozen-lockfile
 
-      # Build a Solana keypair.json from PRIVATE_KEY_B58 (no repo changes)
+      # Build a keypair.json from your base58 secret (what your script expects)
       - name: Write keypair.json from PRIVATE_KEY_B58
         env:
           PK_B58: ${{ secrets.PRIVATE_KEY_B58 }}
         run: |
           npx -y -p bs58 node -e "const fs=require('fs');const bs58=require('bs58');const s=process.env.PK_B58?.trim();if(!s)throw new Error('Missing PRIVATE_KEY_B58');const arr=Array.from(bs58.decode(s));fs.writeFileSync('keypair.json', JSON.stringify(arr));"
 
-      # Run your existing script with the flags it expects
+      # Sanity: show the target file exists with the exact casing
+      - name: List dbc scripts
+        run: ls -la src/scripts/dbc
+
+      # Run your existing script with the CLI flags it expects
       - name: Run claim_trading_fee.ts
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
