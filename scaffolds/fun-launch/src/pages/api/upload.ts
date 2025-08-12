@@ -264,27 +264,54 @@ async function createPoolTransaction({
     poolCreator: new PublicKey(userWallet),
   });
 
-  // 2) Optional: append dev pre-buy IN THE SAME TX
+  // 2) Optional: append dev pre-buy IN THE SAME TX (SDK compatibility shim)
   if (devPrebuy && devAmountSol && Number(devAmountSol) > 0) {
-    // Small priority fee helps confirmation/ordering
-    tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 5000 })); // adjust if needed
+    tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 5_000 }));
 
     const lamports = BigInt(Math.floor(Number(devAmountSol) * LAMPORTS_PER_SOL));
-    const buyResp: any = await client.swap.buy({
+    const params = {
       baseMint: new PublicKey(mint),
       payer: new PublicKey(userWallet),
       solIn: lamports,
-      slippageBps: 100, // 1% slippage
-    });
+      slippageBps: 100,
+    };
 
-    if (Array.isArray(buyResp)) {
-      for (const ix of buyResp) tx.add(ix);
-    } else if (buyResp?.instructions) {
-      for (const ix of buyResp.instructions) tx.add(ix);
-    } else if (buyResp?.transaction instanceof Transaction) {
-      buyResp.transaction.instructions.forEach((ix: any) => tx.add(ix));
-    } else if (buyResp) {
-      tx.add(buyResp as any);
+    const c: any = client as any;
+    const tryFns = [
+      c?.swap?.buy?.bind(c?.swap),
+      c?.swapBuy?.bind(c),
+      c?.trade?.buy?.bind(c?.trade),
+      c?.pool?.swap?.buy?.bind(c?.pool?.swap),
+      c?.pool?.buy?.bind(c?.pool),
+      c?.buy?.bind(c),
+    ].filter(Boolean);
+
+    if (tryFns.length === 0) {
+      throw new Error('DBC SDK: no buy() method found. Update SDK or adjust shim.');
+    }
+
+    let resp: any;
+    let lastErr: any;
+    for (const fn of tryFns) {
+      try {
+        resp = await fn(params);
+        break;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    if (!resp) {
+      throw new Error(`DBC buy failed: ${lastErr?.message || 'unknown error'}`);
+    }
+
+    if (Array.isArray(resp)) {
+      for (const ix of resp) tx.add(ix);
+    } else if (resp?.instructions) {
+      for (const ix of resp.instructions) tx.add(ix);
+    } else if (resp?.transaction instanceof Transaction) {
+      resp.transaction.instructions.forEach((ix: any) => tx.add(ix));
+    } else if (resp) {
+      tx.add(resp as any);
     }
   }
 
