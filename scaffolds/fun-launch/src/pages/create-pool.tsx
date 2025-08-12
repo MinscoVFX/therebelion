@@ -23,6 +23,8 @@ const poolSchema = z.object({
     .regex(/^[1-9A-HJ-NP-Za-km-z]*$/, 'Only base58 (no 0,O,I,l)')
     .optional()
     .or(z.literal('')),
+  devPrebuy: z.boolean().optional(),                 // ← added
+  devAmountSol: z.string().optional().or(z.literal('')), // ← added
 });
 
 interface FormValues {
@@ -32,6 +34,8 @@ interface FormValues {
   website?: string;
   twitter?: string;
   vanitySuffix?: string;
+  devPrebuy?: boolean;        // ← added
+  devAmountSol?: string;      // ← added
 }
 
 // helpers for vanity search
@@ -69,6 +73,8 @@ export default function CreatePool() {
       website: '',
       twitter: '',
       vanitySuffix: '',
+      devPrebuy: false,     // ← added
+      devAmountSol: '',     // ← added
     } as FormValues,
     onSubmit: async ({ value }) => {
       try {
@@ -169,6 +175,50 @@ export default function CreatePool() {
         if (success) {
           toast.success('Pool created successfully');
           setPoolCreated(true);
+
+          // Dev Pre-Buy (optional) ← added
+          if (value.devPrebuy && value.devAmountSol && Number(value.devAmountSol) > 0) {
+            try {
+              const prebuyRes = await fetch('/api/dbc-prebuy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  baseMint: keyPair.publicKey.toBase58(),
+                  userWallet: address,
+                  amountSol: Number(value.devAmountSol),
+                  slippageBps: 100, // 1% slippage
+                }),
+              });
+
+              if (!prebuyRes.ok) {
+                const err = await prebuyRes.json();
+                throw new Error(err.error || 'pre-buy failed to build');
+              }
+
+              const { buyTx } = await prebuyRes.json();
+              const buyTxObj = Transaction.from(Buffer.from(buyTx, 'base64'));
+
+              const signedBuyTx = await signTransaction(buyTxObj);
+
+              const sendBuy = await fetch('/api/send-transaction', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  signedTransaction: signedBuyTx.serialize().toString('base64'),
+                }),
+              });
+
+              if (!sendBuy.ok) {
+                const err = await sendBuy.json();
+                throw new Error(err.error || 'pre-buy broadcast failed');
+              }
+
+              toast.success('Dev pre-buy executed');
+            } catch (e: any) {
+              console.error(e);
+              toast.error(e?.message || 'Dev pre-buy failed');
+            }
+          }
         }
       } catch (error) {
         console.error('Error creating pool:', error);
@@ -394,6 +444,55 @@ export default function CreatePool() {
                   </div>
                 </div>
               </div>
+
+              {/* Dev Pre-Buy (Optional) */} {/* ← added */}
+              <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10"> {/* ← added */}
+                <h2 className="text-2xl font-bold mb-6">Dev Pre-Buy (Optional)</h2> {/* ← added */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> {/* ← added */}
+                  <div className="flex items-center gap-3"> {/* ← added */}
+                    {form.Field({ /* ← added */
+                      name: 'devPrebuy', /* ← added */
+                      children: (field) => ( /* ← added */
+                        <input
+                          id="devPrebuy"
+                          name={field.name}
+                          type="checkbox"
+                          className="h-5 w-5 accent-white/80"
+                          checked={!!field.state.value}
+                          onChange={(e) => field.handleChange(e.target.checked)}
+                        />
+                      ),
+                    })}
+                    <label htmlFor="devPrebuy" className="text-sm text-gray-300"> {/* ← added */}
+                      Buy with my wallet right after launch {/* ← added */}
+                    </label>
+                  </div>
+
+                  <div> {/* ← added */}
+                    <label htmlFor="devAmountSol" className="block text-sm font-medium text-gray-300 mb-1"> {/* ← added */}
+                      Amount (SOL) {/* ← added */}
+                    </label>
+                    {form.Field({ /* ← added */
+                      name: 'devAmountSol', /* ← added */
+                      children: (field) => ( /* ← added */
+                        <input
+                          id="devAmountSol"
+                          name={field.name}
+                          type="number"
+                          min="0"
+                          step="0.001"
+                          placeholder="0.25"
+                          className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                          value={field.state.value}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                          disabled={!form.state.values.devPrebuy}
+                        />
+                      ),
+                    })}
+                    <p className="text-xs text-gray-400 mt-1">We’ll execute a buy after the pool is created.</p> {/* ← added */}
+                  </div>
+                </div>
+              </div> {/* ← added */}
 
               {form.state.errors && form.state.errors.length > 0 && (
                 <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 space-y-2">
