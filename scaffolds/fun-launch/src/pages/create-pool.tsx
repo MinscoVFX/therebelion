@@ -78,6 +78,8 @@ export default function CreatePool() {
             tokenName: value.tokenName,
             tokenSymbol: value.tokenSymbol,
             userWallet: address,
+            website: value.website || '',   // ← added
+            twitter: value.twitter || ''    // ← added
           }),
         });
 
