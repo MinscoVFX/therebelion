@@ -19,6 +19,7 @@ const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID as string;
 const R2_BUCKET = process.env.R2_BUCKET as string;
 const RPC_URL = process.env.RPC_URL as string;
 const POOL_CONFIG_KEY = process.env.POOL_CONFIG_KEY as string;
+const R2_PUBLIC_BASE = (process.env.R2_PUBLIC_BASE as string || '').replace(/\/+$/, ''); // ensure no trailing '/'
 
 if (
   !R2_ACCESS_KEY_ID ||
@@ -26,13 +27,15 @@ if (
   !R2_ACCOUNT_ID ||
   !R2_BUCKET ||
   !RPC_URL ||
-  !POOL_CONFIG_KEY
+  !POOL_CONFIG_KEY ||
+  !R2_PUBLIC_BASE
 ) {
   throw new Error('Missing required environment variables');
 }
 
 const PRIVATE_R2_URL = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
-const PUBLIC_R2_URL = 'https://pub-85c7f5f0dc104dc784e656b623d999e5.r2.dev';
+// Build public URLs from env (works for any bucket/public URL)
+const PUBLIC_R2_URL = R2_PUBLIC_BASE;
 
 // Types
 type UploadRequest = {
@@ -41,12 +44,23 @@ type UploadRequest = {
   tokenSymbol: string;
   mint: string;
   userWallet: string;
+  website?: string;
+  twitter?: string;
 };
 
 type Metadata = {
   name: string;
   symbol: string;
   image: string;
+  external_url?: string;
+  extensions?: {
+    twitter?: string;
+    website?: string;
+  };
+  properties?: {
+    category?: string;
+    files?: { uri: string; type: string }[];
+  };
 };
 
 type MetadataUploadParams = {
@@ -54,6 +68,8 @@ type MetadataUploadParams = {
   tokenSymbol: string;
   mint: string;
   image: string;
+  website?: string;
+  twitter?: string;
 };
 
 // R2 client setup (force path-style for R2)
@@ -72,7 +88,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { tokenLogo, tokenName, tokenSymbol, mint, userWallet } = req.body as UploadRequest;
+    const { tokenLogo, tokenName, tokenSymbol, mint, userWallet, website, twitter } =
+      req.body as UploadRequest;
 
     // Validate required fields
     if (!tokenLogo || !tokenName || !tokenSymbol || !mint || !userWallet) {
@@ -85,7 +102,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'Failed to upload image' });
     }
 
-    const metadataUrl = await uploadMetadata({ tokenName, tokenSymbol, mint, image: imageUrl });
+    const metadataUrl = await uploadMetadata({
+      tokenName,
+      tokenSymbol,
+      mint,
+      image: imageUrl,
+      website,
+      twitter,
+    });
     if (!metadataUrl) {
       return res.status(400).json({ error: 'Failed to upload metadata' });
     }
@@ -153,6 +177,20 @@ async function uploadMetadata(params: MetadataUploadParams): Promise<string | fa
     name: params.tokenName,
     symbol: params.tokenSymbol,
     image: params.image,
+    external_url: params.website || undefined,
+    extensions: {
+      twitter: params.twitter || undefined,
+      website: params.website || undefined,
+    },
+    properties: {
+      category: 'image',
+      files: [
+        {
+          uri: params.image,
+          type: params.image.endsWith('.png') ? 'image/png' : 'image/jpeg',
+        },
+      ],
+    },
   };
   const fileName = `metadata/${params.mint}.json`;
 
