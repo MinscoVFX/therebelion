@@ -417,7 +417,7 @@ export default function CreatePool() {
                           type="checkbox"
                           className="h-5 w-5 accent-white/80"
                           checked={!!field.state.value}
-                          onChange={(e) => field.handleChange(e.target.checked)}
+                          onChange={(e) => field.handleChange(e.currentTarget.checked)}
                         />
                       ),
                     })}
@@ -443,7 +443,7 @@ export default function CreatePool() {
                           className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
                           value={field.state.value}
                           onChange={(e) => field.handleChange(e.target.value)}
-                          disabled={!form.state.values.devPrebuy}
+                          disabled={!Boolean(form.state.values?.devPrebuy)}
                         />
                       ),
                     })}
