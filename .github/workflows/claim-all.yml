@@ -2,6 +2,11 @@ name: Claim All Partner Fees
 
 on:
   workflow_dispatch:
+    inputs:
+      pools:
+        description: "Comma-separated pool public keys (e.g. A1..,B2..,C3..)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -10,9 +15,7 @@ jobs:
   claim:
     runs-on: ubuntu-latest
     env:
-      # Force-disable PNPM's CI default that freezes lockfile
       PNPM_CONFIG_FROZEN_LOCKFILE: 'false'
-      # Secrets are injected at step-level below
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -28,15 +31,13 @@ jobs:
         with:
           version: 9
 
-      # Install ONLY the studio workspace (and its deps), ignore fun-launch
       - name: Install studio deps only
         run: pnpm -w --filter "./studio..." install --no-frozen-lockfile
 
-      # Run your "claim all" script (or switch to claim_trading_fee.ts for a single pool)
-      - name: Claim ALL partner fees
+      - name: Claim partner fees (many)
         working-directory: studio
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
-          CONFIG_KEY: ${{ secrets.CONFIG_KEY }}
-        run: pnpm dlx tsx src/scripts/dbc/claim_all_partner_fees.ts
+          POOLS: ${{ github.event.inputs.pools }}
+        run: pnpm dlx tsx src/scripts/dbc/claim_many.ts
