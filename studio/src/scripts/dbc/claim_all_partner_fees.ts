@@ -1,34 +1,37 @@
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
-import bs58 from "bs58";
-import { DBCPartnerClient } from "@meteora-ag/dynamic-bonding-curve-sdk";
+name: Claim All Partner Fees
 
-async function main() {
-  const rpcUrl = process.env.RPC_URL;
-  const privateKeyB58 = process.env.PRIVATE_KEY_B58;
+on:
+  workflow_dispatch:
 
-  if (!rpcUrl || !privateKeyB58) {
-    throw new Error("Missing RPC_URL or PRIVATE_KEY_B58 env variables.");
-  }
+permissions:
+  contents: read
 
-  const connection = new Connection(rpcUrl, "confirmed");
-  const wallet = Keypair.fromSecretKey(bs58.decode(privateKeyB58));
+jobs:
+  claim:
+    runs-on: ubuntu-latest
+    env:
+      PNPM_CONFIG_FROZEN_LOCKFILE: 'false'
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-  const partnerClient = new DBCPartnerClient(connection, wallet);
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
 
-  console.log("Fetching all partner pools...");
-  const pools = await partnerClient.getPartnerPools(wallet.publicKey);
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
-  for (const pool of pools) {
-    console.log(`Claiming fees from pool: ${pool.toBase58()}`);
-    try {
-      const tx = await partnerClient.claimPartnerFee(new PublicKey(pool));
-      console.log(`✅ Claimed from ${pool.toBase58()} — TX: ${tx}`);
-    } catch (err) {
-      console.error(`❌ Failed to claim from ${pool.toBase58()}:`, err);
-    }
-  }
+      - name: Install studio deps only
+        run: pnpm -w --filter "./studio..." install --no-frozen-lockfile
 
-  console.log("All claims processed.");
-}
-
-main().catch(console.error);
+      - name: Run claim_all_partner_fees script
+        working-directory: studio
+        env:
+          RPC_URL: ${{ secrets.RPC_URL }}
+          PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
+        run: pnpm dlx tsx src/scripts/dbc/claim_all_partner_fees.ts
