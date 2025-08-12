@@ -8,11 +8,14 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   claim:
     runs-on: ubuntu-latest
     env:
-      PNPM_CONFIG_FROZEN_LOCKFILE: 'false'
+      PNPM_CONFIG_FROZEN_LOCKFILE: 'false'   # hard-disable frozen lockfile in CI
     steps:
       - uses: actions/checkout@v4
 
@@ -24,8 +27,9 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.14.0
+          version: 10.14.0   # matches your package.json's "packageManager"
 
+      # Install ONLY the studio workspace to avoid fun-launch lockfile mismatch
       - name: Install studio deps only
         run: pnpm -w --filter "./studio..." install --no-frozen-lockfile
 
