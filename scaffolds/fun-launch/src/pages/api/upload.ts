@@ -3,6 +3,15 @@ import AWS from 'aws-sdk';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 
+// Allow bigger base64 payloads (no format change to your handler)
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+};
+
 // Environment variables with type assertions
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID as string;
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY as string;
@@ -47,13 +56,14 @@ type MetadataUploadParams = {
   image: string;
 };
 
-// R2 client setup
+// R2 client setup (force path-style for R2)
 const r2 = new AWS.S3({
   endpoint: PRIVATE_R2_URL,
   accessKeyId: R2_ACCESS_KEY_ID,
   secretAccessKey: R2_SECRET_ACCESS_KEY,
   region: 'auto',
   signatureVersion: 'v4',
+  s3ForcePathStyle: true, // <-- important for Cloudflare R2
 });
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -105,19 +115,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 }
 
 async function uploadImage(tokenLogo: string, mint: string): Promise<string | false> {
-  const matches = tokenLogo.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
+  const matches = tokenLogo.match(/^data:([A-Za-z0-9.+-]+\/[A-Za-z0-9.+-]+);base64,(.+)$/);
   if (!matches || matches.length !== 3) {
     return false;
   }
 
-  const [, contentType, base64Data] = matches;
+  let [, contentType, base64Data] = matches;
 
   if (!contentType || !base64Data) {
     return false;
   }
 
+  // Normalize JPG to standard JPEG
+  contentType = contentType.toLowerCase();
+  if (contentType === 'image/jpg') contentType = 'image/jpeg';
+
+  // Some encoders replace '+' with spaces in base64; fix just in case
+  base64Data = base64Data.replace(/ /g, '+');
+
   const fileBuffer = Buffer.from(base64Data, 'base64');
-  const fileName = `images/${mint}.${contentType.split('/')[1]}`;
+
+  const ext = contentType.split('/')[1] || 'png';
+  // Use mint as filename (your original format), keep folder stable
+  const fileName = `images/${mint}.${ext}`;
 
   try {
     await uploadToR2(fileBuffer, contentType, fileName);
