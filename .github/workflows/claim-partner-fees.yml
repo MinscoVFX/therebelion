@@ -21,16 +21,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Decode PK_B58 to keypair.json
+      # ✅ Convert Phantom base58 private key to full Solana keypair.json
+      - name: Decode PK_B58 to full keypair.json
         run: |
-          npx -y -p bs58@4 node -e "
+          npx -y @solana/web3.js@1.98.2 bs58@4 node -e "
             const fs = require('fs');
             const bs58 = require('bs58');
-            const decode = (bs58.default || bs58).decode;
+            const { Keypair } = require('@solana/web3.js');
             const s = process.env.PK_B58?.trim() || process.env.PRIVATE_KEY_B58?.trim();
             if (!s) throw new Error('Missing PK_B58 or PRIVATE_KEY_B58');
-            const arr = Array.from(decode(s));
-            fs.writeFileSync('keypair.json', JSON.stringify(arr));
+            const secret = bs58.decode(s); // Phantom exports 32-byte private key
+            const keypair = Keypair.fromSecretKey(secret); // expands to 64-byte keypair
+            fs.writeFileSync('keypair.json', JSON.stringify(Array.from(keypair.secretKey)));
           "
         env:
           PK_B58: ${{ secrets.PK_B58 }}
