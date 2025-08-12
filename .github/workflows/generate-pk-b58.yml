@@ -1,0 +1,23 @@
+name: Generate PK_B58
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # Put your current keypair.json into the repo or as a secret for this run
+      - name: Convert keypair.json to base58
+        run: |
+          echo "----- BASE58 START -----"
+          npx -y bs58@4 node -e "
+            const fs = require('fs');
+            const bs58 = require('bs58');
+            const arr = JSON.parse(fs.readFileSync('keypair.json', 'utf8'));
+            console.log(bs58.encode(Uint8Array.from(arr)));
+          "
+          echo "----- BASE58 END -----"
