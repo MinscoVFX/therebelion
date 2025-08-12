@@ -10,15 +10,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Setup Node.js first so we can install pnpm
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'pnpm'
 
+      # Install correct pnpm version (>=10)
       - name: Install pnpm
         run: npm install -g pnpm@10
 
-      - name: Install dependencies
+      - name: Install dependencies (cached)
         run: pnpm install --frozen-lockfile
 
       - name: Decode PK_B58 to keypair.json
@@ -26,9 +29,10 @@ jobs:
           npx -y -p bs58@4 node -e "
             const fs = require('fs');
             const bs58 = require('bs58');
+            const decode = (bs58.default || bs58).decode; // support both export styles
             const s = process.env.PK_B58?.trim();
             if (!s) throw new Error('Missing PRIVATE_KEY_B58');
-            const arr = Array.from(bs58.decode(s));
+            const arr = Array.from(decode(s));
             fs.writeFileSync('keypair.json', JSON.stringify(arr));
           "
         env:
