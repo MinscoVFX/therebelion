@@ -42,6 +42,24 @@ if (
 const PRIVATE_R2_URL = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 const PUBLIC_R2_URL = R2_PUBLIC_BASE;
 
+// Helper: discover buy/swap-like functions in whatever SDK version is installed
+function findBuyLikeFns(obj: any, path = 'client', seen = new Set<any>()) {
+  const hits: string[] = [];
+  if (!obj || typeof obj !== 'object' || seen.has(obj)) return hits;
+  seen.add(obj);
+  for (const key of Object.keys(obj)) {
+    const v = (obj as any)[key];
+    const p = `${path}.${key}`;
+    if (typeof v === 'function') {
+      const k = key.toLowerCase();
+      if (k.includes('buy') || (k.includes('swap') && !k.includes('quote'))) hits.push(p);
+    } else if (v && typeof v === 'object') {
+      hits.push(...findBuyLikeFns(v, p, seen));
+    }
+  }
+  return hits;
+}
+
 // Types
 type UploadRequest = {
   tokenLogo: string;
@@ -277,31 +295,36 @@ async function createPoolTransaction({
     };
 
     const c: any = client as any;
-    const tryFns = [
-      c?.swap?.buy?.bind(c?.swap),
-      c?.swapBuy?.bind(c),
-      c?.trade?.buy?.bind(c?.trade),
-      c?.pool?.swap?.buy?.bind(c?.pool?.swap),
-      c?.pool?.buy?.bind(c?.pool),
-      c?.buy?.bind(c),
-    ].filter(Boolean);
 
-    if (tryFns.length === 0) {
-      throw new Error('DBC SDK: no buy() method found. Update SDK or adjust shim.');
-    }
+    // Try a wide set of likely entry points across SDK versions
+    const candidates: Array<() => Promise<any>> = [];
+    if (c?.swap?.buy) candidates.push(() => c.swap.buy(params));
+    if (c?.swapBuy) candidates.push(() => c.swapBuy(params));
+    if (c?.trade?.buy) candidates.push(() => c.trade.buy(params));
+    if (c?.pool?.swap?.buy) candidates.push(() => c.pool.swap.buy(params));
+    if (c?.pool?.buy) candidates.push(() => c.pool.buy(params));
+    if (c?.buy) candidates.push(() => c.buy(params));
+    if (c?.swap?.buildBuy) candidates.push(() => c.swap.buildBuy(params));
+    if (c?.pool?.swap?.buildBuy) candidates.push(() => c.pool.swap.buildBuy(params));
 
     let resp: any;
     let lastErr: any;
-    for (const fn of tryFns) {
+    for (const run of candidates) {
       try {
-        resp = await fn(params);
+        resp = await run();
         break;
       } catch (e) {
         lastErr = e;
       }
     }
+
     if (!resp) {
-      throw new Error(`DBC buy failed: ${lastErr?.message || 'unknown error'}`);
+      const found = findBuyLikeFns(client);
+      throw new Error(
+        `DBC SDK: no working buy() builder found. Candidates discovered:\n` +
+          (found.length ? found.join('\n') : '(none)') +
+          (lastErr?.message ? `\nLast error: ${lastErr.message}` : '')
+      );
     }
 
     if (Array.isArray(resp)) {
@@ -310,7 +333,7 @@ async function createPoolTransaction({
       for (const ix of resp.instructions) tx.add(ix);
     } else if (resp?.transaction instanceof Transaction) {
       resp.transaction.instructions.forEach((ix: any) => tx.add(ix));
-    } else if (resp) {
+    } else {
       tx.add(resp as any);
     }
   }
