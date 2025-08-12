@@ -19,7 +19,7 @@ jobs:
         run: npm install -g pnpm@10
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile  # quick fix for lockfile mismatch
 
       - name: Decode PK_B58 to keypair.json
         run: |
@@ -36,7 +36,7 @@ jobs:
           PK_B58: ${{ secrets.PK_B58 }}
 
       - name: Run claim trading fee script
-        run: npx -y -p tsx tsx studio/src/scripts/dbc/claim_trading_fee.ts
+        run: npx -y -p tsx tsx studio/src/scripts/dbc/claim_trading_fee.ts --config ./studio/config/dbc_config.jsonc
 
       - name: Clean up keypair.json
         run: rm -f keypair.json
