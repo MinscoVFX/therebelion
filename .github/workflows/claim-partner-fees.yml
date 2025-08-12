@@ -15,7 +15,6 @@ jobs:
   claim:
     runs-on: ubuntu-latest
     env:
-      # Hard-disable frozen lockfile everywhere in CI
       PNPM_CONFIG_FROZEN_LOCKFILE: 'false'
     steps:
       - uses: actions/checkout@v4
@@ -23,21 +22,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'pnpm'
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0 # matches packageManager in package.json
+      # Ensure pnpm is available on PATH (works even if the pnpm action fails)
+      - name: Enable corepack & activate pnpm 10.14.0
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.14.0 --activate
+          pnpm -v
 
-      # Install ONLY the studio workspace to avoid fun-launch mismatch
+      # Install ONLY inside the studio folder to avoid fun-launch mismatch
       - name: Install studio deps only
-        run: pnpm --filter ./studio... install --no-frozen-lockfile
+        run: pnpm -C studio install --no-frozen-lockfile
 
-      # Actually run the claim script
       - name: Run claim_trading_fee script
         working-directory: studio
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
-        run: pnpm exec tsx src/scripts/dbc/claim_trading_fee.ts ${{ github.event.inputs.pool }}
+        run: pnpm dlx tsx src/scripts/dbc/claim_trading_fee.ts ${{ github.event.inputs.pool }}
