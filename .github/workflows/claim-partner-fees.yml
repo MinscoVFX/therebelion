@@ -11,26 +11,27 @@ on:
 jobs:
   claim:
     runs-on: ubuntu-latest
+    env:
+      PNPM_CONFIG_FROZEN_LOCKFILE: 'false'
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'pnpm'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.14.0
 
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+      - name: Install studio deps only
+        run: pnpm -w --filter "./studio..." install --no-frozen-lockfile
 
       - name: Run claim_trading_fee script
+        working-directory: studio
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
-        working-directory: studio
         run: pnpm dlx tsx src/scripts/dbc/claim_trading_fee.ts ${{ github.event.inputs.pool }}
