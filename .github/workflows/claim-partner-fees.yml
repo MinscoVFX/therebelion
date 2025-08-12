@@ -2,59 +2,34 @@ name: Claim Partner Fees
 
 on:
   workflow_dispatch:
-    inputs:
-      base_mint:
-        description: "Base mint (your token mint, e.g. 8Gu76ci6eqLyVgKMjigyvXCczBVL6dkfrfJewbdbhpYQ)"
-        required: true
-        type: string
-      quote_mint:
-        description: "Quote mint (defaults to WSOL if left empty)"
-        required: false
-        default: "So11111111111111111111111111111111111111112"
-        type: string
-
-permissions:
-  contents: read
-
-defaults:
-  run:
-    working-directory: studio
 
 jobs:
-  claim:
+  claim-partner-fees:
     runs-on: ubuntu-latest
-    env:
-      CI: 'false'
-      PNPM_CONFIG_FROZEN_LOCKFILE: 'false'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
-      - name: Enable corepack & activate pnpm 10.14.0
+          node-version: 20
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Decode PK_B58 to keypair.json
         run: |
-          corepack enable
-          corepack prepare pnpm@10.14.0 --activate
-          pnpm -v
-      - name: Install deps (studio only)
-        run: pnpm install --no-frozen-lockfile
-      - name: Write keypair.json from PRIVATE_KEY_B58
+          npx -y -p bs58@4 node -e "
+            const fs = require('fs');
+            const bs58 = require('bs58');
+            const s = process.env.PK_B58?.trim();
+            if (!s) throw new Error('Missing PRIVATE_KEY_B58');
+            const arr = Array.from(bs58.decode(s));
+            fs.writeFileSync('keypair.json', JSON.stringify(arr));
+          "
         env:
-          PK_B58: ${{ secrets.PRIVATE_KEY_B58 }}
-        run: |
-          npx -y -p bs58 node -e "const fs=require('fs');const bs58=require('bs58');const s=process.env.PK_B58?.trim();if(!s)throw new Error('Missing PRIVATE_KEY_B58');const arr=Array.from(bs58.decode(s));fs.writeFileSync('keypair.json', JSON.stringify(arr));"
-      - name: List dbc scripts
-        run: ls -la src/scripts/dbc
-      - name: Run claim_trading_fee.ts
-        env:
-          RPC_URL: ${{ secrets.RPC_URL }}
-        run: |
-          QUOTE_MINT="${{ github.event.inputs.quote_mint }}"
-          if [ -z "$QUOTE_MINT" ]; then
-            QUOTE_MINT="So11111111111111111111111111111111111111112"
-          fi
-          pnpm dlx tsx src/scripts/dbc/claim_trading_fee.ts \
-            --rpcUrl="$RPC_URL" \
-            --keypairFilePath="$PWD/keypair.json" \
-            --baseMint="${{ github.event.inputs.base_mint }}" \
-            --quoteMint="$QUOTE_MINT"
+          PK_B58: ${{ secrets.PK_B58 }}
+
+      - name: Run claim partner fees script
+        run: pnpm claim:partner-fees
