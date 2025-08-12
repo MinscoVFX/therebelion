@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       base_mint:
-        description: "Base mint (your token mint)"
+        description: "Base mint (your token mint, e.g. 8Gu76c...hpYQ)"
         required: true
         type: string
       quote_mint:
@@ -15,12 +15,16 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    working-directory: studio   # <- all commands run inside /studio
+
 jobs:
   claim:
     runs-on: ubuntu-latest
     env:
-      PNPM_CONFIG_FROZEN_LOCKFILE: 'false'  # disable frozen lockfile in CI
-      CI: 'false'
+      CI: 'false'                         # pnpm won't auto-freeze lockfile
+      PNPM_CONFIG_FROZEN_LOCKFILE: 'false'
     steps:
       - uses: actions/checkout@v4
 
@@ -28,38 +32,31 @@ jobs:
         with:
           node-version: '20'
 
-      # Ensure pnpm is on PATH and matches your repo's packageManager
+      # Ensure pnpm is on PATH and matches your package.json
       - name: Enable corepack & activate pnpm 10.14.0
         run: |
           corepack enable
           corepack prepare pnpm@10.14.0 --activate
           pnpm -v
 
-      # Install ONLY studio deps (don't touch fun-launch)
-      - name: Install studio deps only
-        working-directory: studio
+      # Install ONLY the studio workspace deps (no root, no fun-launch)
+      - name: Install deps (studio only)
         run: pnpm install --no-frozen-lockfile
 
-      # Create a Solana keypair JSON file from your PRIVATE_KEY_B58 (no repo changes)
+      # Build a Solana keypair.json from PRIVATE_KEY_B58 (no repo changes)
       - name: Write keypair.json from PRIVATE_KEY_B58
-        working-directory: studio
         env:
           PK_B58: ${{ secrets.PRIVATE_KEY_B58 }}
         run: |
           npx -y -p bs58 node -e "const fs=require('fs');const bs58=require('bs58');const s=process.env.PK_B58?.trim();if(!s)throw new Error('Missing PRIVATE_KEY_B58');const arr=Array.from(bs58.decode(s));fs.writeFileSync('keypair.json', JSON.stringify(arr));"
-          echo "KEYPAIR_FILE_PATH=$PWD/keypair.json" >> $GITHUB_ENV
 
-      # Run the existing script with the exact params it expects
+      # Run your existing script with the flags it expects
       - name: Run claim_trading_fee.ts
-        working-directory: studio
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
-          KEYPAIR_FILE_PATH: ${{ env.KEYPAIR_FILE_PATH }}
-          BASE_MINT: ${{ github.event.inputs.base_mint }}
-          QUOTE_MINT: ${{ github.event.inputs.quote_mint }}
         run: |
-          pnpm dlx tsx src/scripts/dbc/claim_trading_fee.ts \
+          pnpm exec tsx src/scripts/dbc/claim_trading_fee.ts \
             --rpcUrl="$RPC_URL" \
-            --keypairFilePath="$KEYPAIR_FILE_PATH" \
-            --baseMint="$BASE_MINT" \
-            --quoteMint="$QUOTE_MINT"
+            --keypairFilePath="$PWD/keypair.json" \
+            --baseMint="${{ github.event.inputs.base_mint }}" \
+            --quoteMint="${{ github.event.inputs.quote_mint }}"
