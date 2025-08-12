@@ -17,6 +17,12 @@ const poolSchema = z.object({
   tokenLogo: z.instanceof(File, { message: 'Token logo is required' }).optional(),
   website: z.string().url({ message: 'Please enter a valid URL' }).optional().or(z.literal('')),
   twitter: z.string().url({ message: 'Please enter a valid URL' }).optional().or(z.literal('')),
+  vanitySuffix: z
+    .string()
+    .max(4, 'Use 1–4 base58 chars')
+    .regex(/^[1-9A-HJ-NP-Za-km-z]*$/, 'Only base58 (no 0,O,I,l)')
+    .optional()
+    .or(z.literal('')),
 });
 
 interface FormValues {
@@ -25,6 +31,27 @@ interface FormValues {
   tokenLogo: File | undefined;
   website?: string;
   twitter?: string;
+  vanitySuffix?: string;
+}
+
+// helpers for vanity search
+function isBase58(str: string) {
+  return /^[1-9A-HJ-NP-Za-km-z]+$/.test(str);
+}
+
+async function findVanityKeypair(suffix: string, maxSeconds = 30) {
+  const deadline = Date.now() + maxSeconds * 1000;
+  let tries = 0;
+  while (Date.now() < deadline) {
+    const kp = Keypair.generate();
+    const addr = kp.publicKey.toBase58();
+    tries++;
+    if (addr.endsWith(suffix)) {
+      return { kp, addr, tries, timedOut: false };
+    }
+    if (tries % 5000 === 0) await new Promise((r) => setTimeout(r, 0));
+  }
+  return { kp: null as any, addr: '', tries, timedOut: true };
 }
 
 export default function CreatePool() {
@@ -41,6 +68,7 @@ export default function CreatePool() {
       tokenLogo: undefined,
       website: '',
       twitter: '',
+      vanitySuffix: '',
     } as FormValues,
     onSubmit: async ({ value }) => {
       try {
@@ -64,7 +92,31 @@ export default function CreatePool() {
           reader.readAsDataURL(tokenLogo);
         });
 
-        const keyPair = Keypair.generate();
+        // vanity mint (optional)
+        const rawSuffix = (value.vanitySuffix || '').trim();
+        let keyPair: Keypair;
+
+        if (rawSuffix.length > 0) {
+          if (!isBase58(rawSuffix)) {
+            toast.error('Suffix must be base58 (no 0, O, I, l).');
+            return;
+          }
+          if (rawSuffix.length > 4) {
+            toast.error('Suffix too long. Use up to 4 characters.');
+            return;
+          }
+          toast.message(`Searching mint ending with “${rawSuffix}”...`);
+          const { kp, addr, timedOut } = await findVanityKeypair(rawSuffix, 30);
+          if (timedOut || !kp) {
+            toast.message('No match found in time — using a normal address.');
+            keyPair = Keypair.generate();
+          } else {
+            keyPair = kp;
+            toast.success(`Found vanity mint: ${addr}`);
+          }
+        } else {
+          keyPair = Keypair.generate();
+        }
 
         // Step 1: Upload to R2 and get transaction
         const uploadResponse = await fetch('/api/upload', {
@@ -78,8 +130,8 @@ export default function CreatePool() {
             tokenName: value.tokenName,
             tokenSymbol: value.tokenSymbol,
             userWallet: address,
-            website: value.website || '',   // ← added
-            twitter: value.twitter || ''    // ← added
+            website: value.website || '',
+            twitter: value.twitter || ''
           }),
         });
 
@@ -223,6 +275,33 @@ export default function CreatePool() {
                           />
                         ),
                       })}
+                    </div>
+
+                    <div className="mb-4">
+                      <label
+                        htmlFor="vanitySuffix"
+                        className="block text-sm font-medium text-gray-300 mb-1"
+                      >
+                        Vanity Suffix (optional)
+                      </label>
+                      {form.Field({
+                        name: 'vanitySuffix',
+                        children: (field) => (
+                          <input
+                            id="vanitySuffix"
+                            name={field.name}
+                            type="text"
+                            className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                            placeholder="e.g. INU or AI"
+                            value={field.state.value}
+                            onChange={(e) => field.handleChange(e.target.value.toUpperCase())}
+                            maxLength={4}
+                          />
+                        ),
+                      })}
+                      <p className="text-xs text-gray-400 mt-1">
+                        1–4 base58 characters. We’ll search for a mint address ending with this.
+                      </p>
                     </div>
                   </div>
 
