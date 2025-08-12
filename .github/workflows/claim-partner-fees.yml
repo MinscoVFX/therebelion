@@ -10,18 +10,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Setup Node.js first so pnpm stays in PATH
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'pnpm'
 
-      # Install pnpm after Node setup so it doesn't get overwritten
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 10
+      # Enable corepack and prepare pnpm v10
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10 --activate
 
       - name: Install dependencies (cached)
         run: pnpm install --frozen-lockfile
