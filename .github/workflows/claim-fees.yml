@@ -1,12 +1,7 @@
-name: Claim Partner Fees
+name: Claim All Partner Fees
 
 on:
-  workflow_dispatch:
-    inputs:
-      pool:
-        description: "Pool public key to claim from"
-        required: true
-        type: string
+  workflow_dispatch:  # Manual trigger from GitHub Actions
 
 jobs:
   claim:
@@ -28,9 +23,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Run claim_trading_fee script
+      - name: Run claim_all_partner_fees script
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
         working-directory: studio
-        run: pnpm dlx tsx src/scripts/dbc/claim_trading_fee.ts ${{ github.event.inputs.pool }}
+        run: pnpm dlx tsx src/scripts/dbc/claim_all_partner_fees.ts
