@@ -23,8 +23,8 @@ const poolSchema = z.object({
     .regex(/^[1-9A-HJ-NP-Za-km-z]*$/, 'Only base58 (no 0,O,I,l)')
     .optional()
     .or(z.literal('')),
-  devPrebuy: z.boolean().optional(),                 // ← added
-  devAmountSol: z.string().optional().or(z.literal('')), // ← added
+  devPrebuy: z.boolean().optional(),
+  devAmountSol: z.string().optional().or(z.literal('')),
 });
 
 interface FormValues {
@@ -34,8 +34,8 @@ interface FormValues {
   website?: string;
   twitter?: string;
   vanitySuffix?: string;
-  devPrebuy?: boolean;        // ← added
-  devAmountSol?: string;      // ← added
+  devPrebuy?: boolean;
+  devAmountSol?: string;
 }
 
 // helpers for vanity search
@@ -73,8 +73,8 @@ export default function CreatePool() {
       website: '',
       twitter: '',
       vanitySuffix: '',
-      devPrebuy: false,     // ← added
-      devAmountSol: '',     // ← added
+      devPrebuy: false,
+      devAmountSol: '',
     } as FormValues,
     onSubmit: async ({ value }) => {
       try {
@@ -124,7 +124,7 @@ export default function CreatePool() {
           keyPair = Keypair.generate();
         }
 
-        // Step 1: Upload to R2 and get transaction
+        // Step 1: Upload to R2 and get transaction (atomic create + optional prebuy)
         const uploadResponse = await fetch('/api/upload', {
           method: 'POST',
           headers: {
@@ -137,7 +137,9 @@ export default function CreatePool() {
             tokenSymbol: value.tokenSymbol,
             userWallet: address,
             website: value.website || '',
-            twitter: value.twitter || ''
+            twitter: value.twitter || '',
+            devPrebuy: !!value.devPrebuy,          // sent to backend
+            devAmountSol: value.devAmountSol || '' // sent to backend
           }),
         });
 
@@ -149,10 +151,10 @@ export default function CreatePool() {
         const { poolTx } = await uploadResponse.json();
         const transaction = Transaction.from(Buffer.from(poolTx, 'base64'));
 
-        // Step 2: Sign with keypair first
+        // Step 2: Sign with keypair first (mint authority)
         transaction.sign(keyPair);
 
-        // Step 3: Then sign with user's wallet
+        // Step 3: Then sign with user's wallet (payer)
         const signedTransaction = await signTransaction(transaction);
 
         // Step 4: Send signed transaction
@@ -175,50 +177,6 @@ export default function CreatePool() {
         if (success) {
           toast.success('Pool created successfully');
           setPoolCreated(true);
-
-          // Dev Pre-Buy (optional) ← added
-          if (value.devPrebuy && value.devAmountSol && Number(value.devAmountSol) > 0) {
-            try {
-              const prebuyRes = await fetch('/api/dbc-prebuy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  baseMint: keyPair.publicKey.toBase58(),
-                  userWallet: address,
-                  amountSol: Number(value.devAmountSol),
-                  slippageBps: 100, // 1% slippage
-                }),
-              });
-
-              if (!prebuyRes.ok) {
-                const err = await prebuyRes.json();
-                throw new Error(err.error || 'pre-buy failed to build');
-              }
-
-              const { buyTx } = await prebuyRes.json();
-              const buyTxObj = Transaction.from(Buffer.from(buyTx, 'base64'));
-
-              const signedBuyTx = await signTransaction(buyTxObj);
-
-              const sendBuy = await fetch('/api/send-transaction', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  signedTransaction: signedBuyTx.serialize().toString('base64'),
-                }),
-              });
-
-              if (!sendBuy.ok) {
-                const err = await sendBuy.json();
-                throw new Error(err.error || 'pre-buy broadcast failed');
-              }
-
-              toast.success('Dev pre-buy executed');
-            } catch (e: any) {
-              console.error(e);
-              toast.error(e?.message || 'Dev pre-buy failed');
-            }
-          }
         }
       } catch (error) {
         console.error('Error creating pool:', error);
@@ -445,14 +403,14 @@ export default function CreatePool() {
                 </div>
               </div>
 
-              {/* Dev Pre-Buy (Optional) */} {/* ← added */}
-              <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10"> {/* ← added */}
-                <h2 className="text-2xl font-bold mb-6">Dev Pre-Buy (Optional)</h2> {/* ← added */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6"> {/* ← added */}
-                  <div className="flex items-center gap-3"> {/* ← added */}
-                    {form.Field({ /* ← added */
-                      name: 'devPrebuy', /* ← added */
-                      children: (field) => ( /* ← added */
+              {/* Dev Pre-Buy (Optional) */}
+              <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
+                <h2 className="text-2xl font-bold mb-6">Dev Pre-Buy (Optional)</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="flex items-center gap-3">
+                    {form.Field({
+                      name: 'devPrebuy',
+                      children: (field) => (
                         <input
                           id="devPrebuy"
                           name={field.name}
@@ -463,18 +421,18 @@ export default function CreatePool() {
                         />
                       ),
                     })}
-                    <label htmlFor="devPrebuy" className="text-sm text-gray-300"> {/* ← added */}
-                      Buy with my wallet right after launch {/* ← added */}
+                    <label htmlFor="devPrebuy" className="text-sm text-gray-300">
+                      Buy with my wallet right after launch
                     </label>
                   </div>
 
-                  <div> {/* ← added */}
-                    <label htmlFor="devAmountSol" className="block text-sm font-medium text-gray-300 mb-1"> {/* ← added */}
-                      Amount (SOL) {/* ← added */}
+                  <div>
+                    <label htmlFor="devAmountSol" className="block text-sm font-medium text-gray-300 mb-1">
+                      Amount (SOL)
                     </label>
-                    {form.Field({ /* ← added */
-                      name: 'devAmountSol', /* ← added */
-                      children: (field) => ( /* ← added */
+                    {form.Field({
+                      name: 'devAmountSol',
+                      children: (field) => (
                         <input
                           id="devAmountSol"
                           name={field.name}
@@ -489,10 +447,10 @@ export default function CreatePool() {
                         />
                       ),
                     })}
-                    <p className="text-xs text-gray-400 mt-1">We’ll execute a buy after the pool is created.</p> {/* ← added */}
+                    <p className="text-xs text-gray-400 mt-1">We’ll execute a buy inside the same transaction.</p>
                   </div>
                 </div>
-              </div> {/* ← added */}
+              </div>
 
               {form.state.errors && form.state.errors.length > 0 && (
                 <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 space-y-2">
