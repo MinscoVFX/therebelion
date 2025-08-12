@@ -15,6 +15,11 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -33,3 +38,6 @@ jobs:
 
       - name: Run claim partner fees script
         run: pnpm claim:partner-fees
+
+      - name: Clean up keypair.json
+        run: rm -f keypair.json
