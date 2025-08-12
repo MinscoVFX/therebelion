@@ -14,13 +14,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: 'pnpm' # enables dependency caching
 
       - name: Install pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 9
+          version: 10
+          run_install: false # we'll install manually to use cache
 
-      - name: Install dependencies
+      - name: Install dependencies (cached)
         run: pnpm install --frozen-lockfile
 
       - name: Decode PK_B58 to keypair.json
