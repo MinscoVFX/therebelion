@@ -15,7 +15,6 @@ jobs:
         with:
           node-version: 20
 
-      # ✅ Install pnpm here so it's in PATH for all next steps
       - name: Install pnpm
         run: npm install -g pnpm@10
 
@@ -36,8 +35,8 @@ jobs:
         env:
           PK_B58: ${{ secrets.PK_B58 }}
 
-      - name: Run claim partner fees script
-        run: pnpm claim:partner-fees
+      - name: Run claim trading fee script
+        run: npx -y -p tsx tsx studio/src/scripts/dbc/claim_trading_fee.ts
 
       - name: Clean up keypair.json
         run: rm -f keypair.json
