@@ -15,6 +15,7 @@ jobs:
   claim:
     runs-on: ubuntu-latest
     env:
+      CI: false
       PNPM_CONFIG_FROZEN_LOCKFILE: 'false'
     steps:
       - uses: actions/checkout@v4
@@ -23,16 +24,16 @@ jobs:
         with:
           node-version: '20'
 
-      # Ensure pnpm is available on PATH (works even if the pnpm action fails)
       - name: Enable corepack & activate pnpm 10.14.0
         run: |
           corepack enable
           corepack prepare pnpm@10.14.0 --activate
           pnpm -v
 
-      # Install ONLY inside the studio folder to avoid fun-launch mismatch
+      # Only install inside "studio", don't touch root or fun-launch
       - name: Install studio deps only
-        run: pnpm -C studio install --no-frozen-lockfile
+        working-directory: studio
+        run: pnpm install --no-frozen-lockfile
 
       - name: Run claim_trading_fee script
         working-directory: studio
