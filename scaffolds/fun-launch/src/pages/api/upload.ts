@@ -42,24 +42,6 @@ if (
 const PRIVATE_R2_URL = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
 const PUBLIC_R2_URL = R2_PUBLIC_BASE;
 
-// Helper: discover buy/swap-like functions in whatever SDK version is installed
-function findBuyLikeFns(obj: any, path = 'client', seen = new Set<any>()) {
-  const hits: string[] = [];
-  if (!obj || typeof obj !== 'object' || seen.has(obj)) return hits;
-  seen.add(obj);
-  for (const key of Object.keys(obj)) {
-    const v = (obj as any)[key];
-    const p = `${path}.${key}`;
-    if (typeof v === 'function') {
-      const k = key.toLowerCase();
-      if (k.includes('buy') || (k.includes('swap') && !k.includes('quote'))) hits.push(p);
-    } else if (v && typeof v === 'object') {
-      hits.push(...findBuyLikeFns(v, p, seen));
-    }
-  }
-  return hits;
-}
-
 // Types
 type UploadRequest = {
   tokenLogo: string;
@@ -282,7 +264,7 @@ async function createPoolTransaction({
     poolCreator: new PublicKey(userWallet),
   });
 
-  // 2) Optional: append dev pre-buy IN THE SAME TX (SDK compatibility shim)
+  // 2) Optional: append dev pre-buy IN THE SAME TX using SDK swap()
   if (devPrebuy && devAmountSol && Number(devAmountSol) > 0) {
     tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 5_000 }));
 
@@ -296,20 +278,25 @@ async function createPoolTransaction({
 
     const c: any = client as any;
 
-    // Try a wide set of likely entry points across SDK versions
-    const candidates: Array<() => Promise<any>> = [];
-    if (c?.swap?.buy) candidates.push(() => c.swap.buy(params));
-    if (c?.swapBuy) candidates.push(() => c.swapBuy(params));
-    if (c?.trade?.buy) candidates.push(() => c.trade.buy(params));
-    if (c?.pool?.swap?.buy) candidates.push(() => c.pool.swap.buy(params));
-    if (c?.pool?.buy) candidates.push(() => c.pool.buy(params));
-    if (c?.buy) candidates.push(() => c.buy(params));
-    if (c?.swap?.buildBuy) candidates.push(() => c.swap.buildBuy(params));
-    if (c?.pool?.swap?.buildBuy) candidates.push(() => c.pool.swap.buildBuy(params));
+    // Prefer transaction.swap (gives Transaction/instructions to merge), then rpc.swap
+    const tryFns: Array<() => Promise<any>> = [
+      c?.pool?.program?.transaction?.swap && (() => c.pool.program.transaction.swap(params)),
+      c?.pool?.program?.rpc?.swap && (() => c.pool.program.rpc.swap(params)),
+      c?.program?.transaction?.swap && (() => c.program.transaction.swap(params)),
+      c?.program?.rpc?.swap && (() => c.program.rpc.swap(params)),
+      c?.state?.program?.transaction?.swap && (() => c.state.program.transaction.swap(params)),
+      c?.state?.program?.rpc?.swap && (() => c.state.program.rpc.swap(params)),
+      c?.creator?.program?.transaction?.swap && (() => c.creator.program.transaction.swap(params)),
+      c?.creator?.program?.rpc?.swap && (() => c.creator.program.rpc.swap(params)),
+      c?.partner?.program?.transaction?.swap && (() => c.partner.program.transaction.swap(params)),
+      c?.partner?.program?.rpc?.swap && (() => c.partner.program.rpc.swap(params)),
+      c?.migration?.program?.transaction?.swap && (() => c.migration.program.transaction.swap(params)),
+      c?.migration?.program?.rpc?.swap && (() => c.migration.program.rpc.swap(params)),
+    ].filter(Boolean) as any[];
 
     let resp: any;
     let lastErr: any;
-    for (const run of candidates) {
+    for (const run of tryFns) {
       try {
         resp = await run();
         break;
@@ -319,12 +306,7 @@ async function createPoolTransaction({
     }
 
     if (!resp) {
-      const found = findBuyLikeFns(client);
-      throw new Error(
-        `DBC SDK: no working buy() builder found. Candidates discovered:\n` +
-          (found.length ? found.join('\n') : '(none)') +
-          (lastErr?.message ? `\nLast error: ${lastErr.message}` : '')
-      );
+      throw new Error(`DBC SDK: no working swap() builder found.${lastErr?.message ? ' Last error: ' + lastErr.message : ''}`);
     }
 
     if (Array.isArray(resp)) {
