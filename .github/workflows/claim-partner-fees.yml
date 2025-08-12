@@ -10,14 +10,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Setup Node.js first so we can install pnpm
+      # Setup Node.js first
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'pnpm'
 
-      # Install correct pnpm version (>=10)
+      # Install pnpm AFTER Node setup so it's in PATH
       - name: Install pnpm
         run: npm install -g pnpm@10
 
