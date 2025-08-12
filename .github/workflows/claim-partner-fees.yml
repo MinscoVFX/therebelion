@@ -48,8 +48,20 @@ jobs:
           PK_B58: ${{ secrets.PK_B58 }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
 
+      - name: Assert BASE_MINT is set
+        run: |
+          if [ -z "${BASE_MINT}" ]; then
+            echo "::error::BASE_MINT secret is missing. Set Settings > Secrets > Actions > BASE_MINT to your DBC token mint address.";
+            exit 1
+          fi
+          echo "BASE_MINT=${BASE_MINT}"
+        env:
+          BASE_MINT: ${{ secrets.BASE_MINT }}
+
       - name: Run claim trading fee script
-        run: npx -y -p tsx tsx studio/src/scripts/dbc/claim_trading_fee.ts --config ./studio/config/dbc_config.jsonc
+        run: |
+          echo "Using BASE_MINT=${BASE_MINT}"
+          npx -y -p tsx tsx studio/src/scripts/dbc/claim_trading_fee.ts --config ./studio/config/dbc_config.jsonc --base-mint "${BASE_MINT}"
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
           BASE_MINT: ${{ secrets.BASE_MINT }}
