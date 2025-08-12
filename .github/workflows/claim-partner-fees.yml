@@ -26,4 +26,18 @@ jobs:
         run: |
           npx -y -p bs58@4 node -e "
             const fs = require('fs');
-            const bs58 = require(
+            const bs58 = require('bs58');
+            const decode = (bs58.default || bs58).decode;
+            const s = process.env.PK_B58?.trim();
+            if (!s) throw new Error('Missing PRIVATE_KEY_B58');
+            const arr = Array.from(decode(s));
+            fs.writeFileSync('keypair.json', JSON.stringify(arr));
+          "
+        env:
+          PK_B58: ${{ secrets.PK_B58 }}
+
+      - name: Run claim partner fees script
+        run: pnpm claim:partner-fees
+
+      - name: Clean up keypair.json
+        run: rm -f keypair.json
