@@ -8,8 +8,9 @@ on:
         required: true
         type: string
       quote_mint:
-        description: "Quote mint (WSOL: So11111111111111111111111111111111111111112, or USDC mint)"
-        required: true
+        description: "Quote mint (defaults to WSOL if left empty)"
+        required: false
+        default: "So11111111111111111111111111111111111111112"
         type: string
 
 permissions:
@@ -56,13 +57,18 @@ jobs:
       - name: List dbc scripts
         run: ls -la src/scripts/dbc
 
-      # Run your existing script with the CLI flags it expects
+      # Run your existing script with WSOL default if quote_mint not provided
       - name: Run claim_trading_fee.ts
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
         run: |
+          QUOTE_MINT="${{ github.event.inputs.quote_mint }}"
+          if [ -z "$QUOTE_MINT" ]; then
+            QUOTE_MINT="So11111111111111111111111111111111111111112"
+          fi
+
           pnpm exec tsx src/scripts/dbc/claim_trading_fee.ts \
             --rpcUrl="$RPC_URL" \
             --keypairFilePath="$PWD/keypair.json" \
             --baseMint="${{ github.event.inputs.base_mint }}" \
-            --quoteMint="${{ github.event.inputs.quote_mint }}"
+            --quoteMint="$QUOTE_MINT"
