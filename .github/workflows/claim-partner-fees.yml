@@ -19,7 +19,7 @@ jobs:
         run: npm install -g pnpm@10
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile  # quick fix for lockfile mismatch
+        run: pnpm install --no-frozen-lockfile
 
       - name: Decode PK_B58 to keypair.json
         run: |
@@ -27,16 +27,19 @@ jobs:
             const fs = require('fs');
             const bs58 = require('bs58');
             const decode = (bs58.default || bs58).decode;
-            const s = process.env.PK_B58?.trim();
-            if (!s) throw new Error('Missing PRIVATE_KEY_B58');
+            const s = process.env.PK_B58?.trim() || process.env.PRIVATE_KEY_B58?.trim();
+            if (!s) throw new Error('Missing PK_B58 or PRIVATE_KEY_B58');
             const arr = Array.from(decode(s));
             fs.writeFileSync('keypair.json', JSON.stringify(arr));
           "
         env:
           PK_B58: ${{ secrets.PK_B58 }}
+          PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
 
       - name: Run claim trading fee script
         run: npx -y -p tsx tsx studio/src/scripts/dbc/claim_trading_fee.ts --config ./studio/config/dbc_config.jsonc
+        env:
+          RPC_URL: ${{ secrets.RPC_URL }}
 
       - name: Clean up keypair.json
         run: rm -f keypair.json
