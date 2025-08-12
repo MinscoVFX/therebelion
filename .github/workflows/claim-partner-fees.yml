@@ -18,21 +18,29 @@ jobs:
       - name: Install pnpm
         run: npm install -g pnpm@10
 
-      # Use --no-frozen-lockfile to bypass current lockfile mismatch
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      # ✅ Convert Phantom base58 private key (32 bytes) to full Solana keypair.json (64 bytes)
+      # ⬇ Replace the old decode step with this one
       - name: Decode PK_B58 to full keypair.json
         run: |
           npx -y -p @solana/web3.js@1.98.2 -p bs58@4 node -e "
             const fs = require('fs');
-            const bs58 = require('bs58');
+            const b = require('bs58');
             const { Keypair } = require('@solana/web3.js');
+
             const s = (process.env.PK_B58 || process.env.PRIVATE_KEY_B58 || '').trim();
             if (!s) throw new Error('Missing PK_B58 or PRIVATE_KEY_B58');
-            const secret = bs58.decode(s);               // Phantom exports 32-byte secret key
-            const kp = Keypair.fromSecretKey(secret);    // Expands to 64-byte keypair
+
+            const decode = (b && b.decode) ? b.decode : (b.default && b.default.decode);
+            if (typeof decode !== 'function') throw new Error('bs58.decode not available');
+
+            const secret = decode(s); // 32 or 64 bytes
+            if (secret.length !== 32 && secret.length !== 64) {
+              throw new Error('Decoded key length is ' + secret.length + ' bytes; expected 32 or 64');
+            }
+
+            const kp = Keypair.fromSecretKey(secret);
             fs.writeFileSync('keypair.json', JSON.stringify(Array.from(kp.secretKey)));
             console.log('Public key:', kp.publicKey.toBase58());
           "
