@@ -16,7 +16,6 @@ on:
 permissions:
   contents: read
 
-# run EVERY step from /studio so root/fun-launch never gets touched
 defaults:
   run:
     working-directory: studio
@@ -34,29 +33,24 @@ jobs:
         with:
           node-version: '20'
 
-      # Ensure pnpm is available and pinned to 10.14.0
       - name: Enable corepack & activate pnpm 10.14.0
         run: |
           corepack enable
           corepack prepare pnpm@10.14.0 --activate
           pnpm -v
 
-      # Install ONLY studio deps (no root, no fun-launch); ignore lockfile freeze
       - name: Install deps (studio only)
         run: pnpm install --no-frozen-lockfile
 
-      # Build a keypair.json from PRIVATE_KEY_B58 (what your script expects)
       - name: Write keypair.json from PRIVATE_KEY_B58
         env:
           PK_B58: ${{ secrets.PRIVATE_KEY_B58 }}
         run: |
           npx -y -p bs58 node -e "const fs=require('fs');const bs58=require('bs58');const s=process.env.PK_B58?.trim();if(!s)throw new Error('Missing PRIVATE_KEY_B58');const arr=Array.from(bs58.decode(s));fs.writeFileSync('keypair.json', JSON.stringify(arr));"
 
-      # Sanity: show the target file exists with the exact casing
       - name: List dbc scripts
         run: ls -la src/scripts/dbc
 
-      # Run your existing script; auto-WSOL if quote_mint left blank
       - name: Run claim_trading_fee.ts
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
