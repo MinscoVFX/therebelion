@@ -1,7 +1,18 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": ["**/.env.*local"],
-  "globalEnv": ["NODE_ENV"],
+  "globalEnv": [
+    "NODE_ENV",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_ACCOUNT_ID",
+    "R2_BUCKET",
+    "RPC_URL",
+    "POOL_CONFIG_KEY",
+    "R2_PUBLIC_BASE",
+    "PUBLIC_BUCKET_URL",
+    "NEXT_PUBLIC_PUBLIC_BASE_URL"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
