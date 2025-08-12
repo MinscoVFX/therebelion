@@ -14,15 +14,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
 
-      # Enable corepack and prepare pnpm v10
-      - name: Enable pnpm via corepack
-        run: |
-          corepack enable
-          corepack prepare pnpm@10 --activate
+      - name: Install pnpm
+        run: npm install -g pnpm@10
 
-      - name: Install dependencies (cached)
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Decode PK_B58 to keypair.json
