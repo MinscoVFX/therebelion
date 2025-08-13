@@ -19,8 +19,8 @@ jobs:
         with:
           node-version: 20
 
-      # Install pnpm matching your package.json "packageManager": "pnpm@10.14.0"
-      # NOTE: Do NOT set a "version" here to avoid conflicts.
+      # Use the PNPM version pinned in package.json "packageManager"
+      # (do NOT set a version here to avoid ERR_PNPM_BAD_PM_VERSION)
       - name: Setup pnpm (use packageManager version)
         uses: pnpm/action-setup@v4
         with:
@@ -32,9 +32,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
 
-      # Ensure AWS SDK v3 S3 client is present at build time (without changing your package.json)
+      # Ensure AWS SDK v3 S3 client is available for the build
+      # (no --no-save; GitHub Actions' pnpm doesn't support it)
       - name: Ensure @aws-sdk/client-s3 is available
-        run: pnpm add -w --no-save @aws-sdk/client-s3
+        run: pnpm add -w @aws-sdk/client-s3
 
       - name: Type check
         run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
