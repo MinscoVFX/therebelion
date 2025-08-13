@@ -14,14 +14,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Install pnpm (restore)
-        run: npm i -g pnpm@10.14.0 && pnpm -v
+      - name: Setup pnpm (post PATH restore)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
@@ -42,14 +49,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Install pnpm (restore)
-        run: npm i -g pnpm@10.14.0 && pnpm -v
+      - name: Setup pnpm (post PATH restore)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
@@ -64,14 +78,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Install pnpm (restore)
-        run: npm i -g pnpm@10.14.0 && pnpm -v
+      - name: Setup pnpm (post PATH restore)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
