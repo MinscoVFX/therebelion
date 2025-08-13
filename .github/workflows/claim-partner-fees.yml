@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      # ⬇ Replace the old decode step with this one
+      # ⬇ Decode Phantom base58 (32/64) to full 64-byte keypair.json
       - name: Decode PK_B58 to full keypair.json
         run: |
           npx -y -p @solana/web3.js@1.98.2 -p bs58@4 node -e "
@@ -35,7 +35,7 @@ jobs:
             const decode = (b && b.decode) ? b.decode : (b.default && b.default.decode);
             if (typeof decode !== 'function') throw new Error('bs58.decode not available');
 
-            const secret = decode(s); // 32 or 64 bytes
+            const secret = decode(s);
             if (secret.length !== 32 && secret.length !== 64) {
               throw new Error('Decoded key length is ' + secret.length + ' bytes; expected 32 or 64');
             }
