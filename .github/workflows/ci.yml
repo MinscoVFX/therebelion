@@ -20,23 +20,23 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Enable pnpm via corepack
+      - name: Enable pnpm via Corepack
         run: |
           corepack enable
           corepack prepare pnpm@10.14.0 --activate
-          pnpm -v
+          corepack pnpm -v
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: corepack pnpm install --no-frozen-lockfile
 
       - name: Check formatting
-        run: pnpm format:check
+        run: corepack pnpm format:check
 
       - name: Lint code
-        run: pnpm lint
+        run: corepack pnpm lint
 
       - name: Check dependency versions
-        run: pnpm syncpack:check
+        run: corepack pnpm syncpack:check
 
   build:
     name: Build
@@ -51,17 +51,17 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Enable pnpm via corepack
+      - name: Enable pnpm via Corepack
         run: |
           corepack enable
           corepack prepare pnpm@10.14.0 --activate
-          pnpm -v
+          corepack pnpm -v
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: corepack pnpm install --no-frozen-lockfile
 
       - name: Build all packages
-        run: pnpm build
+        run: corepack pnpm build
 
   type-check:
     name: Type Check
@@ -76,14 +76,14 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Enable pnpm via corepack
+      - name: Enable pnpm via Corepack
         run: |
           corepack enable
           corepack prepare pnpm@10.14.0 --activate
-          pnpm -v
+          corepack pnpm -v
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: corepack pnpm install --no-frozen-lockfile
 
       - name: Type check
-        run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
+        run: corepack pnpm exec tsc --noEmit --project tsconfig.typecheck.json
