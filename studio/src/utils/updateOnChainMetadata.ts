@@ -1,5 +1,5 @@
 import { createUpdateMetadataAccountV2Instruction } from "@metaplex-foundation/mpl-token-metadata";
-import { PublicKey, Transaction, Connection } from "@solana/web3.js";
+import { PublicKey, Transaction, Connection, SendOptions } from "@solana/web3.js";
 
 const METADATA_PROGRAM_ID = new PublicKey(
   "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
@@ -12,6 +12,15 @@ function getMetadataPDA(mint: PublicKey) {
   )[0];
 }
 
+interface UpdateParams {
+  connection: Connection;
+  wallet: { publicKey: PublicKey; signTransaction: any };
+  mintAddress: string;
+  name: string;
+  symbol: string;
+  uri: string;
+}
+
 export async function updateOnChainMetadata({
   connection,
   wallet,
@@ -19,14 +28,7 @@ export async function updateOnChainMetadata({
   name,
   symbol,
   uri,
-}: {
-  connection: Connection;
-  wallet: any; // wallet adapter
-  mintAddress: string;
-  name: string;
-  symbol: string;
-  uri: string;
-}) {
+}: UpdateParams) {
   const mint = new PublicKey(mintAddress);
   const metadataPDA = getMetadataPDA(mint);
 
@@ -37,7 +39,7 @@ export async function updateOnChainMetadata({
         data: {
           name,
           symbol,
-          uri,
+          uri, // points to your R2 JSON file
           sellerFeeBasisPoints: 0,
           creators: null,
           collection: null,
@@ -51,5 +53,10 @@ export async function updateOnChainMetadata({
   );
 
   const tx = new Transaction().add(ix);
-  await wallet.sendTransaction(tx, connection);
+  const signed = await wallet.signTransaction(tx);
+  const sig = await connection.sendRawTransaction(signed.serialize(), {
+    skipPreflight: false,
+  } as SendOptions);
+  await connection.confirmTransaction(sig, "confirmed");
+  return sig;
 }
