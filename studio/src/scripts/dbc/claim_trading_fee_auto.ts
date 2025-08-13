@@ -52,7 +52,6 @@ async function loadProgram(connection: Connection, wallet: AnchorWallet): Promis
   }
 
   if (!idlLooksUsable(idl)) {
-    // Return a clear error so caller can choose a fallback path
     const hint =
       'Auto-discovery requires a valid DBC IDL (with accounts). Provide via SDK or set DBC_PROGRAM_ID to a program that publishes its IDL.';
     throw new Error(`DBC IDL unavailable or incomplete. ${hint}`);
@@ -62,21 +61,27 @@ async function loadProgram(connection: Connection, wallet: AnchorWallet): Promis
   return new ProgramCtor(idl as Idl, programId, provider);
 }
 
-function looksLikePoolAccount(a: any) {
-  if (!a) return false;
-  const hasBaseMint = a.baseMint instanceof PublicKey || typeof a.baseMint?.toBase58 === 'function';
-  const hasCreator = a.creator instanceof PublicKey || typeof a.creator?.toBase58 === 'function';
-  const hasPartner = a.partner instanceof PublicKey || typeof a.partner?.toBase58 === 'function';
+function looksLikePoolAccount(a: unknown) {
+  const x = a as Record<string, unknown> | null | undefined;
+  if (!x) return false;
+  const baseMint = x['baseMint'] as unknown;
+  const creator = x['creator'] as unknown;
+  const partner = x['partner'] as unknown;
+  const hasBaseMint = baseMint instanceof PublicKey || typeof (baseMint as any)?.toBase58 === 'function';
+  const hasCreator = creator instanceof PublicKey || typeof (creator as any)?.toBase58 === 'function';
+  const hasPartner = partner instanceof PublicKey || typeof (partner as any)?.toBase58 === 'function';
   return hasBaseMint && hasCreator && hasPartner;
 }
 
 async function findPoolAccountNamespace(program: Program): Promise<string> {
-  const namespaces = Object.keys((program as any).account || {});
+  const accountsNs: Record<string, any> = ((program as any).account || {}) as Record<string, any>;
+  const namespaces = Object.keys(accountsNs);
   for (const ns of namespaces) {
     try {
-      const sample = await (program as any).account[ns].all();
+      if (!accountsNs[ns]?.all) continue;
+      const sample = await accountsNs[ns].all();
       if (!Array.isArray(sample) || sample.length === 0) continue;
-      if (looksLikePoolAccount(sample[0].account)) return ns;
+      if (looksLikePoolAccount(sample[0]?.account)) return ns;
     } catch {
       // continue scanning
     }
@@ -134,7 +139,8 @@ async function main() {
     const program = await loadProgram(connection, wallet);
     const poolNs = await findPoolAccountNamespace(program);
 
-    const allPools: Array<{ publicKey: PublicKey; account: any }> = await (program as any).account[poolNs].all();
+    const accountsNs: Record<string, any> = ((program as any).account || {}) as Record<string, any>;
+    const allPools: Array<{ publicKey: PublicKey; account: any }> = await accountsNs[poolNs].all();
 
     const me = keypair.publicKey;
     const claimables = allPools.filter(({ account }) => {
