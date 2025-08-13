@@ -10,13 +10,15 @@ import { Keypair, Transaction } from '@solana/web3.js';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
 
+// Form schema
 const poolSchema = z.object({
   tokenName: z.string().min(3, 'Token name must be at least 3 characters'),
   tokenSymbol: z.string().min(1, 'Token symbol is required'),
   tokenLogo: z.instanceof(File, { message: 'Token logo is required' }).optional(),
   website: z.string().url({ message: 'Please enter a valid URL' }).optional().or(z.literal('')),
   twitter: z.string().url({ message: 'Please enter a valid URL' }).optional().or(z.literal('')),
-  vanitySuffix: z.string()
+  vanitySuffix: z
+    .string()
     .max(4, 'Use 1–4 base58 chars')
     .regex(/^[1-9A-HJ-NP-Za-km-z]*$/, 'Only base58 (no 0,O,I,l)')
     .optional()
@@ -28,7 +30,7 @@ const poolSchema = z.object({
 interface FormValues {
   tokenName: string;
   tokenSymbol: string;
-  tokenLogo?: File;
+  tokenLogo: File | undefined;
   website?: string;
   twitter?: string;
   vanitySuffix?: string;
@@ -42,19 +44,23 @@ function isBase58(str: string) {
 
 async function findVanityKeypair(suffix: string, maxSeconds = 30) {
   const deadline = Date.now() + maxSeconds * 1000;
+  let tries = 0;
   while (Date.now() < deadline) {
     const kp = Keypair.generate();
-    if (kp.publicKey.toBase58().endsWith(suffix)) {
-      return { kp, addr: kp.publicKey.toBase58(), timedOut: false };
+    const addr = kp.publicKey.toBase58();
+    tries++;
+    if (addr.endsWith(suffix)) {
+      return { kp, addr, tries, timedOut: false };
     }
+    if (tries % 5000 === 0) await new Promise((r) => setTimeout(r, 0));
   }
-  return { kp: null, addr: '', timedOut: true };
+  return { kp: null as any, addr: '', tries, timedOut: true };
 }
 
 export default function CreatePool() {
   const { publicKey, signTransaction } = useWallet();
-  const { setShowModal } = useUnifiedWalletContext();
   const address = useMemo(() => publicKey?.toBase58(), [publicKey]);
+
   const [isLoading, setIsLoading] = useState(false);
   const [poolCreated, setPoolCreated] = useState(false);
 
@@ -72,50 +78,72 @@ export default function CreatePool() {
     onSubmit: async ({ value }) => {
       try {
         setIsLoading(true);
+        const { tokenLogo } = value;
+        if (!tokenLogo) {
+          toast.error('Token logo is required');
+          return;
+        }
+        if (!signTransaction) {
+          toast.error('Wallet not connected');
+          return;
+        }
 
-        if (!value.tokenLogo) return toast.error('Token logo is required');
-        if (!signTransaction) return toast.error('Wallet not connected');
-
+        // Convert logo to base64
         const reader = new FileReader();
         const base64File = await new Promise<string>((resolve) => {
           reader.onload = (e) => resolve(e.target?.result as string);
-          reader.readAsDataURL(value.tokenLogo!);
+          reader.readAsDataURL(tokenLogo);
         });
 
-        let keyPair: Keypair;
+        // Vanity address
         const rawSuffix = (value.vanitySuffix || '').trim();
-        if (rawSuffix) {
-          if (!isBase58(rawSuffix)) return toast.error('Suffix must be base58 (no 0, O, I, l).');
-          if (rawSuffix.length > 4) return toast.error('Suffix too long.');
+        let keyPair: Keypair;
+        if (rawSuffix.length > 0) {
+          if (!isBase58(rawSuffix)) {
+            toast.error('Suffix must be base58 (no 0, O, I, l).');
+            return;
+          }
+          if (rawSuffix.length > 4) {
+            toast.error('Suffix too long. Use up to 4 characters.');
+            return;
+          }
           toast.message(`Searching mint ending with “${rawSuffix}”...`);
           const { kp, addr, timedOut } = await findVanityKeypair(rawSuffix, 30);
-          keyPair = kp || Keypair.generate();
-          if (kp) toast.success(`Found vanity mint: ${addr}`);
-          else if (timedOut) toast.message('No match found — using a normal address.');
+          if (timedOut || !kp) {
+            toast.message('No match found in time — using a normal address.');
+            keyPair = Keypair.generate();
+          } else {
+            keyPair = kp;
+            toast.success(`Found vanity mint: ${addr}`);
+          }
         } else {
           keyPair = Keypair.generate();
         }
 
-        // Upload metadata JSON to R2
-        const metaRes = await fetch('/api/metadata', {
+        // Step 1: Upload metadata to R2 and log CA
+        const metadataRes = await fetch('/api/metadata', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: value.tokenName,
             symbol: value.tokenSymbol,
-            description: `${value.tokenName} — launched on our platform`,
+            description: '',
             imageUrl: base64File,
-            website: value.website || '',
-            twitter: value.twitter || '',
+            twitter: value.twitter,
+            website: value.website,
             attributes: [],
             ca: keyPair.publicKey.toBase58(),
           }),
         });
 
-        if (!metaRes.ok) throw new Error((await metaRes.json()).error || 'Metadata upload failed');
-        const { uri } = await metaRes.json();
+        if (!metadataRes.ok) {
+          const err = await metadataRes.json();
+          throw new Error(err.error || 'Metadata upload failed');
+        }
 
-        // Create pool transaction
+        const { uri } = await metadataRes.json();
+
+        // Step 2: Create pool transaction
         const uploadResponse = await fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -132,16 +160,16 @@ export default function CreatePool() {
           }),
         });
 
-        if (!uploadResponse.ok) throw new Error((await uploadResponse.json()).error);
+        if (!uploadResponse.ok) {
+          const error = await uploadResponse.json();
+          throw new Error(error.error);
+        }
+
         const { poolTx } = await uploadResponse.json();
         const transaction = Transaction.from(Buffer.from(poolTx, 'base64'));
-
-        // Sign with mint authority
         transaction.sign(keyPair);
-        // Sign with connected wallet
         const signedTransaction = await signTransaction(transaction);
 
-        // Send transaction
         const sendResponse = await fetch('/api/send-transaction', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -150,24 +178,36 @@ export default function CreatePool() {
           }),
         });
 
-        if (!sendResponse.ok) throw new Error((await sendResponse.json()).error);
+        if (!sendResponse.ok) {
+          const error = await sendResponse.json();
+          throw new Error(error.error);
+        }
 
-        // Update on-chain metadata
-        await fetch('/api/update-metadata', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mint: keyPair.publicKey.toBase58(),
-            metadataUri: uri,
-            mintAuthority: Buffer.from(keyPair.secretKey).toString('base64'),
-          }),
-        });
+        const { success } = await sendResponse.json();
 
-        toast.success('Pool created & metadata updated!');
-        setPoolCreated(true);
-      } catch (err: any) {
-        console.error('Error creating pool:', err);
-        toast.error(err.message || 'Failed to create pool');
+        if (success) {
+          // Step 3: Update on-chain metadata via API
+          const updateRes = await fetch('/api/update-metadata', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mint: keyPair.publicKey.toBase58(),
+              metadataUri: uri,
+              mintAuthority: Buffer.from(keyPair.secretKey).toString('base64'),
+            }),
+          });
+
+          if (!updateRes.ok) {
+            const err = await updateRes.json();
+            throw new Error(err.error || 'On-chain metadata update failed');
+          }
+
+          toast.success('Pool created successfully');
+          setPoolCreated(true);
+        }
+      } catch (error) {
+        console.error('Error creating pool:', error);
+        toast.error(error instanceof Error ? error.message : 'Failed to create pool');
       } finally {
         setIsLoading(false);
       }
@@ -175,7 +215,10 @@ export default function CreatePool() {
     validators: {
       onSubmit: ({ value }) => {
         const result = poolSchema.safeParse(value);
-        return result.success ? undefined : result.error.formErrors.fieldErrors;
+        if (!result.success) {
+          return result.error.formErrors.fieldErrors;
+        }
+        return undefined;
       },
     },
   });
@@ -184,13 +227,14 @@ export default function CreatePool() {
     <>
       <Head>
         <title>Create Pool - Virtual Curve</title>
+        <meta name="description" content="Create a new token pool on Virtual Curve" />
       </Head>
       <div className="min-h-screen bg-gradient-to-b text-white">
         <Header />
         <main className="container mx-auto px-4 py-10">
           {poolCreated && !isLoading ? <PoolCreationSuccess /> : (
             <form onSubmit={(e) => { e.preventDefault(); form.handleSubmit(); }} className="space-y-8">
-              {/* Form fields here */}
+              {/* token/social/dev fields go here */}
               <div className="flex justify-end">
                 <SubmitButton isSubmitting={isLoading} />
               </div>
