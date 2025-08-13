@@ -68,8 +68,8 @@
     },
 
     /* ⬇⬇⬇ replaced placeholders with your Phantom pubkey ⬇⬇⬇ */
-    "leftoverReceiver": "AkJAjSMBBWbBJWT6LewYBDJXajTVdNEdDhBR1iVAnmCb",
-    "feeClaimer": "AkJAjSMBBWbBJWT6LewYBDJXajTVdNEdDhBR1iVAnmCb"
+    "leftoverReceiver": "5eT6oJHsx3iNRqwMhzsdXGqxTWxN8wjfv9SLQdWMLxk6",
+    "feeClaimer": "5eT6oJHsx3iNRqwMhzsdXGqxTWxN8wjfv9SLQdWMLxk6"
   },
 
   "dbcPool": {
