@@ -19,8 +19,7 @@ jobs:
         with:
           node-version: 20
 
-      # Use the PNPM version pinned in package.json "packageManager"
-      # (do NOT set a version here to avoid ERR_PNPM_BAD_PM_VERSION)
+      # Use the pnpm version pinned in package.json "packageManager"
       - name: Setup pnpm (use packageManager version)
         uses: pnpm/action-setup@v4
         with:
@@ -29,13 +28,12 @@ jobs:
       - name: Show pnpm version
         run: pnpm -v
 
-      - name: Install dependencies
+      - name: Install workspace deps
         run: pnpm install --frozen-lockfile=false
 
-      # Ensure AWS SDK v3 S3 client is available for the build
-      # (no --no-save; GitHub Actions' pnpm doesn't support it)
-      - name: Ensure @aws-sdk/client-s3 is available
-        run: pnpm add -w @aws-sdk/client-s3
+      # 👇 Install the AWS SDK v3 *in the fun-launch package* so Next/TS can resolve it there
+      - name: Ensure @aws-sdk/client-s3 is installed in fun-launch package
+        run: pnpm -C scaffolds/fun-launch add @aws-sdk/client-s3
 
       - name: Type check
         run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
