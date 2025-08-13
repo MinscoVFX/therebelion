@@ -42,7 +42,6 @@ async function loadProgram(connection: Connection, wallet: AnchorWallet): Promis
   let idl: Idl | null = (sdkIdl as Idl) || null;
 
   if (!idlLooksUsable(idl)) {
-    // Anchor versions differ on fetchIdl signature; try both via `any`.
     const P: any = Program as any;
     try {
       idl = (await P.fetchIdl(provider, programId)) as Idl | null;
@@ -57,7 +56,7 @@ async function loadProgram(connection: Connection, wallet: AnchorWallet): Promis
     throw new Error(`DBC IDL unavailable or incomplete. ${hint}`);
   }
 
-  const ProgramCtor: any = Program as any; // constructor differences across versions
+  const ProgramCtor: any = Program as any;
   return new ProgramCtor(idl as Idl, programId, provider);
 }
 
@@ -134,7 +133,6 @@ async function main() {
   const connection = new Connection(config.rpcUrl, DEFAULT_COMMITMENT_LEVEL);
   const wallet = new AnchorWallet(keypair);
 
-  // Try auto-discovery first
   try {
     const program = await loadProgram(connection, wallet);
     const poolNs = await findPoolAccountNamespace(program);
@@ -177,7 +175,6 @@ async function main() {
     console.log(`\n> Summary: Success ${ok}, Failed ${fail}`);
     if (fail) process.exit(1);
   } catch (autoErr: any) {
-    // Fallback: use BASE_MINTS if IDL was unavailable or unusable
     console.warn(`\n[Auto-discovery disabled] ${autoErr?.message || String(autoErr)}`);
     const ok = await claimByEnvList(config, connection, wallet);
     if (ok === 0) process.exit(1);
