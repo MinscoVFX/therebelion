@@ -10,60 +10,77 @@ jobs:
   lint-and-format:
     name: Lint and Format Check
     runs-on: ubuntu-latest
-    env:
-      CI: 'false'
-      PNPM_CONFIG_FROZEN_LOCKFILE: 'false'
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
         with:
           version: 10.14.0
-      - uses: actions/setup-node@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
-      - run: pnpm install --no-frozen-lockfile
-      - name: Auto format
-        run: pnpm format
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Check formatting
         run: pnpm format:check
+
       - name: Lint code
         run: pnpm lint
+
       - name: Check dependency versions
         run: pnpm syncpack:check
 
   build:
     name: Build
     runs-on: ubuntu-latest
-    env:
-      CI: 'false'
-      PNPM_CONFIG_FROZEN_LOCKFILE: 'false'
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
         with:
           version: 10.14.0
-      - uses: actions/setup-node@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
-      - run: pnpm install --no-frozen-lockfile
-      - run: pnpm build
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
 
   type-check:
     name: Type Check
     runs-on: ubuntu-latest
-    env:
-      CI: 'false'
-      PNPM_CONFIG_FROZEN_LOCKFILE: 'false'
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
         with:
           version: 10.14.0
-      - uses: actions/setup-node@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
-      - run: pnpm install --no-frozen-lockfile
-      - run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
