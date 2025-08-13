@@ -6,11 +6,65 @@ import Header from '../components/Header';
 
 import { useForm } from '@tanstack/react-form';
 import { Button } from '@/components/ui/button';
-import { Keypair, Transaction } from '@solana/web3.js';
+import { Keypair, Transaction, PublicKey, Connection } from '@solana/web3.js';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
 
-// Form schema
+import { createUpdateMetadataAccountV2Instruction } from '@metaplex-foundation/mpl-token-metadata';
+
+const METADATA_PROGRAM_ID = new PublicKey(
+  'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s'
+);
+
+function getMetadataPDA(mint: PublicKey) {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from('metadata'), METADATA_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    METADATA_PROGRAM_ID
+  )[0];
+}
+
+async function updateOnChainMetadata({
+  connection,
+  wallet,
+  mintAddress,
+  name,
+  symbol,
+  uri,
+}: {
+  connection: Connection;
+  wallet: any;
+  mintAddress: string;
+  name: string;
+  symbol: string;
+  uri: string;
+}) {
+  const mint = new PublicKey(mintAddress);
+  const metadataPDA = getMetadataPDA(mint);
+
+  const ix = createUpdateMetadataAccountV2Instruction(
+    { metadata: metadataPDA, updateAuthority: wallet.publicKey },
+    {
+      updateMetadataAccountArgsV2: {
+        data: {
+          name,
+          symbol,
+          uri,
+          sellerFeeBasisPoints: 0,
+          creators: null,
+          collection: null,
+          uses: null,
+        },
+        updateAuthority: wallet.publicKey,
+        primarySaleHappened: null,
+        isMutable: true,
+      },
+    }
+  );
+
+  const tx = new Transaction().add(ix);
+  await wallet.sendTransaction(tx, connection);
+}
+
 const poolSchema = z.object({
   tokenName: z.string().min(3, 'Token name must be at least 3 characters'),
   tokenSymbol: z.string().min(1, 'Token symbol is required'),
@@ -54,11 +108,12 @@ async function findVanityKeypair(suffix: string, maxSeconds = 30) {
     }
     if (tries % 5000 === 0) await new Promise((r) => setTimeout(r, 0));
   }
-  return { kp: null as any, addr: '', tries, timedOut: true };
+  // Always return something so TS stops complaining
+  return { kp: Keypair.generate(), addr: '', tries, timedOut: true };
 }
 
 export default function CreatePool() {
-  const { publicKey, signTransaction } = useWallet();
+  const { publicKey, signTransaction, sendTransaction } = useWallet();
   const address = useMemo(() => publicKey?.toBase58(), [publicKey]);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -83,21 +138,21 @@ export default function CreatePool() {
           toast.error('Token logo is required');
           return;
         }
+
         if (!signTransaction) {
           toast.error('Wallet not connected');
           return;
         }
 
-        // Convert logo to base64
         const reader = new FileReader();
         const base64File = await new Promise<string>((resolve) => {
           reader.onload = (e) => resolve(e.target?.result as string);
           reader.readAsDataURL(tokenLogo);
         });
 
-        // Vanity address
         const rawSuffix = (value.vanitySuffix || '').trim();
         let keyPair: Keypair;
+
         if (rawSuffix.length > 0) {
           if (!isBase58(rawSuffix)) {
             toast.error('Suffix must be base58 (no 0, O, I, l).');
@@ -120,7 +175,7 @@ export default function CreatePool() {
           keyPair = Keypair.generate();
         }
 
-        // Step 1: Upload metadata to R2 and log CA
+        // Step 1: Upload metadata to R2
         const metadataRes = await fetch('/api/metadata', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -167,6 +222,7 @@ export default function CreatePool() {
 
         const { poolTx } = await uploadResponse.json();
         const transaction = Transaction.from(Buffer.from(poolTx, 'base64'));
+
         transaction.sign(keyPair);
         const signedTransaction = await signTransaction(transaction);
 
@@ -184,23 +240,17 @@ export default function CreatePool() {
         }
 
         const { success } = await sendResponse.json();
-
         if (success) {
-          // Step 3: Update on-chain metadata via API
-          const updateRes = await fetch('/api/update-metadata', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              mint: keyPair.publicKey.toBase58(),
-              metadataUri: uri,
-              mintAuthority: Buffer.from(keyPair.secretKey).toString('base64'),
-            }),
+          // Step 3: Update on-chain metadata
+          const connection = new Connection(process.env.NEXT_PUBLIC_RPC_URL!, 'confirmed');
+          await updateOnChainMetadata({
+            connection,
+            wallet: { publicKey, sendTransaction },
+            mintAddress: keyPair.publicKey.toBase58(),
+            name: value.tokenName,
+            symbol: value.tokenSymbol,
+            uri,
           });
-
-          if (!updateRes.ok) {
-            const err = await updateRes.json();
-            throw new Error(err.error || 'On-chain metadata update failed');
-          }
 
           toast.success('Pool created successfully');
           setPoolCreated(true);
@@ -234,7 +284,7 @@ export default function CreatePool() {
         <main className="container mx-auto px-4 py-10">
           {poolCreated && !isLoading ? <PoolCreationSuccess /> : (
             <form onSubmit={(e) => { e.preventDefault(); form.handleSubmit(); }} className="space-y-8">
-              {/* token/social/dev fields go here */}
+              {/* Your existing form fields here */}
               <div className="flex justify-end">
                 <SubmitButton isSubmitting={isLoading} />
               </div>
