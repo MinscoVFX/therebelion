@@ -1,11 +1,10 @@
-# .github/workflows/build.yml
 name: Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, master ]
 
 jobs:
   build:
@@ -15,17 +14,33 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'pnpm'
 
-      - name: Install pnpm
-        run: npm install -g pnpm
+      # 👉 Install pnpm so the command exists in PATH
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
 
-      - name: Install dependencies (with AWS SDK fix)
-        run: pnpm add @aws-sdk/client-s3 -w && pnpm install
+      - name: PNPM version
+        run: pnpm -v
+
+      # 👉 Install your deps as usual
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile=false
+
+      # 👉 Make sure AWS SDK v3 S3 client is present for the build
+      # --no-save keeps your package.json untouched (no local commits needed)
+      - name: Ensure @aws-sdk/client-s3 is available
+        run: pnpm add -w --no-save @aws-sdk/client-s3
+
+      - name: Type check
+        run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
 
       - name: Build
         run: pnpm build
