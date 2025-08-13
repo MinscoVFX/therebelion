@@ -19,8 +19,8 @@ jobs:
         with:
           node-version: 20
 
-      # Use pnpm version from package.json: "packageManager": "pnpm@..."
-      - name: Setup pnpm (use packageManager version)
+      # Setup pnpm using the version in package.json
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           run_install: false
@@ -29,19 +29,22 @@ jobs:
         run: pnpm -v
 
       # Install all workspace dependencies
-      - name: Install dependencies (workspace)
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
 
-      # 👇 Make sure the AWS SDK is installed specifically in the fun-launch package
-      - name: Add @aws-sdk/client-s3 to fun-launch package
-        run: pnpm -r --filter "@meteora-invent/scaffold/fun-launch" add @aws-sdk/client-s3
+      # ✅ Force install AWS SDK deps into fun-launch package
+      - name: Install AWS SDK deps in fun-launch
+        run: |
+          pnpm add @aws-sdk/client-s3 @aws-sdk/s3-request-presigner --filter @meteora-invent/scaffold/fun-launch
 
-      # Optional: show that the dep is present in that package now
-      - name: List deps in fun-launch
-        run: pnpm -r --filter "@meteora-invent/scaffold/fun-launch" list @aws-sdk/client-s3 --depth 0
+      # Verify installation in fun-launch package
+      - name: Check AWS SDK in fun-launch
+        run: pnpm list @aws-sdk/client-s3 @aws-sdk/s3-request-presigner --filter @meteora-invent/scaffold/fun-launch --depth 0
 
+      # Type check
       - name: Type check
         run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
 
+      # Build
       - name: Build
         run: pnpm build
