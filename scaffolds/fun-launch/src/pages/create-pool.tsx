@@ -103,3 +103,122 @@ export default function CreatePool() {
           body: JSON.stringify({
             name: value.tokenName,
             symbol: value.tokenSymbol,
+            description: `${value.tokenName} — launched on our platform`,
+            imageUrl: base64File,
+            website: value.website || '',
+            twitter: value.twitter || '',
+            attributes: [],
+            ca: keyPair.publicKey.toBase58(),
+          }),
+        });
+
+        if (!metaRes.ok) throw new Error((await metaRes.json()).error || 'Metadata upload failed');
+        const { uri } = await metaRes.json();
+
+        // Create pool transaction
+        const uploadResponse = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tokenLogo: base64File,
+            mint: keyPair.publicKey.toBase58(),
+            tokenName: value.tokenName,
+            tokenSymbol: value.tokenSymbol,
+            userWallet: address,
+            website: value.website || '',
+            twitter: value.twitter || '',
+            devPrebuy: !!value.devPrebuy,
+            devAmountSol: value.devAmountSol || '',
+          }),
+        });
+
+        if (!uploadResponse.ok) throw new Error((await uploadResponse.json()).error);
+        const { poolTx } = await uploadResponse.json();
+        const transaction = Transaction.from(Buffer.from(poolTx, 'base64'));
+
+        // Sign with mint authority
+        transaction.sign(keyPair);
+        // Sign with connected wallet
+        const signedTransaction = await signTransaction(transaction);
+
+        // Send transaction
+        const sendResponse = await fetch('/api/send-transaction', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            signedTransaction: signedTransaction.serialize().toString('base64'),
+          }),
+        });
+
+        if (!sendResponse.ok) throw new Error((await sendResponse.json()).error);
+
+        // Update on-chain metadata
+        await fetch('/api/update-metadata', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mint: keyPair.publicKey.toBase58(),
+            metadataUri: uri,
+            mintAuthority: Buffer.from(keyPair.secretKey).toString('base64'),
+          }),
+        });
+
+        toast.success('Pool created & metadata updated!');
+        setPoolCreated(true);
+      } catch (err: any) {
+        console.error('Error creating pool:', err);
+        toast.error(err.message || 'Failed to create pool');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    validators: {
+      onSubmit: ({ value }) => {
+        const result = poolSchema.safeParse(value);
+        return result.success ? undefined : result.error.formErrors.fieldErrors;
+      },
+    },
+  });
+
+  return (
+    <>
+      <Head>
+        <title>Create Pool - Virtual Curve</title>
+      </Head>
+      <div className="min-h-screen bg-gradient-to-b text-white">
+        <Header />
+        <main className="container mx-auto px-4 py-10">
+          {poolCreated && !isLoading ? <PoolCreationSuccess /> : (
+            <form onSubmit={(e) => { e.preventDefault(); form.handleSubmit(); }} className="space-y-8">
+              {/* Form fields here */}
+              <div className="flex justify-end">
+                <SubmitButton isSubmitting={isLoading} />
+              </div>
+            </form>
+          )}
+        </main>
+      </div>
+    </>
+  );
+}
+
+const SubmitButton = ({ isSubmitting }: { isSubmitting: boolean }) => {
+  const { publicKey } = useWallet();
+  const { setShowModal } = useUnifiedWalletContext();
+  if (!publicKey) {
+    return <Button type="button" onClick={() => setShowModal(true)}>Connect Wallet</Button>;
+  }
+  return (
+    <Button type="submit" disabled={isSubmitting}>
+      {isSubmitting ? 'Creating Pool...' : 'Launch Pool'}
+    </Button>
+  );
+};
+
+const PoolCreationSuccess = () => (
+  <div className="text-center p-8 bg-white/5 rounded-xl">
+    <h2 className="text-3xl font-bold mb-4">Pool Created!</h2>
+    <p className="text-gray-300 mb-8">Your token is now live.</p>
+    <Link href="/explore-pools" className="bg-white/10 px-6 py-3 rounded-xl">Explore Pools</Link>
+  </div>
+);
