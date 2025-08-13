@@ -1,61 +1,93 @@
-import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+// studio/src/scripts/dbc/claim_trading_fee_sdk.ts
+import { Connection, PublicKey, Keypair } from '@solana/web3.js';
+import { Wallet as AnchorWallet } from '@coral-xyz/anchor';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import { parseConfigFromCli, safeParseKeypairFromFile } from '../../helpers';
 import { DEFAULT_COMMITMENT_LEVEL } from '../../utils/constants';
-import type { DbcConfig } from '../../utils/types';
+import { DbcConfig } from '../../utils/types';
+import { claimTradingFee as claimTradingFeeFromLib } from '../../lib/dbc';
+
+type AnyClient = Record<string, any>;
+
+function resolveClaimFn(client: AnyClient) {
+  // Try a few likely method names across SDK versions
+  const candidates = [
+    'partner.claimTradingFee',
+    'partner.claimPartnerTradingFee',
+    'partner.claimFee',
+    'claimPartnerTradingFee',
+    'claimTradingFee',
+  ];
+
+  for (const path of candidates) {
+    const fn = path.split('.').reduce<unknown>(
+      (obj, key) => (obj && (obj as AnyClient)[key] !== undefined ? (obj as AnyClient)[key] : undefined),
+      client,
+    );
+    if (typeof fn === 'function') {
+      // Normalize to a (baseMint, payer) call signature
+      return async (baseMint: PublicKey, payer: Keypair) => {
+        // Most SDK methods accept an object. We call with both shapes safely.
+        const maybeSig =
+          await (fn as Function).call(client.partner ?? client, { baseMint, payer }) ??
+          (fn as Function).call(client.partner ?? client, baseMint, payer);
+        return maybeSig as unknown;
+      };
+    }
+  }
+  return undefined;
+}
 
 async function main() {
-  const cfg = (await parseConfigFromCli()) as DbcConfig;
-  const keypair = await safeParseKeypairFromFile(cfg.keypairFilePath);
-  const rpc = process.env.RPC_URL?.trim() || cfg.rpcUrl;
-  const conn = new Connection(rpc, DEFAULT_COMMITMENT_LEVEL);
+  const config = (await parseConfigFromCli()) as DbcConfig;
 
-  // Initialize official SDK client
-  const client: any = new (DynamicBondingCurveClient as any)(conn, DEFAULT_COMMITMENT_LEVEL);
+  const keypair = await safeParseKeypairFromFile(config.keypairFilePath);
+  const me = keypair.publicKey;
 
-  const baseMints = (process.env.BASE_MINTS || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const rpc = process.env.RPC_URL?.trim() || config.rpcUrl;
+  const connection = new Connection(rpc, DEFAULT_COMMITMENT_LEVEL);
+  const wallet = new AnchorWallet(keypair);
 
-  if (!baseMints.length) {
-    throw new Error(
-      'BASE_MINTS is empty. Set a comma-separated list of base mint addresses in Actions secrets.'
-    );
+  const list =
+    (process.env.BASE_MINTS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+  if (!list.length) {
+    throw new Error('BASE_MINTS is empty. Set a comma-separated list of base mint addresses in Actions secrets.');
   }
 
-  console.log(`> Claiming partner trading fees with wallet ${keypair.publicKey.toBase58()}`);
+  console.log(`> Claiming partner trading fees with wallet ${me.toBase58()}`);
   console.log(`> RPC: ${rpc}`);
-  console.log(`> Pools: ${baseMints.length}`);
+  console.log(`> Pools: ${list.length}`);
+
+  const client = new DynamicBondingCurveClient(connection, DEFAULT_COMMITMENT_LEVEL) as AnyClient;
+  const claimWithSdk = resolveClaimFn(client);
 
   let ok = 0;
   let fail = 0;
 
-  for (const mint of baseMints) {
+  for (const mint of list) {
     const baseMint = new PublicKey(mint);
-    console.log(`\n— Claiming for baseMint ${baseMint.toBase58()} ...`);
+    console.log(`— Claiming for baseMint ${baseMint.toBase58()} ...`);
     try {
-      // SDK partner claim (SDK exposes partner & creator utils; TS signature varies by version)
-      const res = await client.partner.claimTradingFee(
-        {
-          baseMint,
-          feeClaimer: keypair.publicKey,
-          payer: keypair.publicKey,
-          computeUnitPriceMicroLamports: cfg.computeUnitPriceMicroLamports ?? 100_000,
-        },
-        keypair as unknown as Keypair // signer
-      );
-
-      // Some SDK versions return a tx sig, others a { txSig } object — print whatever we got
-      console.log('✓ Claimed. Result:', res);
+      if (claimWithSdk) {
+        await claimWithSdk(baseMint, keypair);
+      } else {
+        // Fallback to your existing library helper (works per-baseMint)
+        const runCfg: DbcConfig = { ...config, baseMint: baseMint.toBase58() };
+        await claimTradingFeeFromLib(runCfg, connection, wallet);
+      }
+      console.log('✔ Claim submitted');
       ok++;
     } catch (e: any) {
-      console.error('✖ Claim failed:', e?.message || String(e));
+      console.error(`✖ Claim failed: ${e?.message || String(e)}`);
       fail++;
     }
   }
 
-  console.log(`\nSummary — Success: ${ok}  Failed: ${fail}`);
+  console.log(`Summary — Success: ${ok}  Failed: ${fail}`);
   if (fail) process.exit(1);
 }
 
