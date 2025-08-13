@@ -55,7 +55,7 @@ jobs:
         run: npx -y -p tsx tsx studio/src/scripts/dbc/claim_trading_fee_auto.ts --config ./studio/config/dbc_config.jsonc
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
-          # DBC_PROGRAM_ID: <optional program id if SDK doesn't export it>
+          # DBC_PROGRAM_ID: ${{ secrets.DBC_PROGRAM_ID }} # optional if SDK doesn't export it
 
       - name: Clean up keypair.json
         run: rm -f keypair.json
