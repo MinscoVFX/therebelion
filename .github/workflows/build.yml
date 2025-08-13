@@ -19,11 +19,11 @@ jobs:
         with:
           node-version: 20
 
-      # Install PNPM 10.x (required by your engines.pnpm)
-      - name: Setup pnpm
+      # Install pnpm matching your package.json "packageManager": "pnpm@10.14.0"
+      # NOTE: Do NOT set a "version" here to avoid conflicts.
+      - name: Setup pnpm (use packageManager version)
         uses: pnpm/action-setup@v4
         with:
-          version: 10
           run_install: false
 
       - name: Show pnpm version
@@ -32,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
 
-      # Ensure AWS SDK v3 S3 client is present for the build (no package.json changes)
+      # Ensure AWS SDK v3 S3 client is present at build time (without changing your package.json)
       - name: Ensure @aws-sdk/client-s3 is available
         run: pnpm add -w --no-save @aws-sdk/client-s3
 
