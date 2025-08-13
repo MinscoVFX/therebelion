@@ -6,70 +6,11 @@ import Header from "../components/Header";
 
 import { useForm } from "@tanstack/react-form";
 import { Button } from "@/components/ui/button";
-import {
-  Keypair,
-  Transaction,
-  PublicKey,
-  Connection,
-} from "@solana/web3.js";
+import { Keypair, Transaction, Connection } from "@solana/web3.js";
 import { useUnifiedWalletContext, useWallet } from "@jup-ag/wallet-adapter";
 import { toast } from "sonner";
 
-import { createUpdateMetadataAccountV2Instruction } from "@metaplex-foundation/mpl-token-metadata";
-
-const METADATA_PROGRAM_ID = new PublicKey(
-  "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
-);
-
-function getMetadataPDA(mint: PublicKey) {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from("metadata"), METADATA_PROGRAM_ID.toBuffer(), mint.toBuffer()],
-    METADATA_PROGRAM_ID
-  )[0];
-}
-
-async function updateOnChainMetadata({
-  connection,
-  wallet,
-  mintAddress,
-  name,
-  symbol,
-  uri,
-}: {
-  connection: Connection;
-  wallet: any;
-  mintAddress: string;
-  name: string;
-  symbol: string;
-  uri: string;
-}) {
-  const mint = new PublicKey(mintAddress);
-  const metadataPDA = getMetadataPDA(mint);
-
-  const ix = createUpdateMetadataAccountV2Instruction(
-    { metadata: metadataPDA, updateAuthority: wallet.publicKey },
-    {
-      updateMetadataAccountArgsV2: {
-        data: {
-          name,
-          symbol,
-          uri,
-          sellerFeeBasisPoints: 0,
-          creators: null,
-          collection: null,
-          uses: null,
-        },
-        updateAuthority: wallet.publicKey,
-        primarySaleHappened: null,
-        isMutable: true,
-      },
-    }
-  );
-
-  const tx = new Transaction().add(ix);
-  const sig = await wallet.sendTransaction(tx, connection);
-  await connection.confirmTransaction(sig, "confirmed");
-}
+import { updateOnChainMetadata } from "@/utils/updateOnChainMetadata"; // ✅ use external util
 
 const poolSchema = z.object({
   tokenName: z.string().min(3, "Token name must be at least 3 characters"),
@@ -140,8 +81,8 @@ export default function CreatePool() {
     onSubmit: async ({ value }) => {
       try {
         setIsLoading(true);
-        const { tokenLogo } = value;
-        if (!tokenLogo) {
+
+        if (!value.tokenLogo) {
           toast.error("Token logo is required");
           return;
         }
@@ -154,7 +95,7 @@ export default function CreatePool() {
         const reader = new FileReader();
         const base64File = await new Promise<string>((resolve) => {
           reader.onload = (e) => resolve(e.target?.result as string);
-          reader.readAsDataURL(tokenLogo);
+          reader.readAsDataURL(value.tokenLogo);
         });
 
         // Handle vanity mint
@@ -182,7 +123,7 @@ export default function CreatePool() {
           keyPair = Keypair.generate();
         }
 
-        // Step 1: Upload metadata to R2 (logs CA too)
+        // Step 1: Upload metadata to R2
         const metadataRes = await fetch("/api/metadata", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
