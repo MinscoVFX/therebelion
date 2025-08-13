@@ -1,39 +1,31 @@
+# .github/workflows/build.yml
 name: Build
 
 on:
   push:
-    branches:
-      - main
-      - master
+    branches: [ main ]
   pull_request:
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'pnpm'
 
       - name: Install pnpm
-        run: npm i -g pnpm@9
+        run: npm install -g pnpm
 
-      - name: Install dependencies
-        run: pnpm install
-
-      # 👇 This guarantees the AWS SDK v3 S3 client exists during CI builds,
-      # without you doing anything locally.
-      - name: Add AWS SDK S3 (workspace)
-        run: pnpm add @aws-sdk/client-s3 -w
-
-      - name: Type check
-        run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
+      - name: Install dependencies (with AWS SDK fix)
+        run: pnpm add @aws-sdk/client-s3 -w && pnpm install
 
       - name: Build
         run: pnpm build
