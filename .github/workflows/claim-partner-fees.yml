@@ -15,14 +15,14 @@ jobs:
         with:
           node-version: 20
 
-      - name: Enable pnpm via corepack
+      - name: Enable pnpm via Corepack
         run: |
           corepack enable
           corepack prepare pnpm@10.14.0 --activate
-          pnpm -v
+          corepack pnpm -v
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: corepack pnpm install --no-frozen-lockfile
 
       # ⬇ Decode Phantom base58 (32/64) to full 64-byte keypair.json
       - name: Decode PK_B58 to full keypair.json
