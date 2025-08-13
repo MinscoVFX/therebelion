@@ -20,23 +20,20 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Enable pnpm via Corepack
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.14.0 --activate
-          corepack pnpm -v
+      - name: Install pnpm (restore)
+        run: npm i -g pnpm@10.14.0 && pnpm -v
 
       - name: Install dependencies
-        run: corepack pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Check formatting
-        run: corepack pnpm format:check
+        run: pnpm format:check
 
       - name: Lint code
-        run: corepack pnpm lint
+        run: pnpm lint
 
       - name: Check dependency versions
-        run: corepack pnpm syncpack:check
+        run: pnpm syncpack:check
 
   build:
     name: Build
@@ -51,17 +48,14 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Enable pnpm via Corepack
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.14.0 --activate
-          corepack pnpm -v
+      - name: Install pnpm (restore)
+        run: npm i -g pnpm@10.14.0 && pnpm -v
 
       - name: Install dependencies
-        run: corepack pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build all packages
-        run: corepack pnpm build
+        run: pnpm build
 
   type-check:
     name: Type Check
@@ -76,14 +70,11 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Enable pnpm via Corepack
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.14.0 --activate
-          corepack pnpm -v
+      - name: Install pnpm (restore)
+        run: npm i -g pnpm@10.14.0 && pnpm -v
 
       - name: Install dependencies
-        run: corepack pnpm install --no-frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Type check
-        run: corepack pnpm exec tsc --noEmit --project tsconfig.typecheck.json
+        run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
