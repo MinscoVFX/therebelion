@@ -1,5 +1,12 @@
-import { PublicKey, Connection, TransactionInstruction, Transaction } from "@solana/web3.js";
-import { createUpdateMetadataAccountV2Instruction, DataV2 } from "@metaplex-foundation/mpl-token-metadata";
+import {
+  PublicKey,
+  Connection,
+  Transaction,
+} from "@solana/web3.js";
+import {
+  createUpdateMetadataAccountV2Instruction,
+  DataV2,
+} from "@metaplex-foundation/mpl-token-metadata";
 
 export async function updateOnChainMetadata({
   connection,
@@ -21,7 +28,11 @@ export async function updateOnChainMetadata({
   );
 
   const metadataPDA = PublicKey.findProgramAddressSync(
-    [Buffer.from("metadata"), TOKEN_METADATA_PROGRAM_ID.toBuffer(), new PublicKey(mintAddress).toBuffer()],
+    [
+      Buffer.from("metadata"),
+      TOKEN_METADATA_PROGRAM_ID.toBuffer(),
+      new PublicKey(mintAddress).toBuffer(),
+    ],
     TOKEN_METADATA_PROGRAM_ID
   )[0];
 
@@ -45,7 +56,7 @@ export async function updateOnChainMetadata({
         data,
         updateAuthority: wallet.publicKey,
         primarySaleHappened: null,
-        isMutable: null,
+        isMutable: true,
       },
     }
   );
