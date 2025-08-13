@@ -48,8 +48,15 @@ async function loadProgram(
   });
 
   let idl: Idl | null = (sdkIdl as Idl) || null;
+
   if (!idl) {
-    idl = (await Program.fetchIdl(programId, provider)) as Idl | null;
+    // Anchor versions differ on fetchIdl signature; call via `any` and try both orders.
+    const P: any = Program as any;
+    try {
+      idl = (await P.fetchIdl(provider, programId)) as Idl | null;
+    } catch {
+      idl = (await P.fetchIdl(programId, provider)) as Idl | null;
+    }
     if (!idl) {
       throw new Error(
         'Unable to fetch DBC IDL from chain. Provide IDL via SDK or set DBC_PROGRAM_ID to a program that publishes its IDL.'
@@ -57,17 +64,20 @@ async function loadProgram(
     }
   }
 
-  return new Program(idl as Idl, programId, provider);
+  const ProgramCtor: any = Program as any; // constructor signatures also vary across versions
+  return new ProgramCtor(idl as Idl, programId, provider);
 }
 
 function looksLikePoolAccount(a: any) {
-  // Anchor decodes to fields on `account`
   if (!a) return false;
-  const hasBaseMint = a.baseMint instanceof PublicKey || typeof a.baseMint?.toBase58 === 'function';
-  const hasCreator = a.creator instanceof PublicKey || typeof a.creator?.toBase58 === 'function';
-  const hasPartner = a.partner instanceof PublicKey || typeof a.partner?.toBase58 === 'function';
-  // feeClaimer may be optional on some pools; treat as optional but preferred
-  const hasFeeClaimer = a.feeClaimer instanceof PublicKey || typeof a.feeClaimer?.toBase58 === 'function';
+  const hasBaseMint =
+    a.baseMint instanceof PublicKey || typeof a.baseMint?.toBase58 === 'function';
+  const hasCreator =
+    a.creator instanceof PublicKey || typeof a.creator?.toBase58 === 'function';
+  const hasPartner =
+    a.partner instanceof PublicKey || typeof a.partner?.toBase58 === 'function';
+  const hasFeeClaimer =
+    a.feeClaimer instanceof PublicKey || typeof a.feeClaimer?.toBase58 === 'function';
   return hasBaseMint && hasCreator && hasPartner && (hasFeeClaimer || true);
 }
 
@@ -80,7 +90,7 @@ async function findPoolAccountNamespace(program: Program): Promise<string> {
       if (!Array.isArray(sample) || sample.length === 0) continue;
       if (looksLikePoolAccount(sample[0].account)) return ns;
     } catch {
-      // ignore and continue
+      // keep scanning
     }
   }
   throw new Error(
@@ -106,9 +116,8 @@ async function main() {
   const poolNs = await findPoolAccountNamespace(program);
 
   // @ts-ignore dynamic account ns
-  const allPools: Array<{ publicKey: PublicKey; account: any }> = await (program as any).account[
-    poolNs
-  ].all();
+  const allPools: Array<{ publicKey: PublicKey; account: any }> =
+    await (program as any).account[poolNs].all();
 
   const me = keypair.publicKey;
   const claimables = allPools.filter(({ account }) => {
@@ -116,9 +125,7 @@ async function main() {
     const partner = account.partner as PublicKey | undefined;
     const creator = account.creator as PublicKey | undefined;
     return (
-      feeClaimer?.equals?.(me) ||
-      partner?.equals?.(me) ||
-      creator?.equals?.(me)
+      feeClaimer?.equals?.(me) || partner?.equals?.(me) || creator?.equals?.(me)
     );
   });
 
