@@ -1,3 +1,4 @@
+// pages/api/metadata.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 import AWS from "aws-sdk";
 import crypto from "crypto";
@@ -14,10 +15,13 @@ const s3 = new AWS.S3({
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  try {
-    const { name, symbol, description, imageUrl, twitter, website, attributes = [] } = req.body || {};
-    if (!imageUrl) return res.status(400).json({ error: "imageUrl required" });
 
+  try {
+    const { name, symbol, description, imageUrl, twitter, website, attributes = [], ca } = req.body || {};
+    if (!imageUrl) return res.status(400).json({ error: "imageUrl required" });
+    if (!ca) return res.status(400).json({ error: "mint/CA required" });
+
+    // Upload JSON to R2
     const id = crypto.randomBytes(8).toString("hex");
     const key = `metadata/${id}.json`;
 
@@ -26,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       symbol,
       description,
       image: imageUrl,
-      external_url: website || undefined,     // shows in Solscan/wallets
+      external_url: website || undefined,
       extensions: {
         twitter: twitter || undefined,
         website: website || undefined,
@@ -45,8 +49,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ContentType: "application/json",
     }).promise();
 
-    const uri = `${R2_PUBLIC_BASE}${key}`; // R2_PUBLIC_BASE must end with /
-    return res.status(200).json({ uri, key });
+    const uri = `${R2_PUBLIC_BASE}${key}`;
+
+    // Append CA to log file
+    const logKey = "logs/contract_addresses.txt";
+    let existingLog = "";
+    try {
+      const logRes = await s3.getObject({ Bucket: R2_BUCKET as string, Key: logKey }).promise();
+      existingLog = logRes.Body.toString("utf-8").trim();
+    } catch {
+      existingLog = "";
+    }
+    const newLog = existingLog ? `${ca}, ${existingLog}` : ca;
+    await s3.putObject({
+      Bucket: R2_BUCKET as string,
+      Key: logKey,
+      Body: newLog,
+      ContentType: "text/plain",
+    }).promise();
+
+    return res.status(200).json({ uri });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || "metadata upload failed" });
   }
