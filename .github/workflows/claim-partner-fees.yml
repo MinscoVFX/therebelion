@@ -1,70 +1,70 @@
-name: Claim Partner Fees
+import { Connection } from '@solana/web3.js';
+import { Wallet } from '@coral-xyz/anchor';
+import { safeParseKeypairFromFile, parseConfigFromCli } from '../../helpers';
+import { DbcConfig } from '../../utils/types';
+import { DEFAULT_COMMITMENT_LEVEL } from '../../utils/constants';
+import { claimTradingFee } from '../../lib/dbc';
 
-on:
-  workflow_dispatch:
+function parseBaseMintsFromEnv(): string[] {
+  const raw = (process.env.BASE_MINTS || '').trim();
+  if (!raw) throw new Error('Missing BASE_MINTS. Provide a comma-separated list of base mint addresses.');
+  return Array.from(
+    new Set(
+      raw.split(',').map(s => s.trim()).filter(Boolean)
+    )
+  );
+}
 
-jobs:
-  claim-partner-fees:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+async function main() {
+  const config = (await parseConfigFromCli()) as DbcConfig;
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+  console.log(`> Using keypair file path ${config.keypairFilePath}`);
+  const keypair = await safeParseKeypairFromFile(config.keypairFilePath);
 
-      - name: Install pnpm
-        run: npm install -g pnpm@10
+  console.log('\n> Initializing with general configuration...');
+  console.log(`- Using RPC URL ${config.rpcUrl}`);
+  console.log(`- Dry run = ${config.dryRun}`);
+  console.log(`- Using wallet ${keypair.publicKey} to claim trading fees`);
 
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+  const connection = new Connection(config.rpcUrl, DEFAULT_COMMITMENT_LEVEL);
+  const wallet = new Wallet(keypair);
 
-      # ⬇ Replace the old decode step with this one
-      - name: Decode PK_B58 to full keypair.json
-        run: |
-          npx -y -p @solana/web3.js@1.98.2 -p bs58@4 node -e "
-            const fs = require('fs');
-            const b = require('bs58');
-            const { Keypair } = require('@solana/web3.js');
+  const baseMints = parseBaseMintsFromEnv();
+  console.log(`\n> Found ${baseMints.length} base mint(s) to process`);
 
-            const s = (process.env.PK_B58 || process.env.PRIVATE_KEY_B58 || '').trim();
-            if (!s) throw new Error('Missing PK_B58 or PRIVATE_KEY_B58');
+  const results: { mint: string; ok: boolean; error?: string }[] = [];
 
-            const decode = (b && b.decode) ? b.decode : (b.default && b.default.decode);
-            if (typeof decode !== 'function') throw new Error('bs58.decode not available');
+  for (const mint of baseMints) {
+    const runCfg: DbcConfig = { ...config, baseMint: mint };
+    console.log(`\n=== Claiming trading fee for baseMint ${mint} ===`);
+    try {
+      await claimTradingFee(runCfg, connection, wallet);
+      results.push({ mint, ok: true });
+      console.log(`✔ Success for ${mint}`);
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      results.push({ mint, ok: false, error: msg });
+      console.error(`✖ Failed for ${mint}: ${msg}`);
+    }
+  }
 
-            const secret = decode(s); // 32 or 64 bytes
-            if (secret.length !== 32 && secret.length !== 64) {
-              throw new Error('Decoded key length is ' + secret.length + ' bytes; expected 32 or 64');
-            }
+  const okCount = results.filter(r => r.ok).length;
+  const failCount = results.length - okCount;
 
-            const kp = Keypair.fromSecretKey(secret);
-            fs.writeFileSync('keypair.json', JSON.stringify(Array.from(kp.secretKey)));
-            console.log('Public key:', kp.publicKey.toBase58());
-          "
-        env:
-          PK_B58: ${{ secrets.PK_B58 }}
-          PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
+  console.log('\n> Summary:');
+  console.log(`- Success: ${okCount}`);
+  console.log(`- Failed:  ${failCount}`);
+  if (failCount) {
+    for (const r of results.filter(r => !r.ok)) {
+      console.log(`  * ${r.mint}: ${r.error}`);
+    }
+  }
 
-      - name: Assert BASE_MINT is set
-        run: |
-          if [ -z "${BASE_MINT}" ]; then
-            echo "::error::BASE_MINT secret is missing. Set Settings > Secrets > Actions > BASE_MINT to your DBC token mint address.";
-            exit 1
-          fi
-          echo "BASE_MINT=${BASE_MINT}"
-        env:
-          BASE_MINT: ${{ secrets.BASE_MINT }}
+  // Exit nonzero if any failed (so CI flags it)
+  if (failCount) process.exit(1);
+}
 
-      - name: Run claim trading fee script
-        run: |
-          echo "Using BASE_MINT=${BASE_MINT}"
-          npx -y -p tsx tsx studio/src/scripts/dbc/claim_trading_fee.ts --config ./studio/config/dbc_config.jsonc --base-mint "${BASE_MINT}"
-        env:
-          RPC_URL: ${{ secrets.RPC_URL }}
-          BASE_MINT: ${{ secrets.BASE_MINT }}
-
-      - name: Clean up keypair.json
-        run: rm -f keypair.json
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
