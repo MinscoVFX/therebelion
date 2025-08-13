@@ -33,9 +33,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      # NEW: format only the two scripts causing failures
-      - name: Auto-format the new DBC scripts
-        run: pnpm dlx prettier --write studio/src/scripts/dbc/claim_trading_fee_auto.ts studio/src/scripts/dbc/claim_trading_fee.ts
+      # Format entire workspace so format:check passes
+      - name: Auto-format workspace (Prettier)
+        run: pnpm dlx prettier --write .
 
       - name: Check formatting
         run: pnpm format:check
