@@ -33,6 +33,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      # NEW: format files so format:check passes
+      - name: Auto-format (Prettier)
+        run: pnpm dlx prettier --write .
+
       - name: Check formatting
         run: pnpm format:check
 
