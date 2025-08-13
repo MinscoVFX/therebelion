@@ -48,23 +48,11 @@ jobs:
           PK_B58: ${{ secrets.PK_B58 }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
 
-      - name: Assert BASE_MINTS is set
-        run: |
-          if [ -z "${BASE_MINTS}" ]; then
-            echo "::error::BASE_MINTS secret is missing. Set Settings > Secrets > Actions > BASE_MINTS to a comma-separated list of your DBC base mint addresses.";
-            exit 1
-          fi
-          echo "BASE_MINTS=${BASE_MINTS}"
-        env:
-          BASE_MINTS: ${{ secrets.BASE_MINTS }}
-
-      - name: Run claim trading fee script
-        run: |
-          echo "Using BASE_MINTS=${BASE_MINTS}"
-          npx -y -p tsx tsx studio/src/scripts/dbc/claim_trading_fee_all.ts --config ./studio/config/dbc_config.jsonc
+      - name: Run claim trading fee script (auto-discover all pools)
+        run: npx -y -p tsx tsx studio/src/scripts/dbc/claim_trading_fee_auto.ts --config ./studio/config/dbc_config.jsonc
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
-          BASE_MINTS: ${{ secrets.BASE_MINTS }}
+          # DBC_PROGRAM_ID: <optional program id if SDK doesn't export it>
 
       - name: Clean up keypair.json
         run: rm -f keypair.json
