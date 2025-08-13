@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: 20
 
-      # Use the pnpm version pinned in package.json "packageManager"
+      # Use pnpm version from package.json: "packageManager": "pnpm@..."
       - name: Setup pnpm (use packageManager version)
         uses: pnpm/action-setup@v4
         with:
@@ -28,12 +28,17 @@ jobs:
       - name: Show pnpm version
         run: pnpm -v
 
-      - name: Install workspace deps
+      # Install all workspace dependencies
+      - name: Install dependencies (workspace)
         run: pnpm install --frozen-lockfile=false
 
-      # 👇 Install the AWS SDK v3 *in the fun-launch package* so Next/TS can resolve it there
-      - name: Ensure @aws-sdk/client-s3 is installed in fun-launch package
-        run: pnpm -C scaffolds/fun-launch add @aws-sdk/client-s3
+      # 👇 Make sure the AWS SDK is installed specifically in the fun-launch package
+      - name: Add @aws-sdk/client-s3 to fun-launch package
+        run: pnpm -r --filter "@meteora-invent/scaffold/fun-launch" add @aws-sdk/client-s3
+
+      # Optional: show that the dep is present in that package now
+      - name: List deps in fun-launch
+        run: pnpm -r --filter "@meteora-invent/scaffold/fun-launch" list @aws-sdk/client-s3 --depth 0
 
       - name: Type check
         run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
