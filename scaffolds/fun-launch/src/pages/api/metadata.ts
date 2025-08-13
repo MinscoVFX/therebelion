@@ -1,117 +1,86 @@
-// pages/api/metadata.ts
-import type { NextApiRequest, NextApiResponse } from "next";
-import AWS from "aws-sdk";
-import crypto from "crypto";
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import crypto from 'crypto';
 
-const {
-  R2_ACCOUNT_ID,
-  R2_ACCESS_KEY_ID,
-  R2_SECRET_ACCESS_KEY,
-  R2_BUCKET,
-  R2_PUBLIC_BASE,
-} = process.env;
-
-const s3 = new AWS.S3({
-  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  accessKeyId: R2_ACCESS_KEY_ID,
-  secretAccessKey: R2_SECRET_ACCESS_KEY,
-  signatureVersion: "v4",
-  s3ForcePathStyle: true,
+const r2 = new S3Client({
+  region: 'auto',
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+  },
 });
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
-  if (req.method !== "POST")
-    return res.status(405).json({ error: "Method not allowed" });
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
   try {
-    const {
-      name,
-      symbol,
-      description,
-      imageUrl,
-      twitter,
-      website,
-      attributes = [],
-      ca,
-    } = req.body || {};
+    const { name, symbol, description, imageUrl, website, twitter, attributes, ca } = req.body;
+    if (!name || !symbol || !imageUrl || !ca) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
 
-    if (!imageUrl) return res.status(400).json({ error: "imageUrl required" });
-    if (!ca) return res.status(400).json({ error: "mint/CA required" });
-
-    // Unique ID for file
-    const id = crypto.randomBytes(8).toString("hex");
-    const key = `metadata/${id}.json`;
-
-    // Metadata object — following Metaplex JSON standard
+    // Generate a unique file name for metadata JSON
+    const fileName = `${crypto.randomBytes(8).toString('hex')}.json`;
     const metadata = {
       name,
       symbol,
-      description,
+      description: description || '',
       image: imageUrl,
-      external_url: website || undefined, // Solscan/wallet link
-      extensions: {
-        twitter: twitter || undefined,
-        website: website || undefined,
-      },
-      properties: {
-        category: "image",
-        files: [
-          {
-            uri: imageUrl,
-            type: imageUrl.endsWith(".png")
-              ? "image/png"
-              : imageUrl.endsWith(".svg")
-              ? "image/svg+xml"
-              : "image/jpeg",
-          },
-        ],
-      },
-      attributes,
+      external_url: website || '',
+      twitter: twitter || '',
+      attributes: attributes || [],
     };
 
-    // Upload metadata JSON to R2
-    await s3
-      .putObject({
-        Bucket: R2_BUCKET as string,
-        Key: key,
-        Body: JSON.stringify(metadata),
-        ContentType: "application/json",
-      })
-      .promise();
+    // Upload metadata to R2
+    await r2.send(new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME!,
+      Key: `metadata/${fileName}`,
+      Body: JSON.stringify(metadata),
+      ContentType: 'application/json',
+    }));
 
-    const uri = `${R2_PUBLIC_BASE}${key}`;
+    const metadataUri = `${process.env.R2_PUBLIC_URL}/metadata/${fileName}`;
 
-    // Append CA to log file (newest first)
-    const logKey = "logs/contract_addresses.txt";
-    let existingLog = "";
+    // Append CA to log file
+    const logKey = `ca_logs/created_tokens.log`;
+    let existingLog = '';
     try {
-      const logRes = await s3
-        .getObject({ Bucket: R2_BUCKET as string, Key: logKey })
-        .promise();
-      existingLog = logRes.Body.toString("utf-8").trim();
-    } catch {
-      existingLog = "";
-    }
-    const newLog = existingLog
-      ? `${ca}, ${existingLog}`
-      : ca;
-    await s3
-      .putObject({
-        Bucket: R2_BUCKET as string,
+      const logRes = await r2.send(new GetObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME!,
         Key: logKey,
-        Body: newLog,
-        ContentType: "text/plain",
-      })
-      .promise();
+      }));
 
-    return res.status(200).json({ uri });
-  } catch (e: any) {
-    console.error("Metadata API Error:", e);
-    return res
-      .status(500)
-      .json({ error: e?.message || "metadata upload failed" });
+      // ✅ Fix: safely handle undefined Body
+      if (logRes.Body) {
+        const bodyString = await streamToString(logRes.Body as any);
+        existingLog = bodyString.trim();
+      }
+    } catch {
+      // No log file yet — ignore
+    }
+
+    const newLog = `${existingLog}\n${ca}`.trim();
+    await r2.send(new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME!,
+      Key: logKey,
+      Body: newLog,
+      ContentType: 'text/plain',
+    }));
+
+    return res.status(200).json({ uri: metadataUri });
+  } catch (error) {
+    console.error('Error uploading metadata:', error);
+    return res.status(500).json({ error: 'Failed to upload metadata' });
   }
+}
+
+async function streamToString(stream: any): Promise<string> {
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of stream) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks).toString('utf-8');
 }
