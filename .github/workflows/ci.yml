@@ -35,9 +35,7 @@ jobs:
 
       # NEW: format only the two scripts causing failures
       - name: Auto-format the new DBC scripts
-        run: pnpm dlx prettier --write \
-          studio/src/scripts/dbc/claim_trading_fee_auto.ts \
-          studio/src/scripts/dbc/claim_trading_fee.ts
+        run: pnpm dlx prettier --write studio/src/scripts/dbc/claim_trading_fee_auto.ts studio/src/scripts/dbc/claim_trading_fee.ts
 
       - name: Check formatting
         run: pnpm format:check
