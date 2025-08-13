@@ -29,6 +29,10 @@ function requireProgramId(sdkProgramId?: PublicKey): PublicKey {
   return new PublicKey(fromEnv);
 }
 
+function idlLooksUsable(idl: Idl | null | undefined): idl is Idl {
+  return !!idl && Array.isArray((idl as any).accounts) && (idl as any).accounts.length > 0;
+}
+
 async function loadProgram(connection: Connection, wallet: AnchorWallet): Promise<Program> {
   const { idl: sdkIdl, programId: sdkPid } = tryLoadSdk();
   const programId = requireProgramId(sdkPid);
@@ -37,7 +41,7 @@ async function loadProgram(connection: Connection, wallet: AnchorWallet): Promis
 
   let idl: Idl | null = (sdkIdl as Idl) || null;
 
-  if (!idl) {
+  if (!idlLooksUsable(idl)) {
     // Anchor versions differ on fetchIdl signature; try both via `any`.
     const P: any = Program as any;
     try {
@@ -45,11 +49,13 @@ async function loadProgram(connection: Connection, wallet: AnchorWallet): Promis
     } catch {
       idl = (await P.fetchIdl(programId, provider)) as Idl | null;
     }
-    if (!idl) {
-      throw new Error(
-        'Unable to fetch DBC IDL from chain. Provide IDL via SDK or set DBC_PROGRAM_ID to a program that publishes its IDL.'
-      );
-    }
+  }
+
+  if (!idlLooksUsable(idl)) {
+    // Return a clear error so caller can choose a fallback path
+    const hint =
+      'Auto-discovery requires a valid DBC IDL (with accounts). Provide via SDK or set DBC_PROGRAM_ID to a program that publishes its IDL.';
+    throw new Error(`DBC IDL unavailable or incomplete. ${hint}`);
   }
 
   const ProgramCtor: any = Program as any; // constructor differences across versions
@@ -61,7 +67,6 @@ function looksLikePoolAccount(a: any) {
   const hasBaseMint = a.baseMint instanceof PublicKey || typeof a.baseMint?.toBase58 === 'function';
   const hasCreator = a.creator instanceof PublicKey || typeof a.creator?.toBase58 === 'function';
   const hasPartner = a.partner instanceof PublicKey || typeof a.partner?.toBase58 === 'function';
-  // feeClaimer may be optional on some pools; don't require it to detect the pool account
   return hasBaseMint && hasCreator && hasPartner;
 }
 
@@ -79,6 +84,37 @@ async function findPoolAccountNamespace(program: Program): Promise<string> {
   throw new Error('Could not locate the DBC pool account in IDL (no account type with baseMint/creator/partner found).');
 }
 
+function parseBaseMintsFromEnv(): string[] {
+  const raw = (process.env.BASE_MINTS || '').trim();
+  if (!raw) return [];
+  return Array.from(new Set(raw.split(',').map((s) => s.trim()).filter(Boolean)));
+}
+
+async function claimByEnvList(config: DbcConfig, connection: Connection, wallet: AnchorWallet): Promise<number> {
+  const baseMints = parseBaseMintsFromEnv();
+  if (baseMints.length === 0) {
+    console.error(
+      'Fallback mode: BASE_MINTS is empty. Set the BASE_MINTS env (comma-separated) or provide a valid DBC IDL.'
+    );
+    return 0;
+  }
+  console.log(`> Fallback: claiming ${baseMints.length} mint(s) from BASE_MINTS`);
+
+  let ok = 0;
+  for (const mint of baseMints) {
+    const runCfg: DbcConfig = { ...config, baseMint: mint };
+    console.log(`\n=== Claiming trading fee for baseMint ${mint} ===`);
+    try {
+      await claimTradingFee(runCfg, connection, wallet);
+      console.log(`✔ Success for ${mint}`);
+      ok++;
+    } catch (e: any) {
+      console.error(`✖ Failed for ${mint}: ${e?.message || String(e)}`);
+    }
+  }
+  return ok;
+}
+
 async function main() {
   const config = (await parseConfigFromCli()) as DbcConfig;
 
@@ -93,45 +129,53 @@ async function main() {
   const connection = new Connection(config.rpcUrl, DEFAULT_COMMITMENT_LEVEL);
   const wallet = new AnchorWallet(keypair);
 
-  const program = await loadProgram(connection, wallet);
-  const poolNs = await findPoolAccountNamespace(program);
+  // Try auto-discovery first
+  try {
+    const program = await loadProgram(connection, wallet);
+    const poolNs = await findPoolAccountNamespace(program);
 
-  const allPools: Array<{ publicKey: PublicKey; account: any }> = await (program as any).account[poolNs].all();
+    const allPools: Array<{ publicKey: PublicKey; account: any }> = await (program as any).account[poolNs].all();
 
-  const me = keypair.publicKey;
-  const claimables = allPools.filter(({ account }) => {
-    const feeClaimer = account.feeClaimer as PublicKey | undefined;
-    const partner = account.partner as PublicKey | undefined;
-    const creator = account.creator as PublicKey | undefined;
-    return feeClaimer?.equals?.(me) || partner?.equals?.(me) || creator?.equals?.(me);
-  });
+    const me = keypair.publicKey;
+    const claimables = allPools.filter(({ account }) => {
+      const feeClaimer = account.feeClaimer as PublicKey | undefined;
+      const partner = account.partner as PublicKey | undefined;
+      const creator = account.creator as PublicKey | undefined;
+      return feeClaimer?.equals?.(me) || partner?.equals?.(me) || creator?.equals?.(me);
+    });
 
-  console.log(`\n> Found ${claimables.length} pool(s) claimable by ${me.toBase58()}`);
-  if (!claimables.length) {
-    console.log('Nothing to claim.');
-    return;
-  }
-
-  let ok = 0;
-  let fail = 0;
-
-  for (const { account } of claimables) {
-    const baseMint: PublicKey = account.baseMint as PublicKey;
-    const mintStr = baseMint.toBase58();
-    console.log(`\n=== Claiming trading fee for baseMint ${mintStr} ===`);
-    try {
-      const runCfg: DbcConfig = { ...config, baseMint: mintStr };
-      await claimTradingFee(runCfg, connection, wallet);
-      console.log(`✔ Success for ${mintStr}`);
-      ok++;
-    } catch (e: any) {
-      console.error(`✖ Failed for ${mintStr}: ${e?.message || String(e)}`);
-      fail++;
+    console.log(`\n> Found ${claimables.length} pool(s) claimable by ${me.toBase58()}`);
+    if (!claimables.length) {
+      console.log('Nothing to claim.');
+      return;
     }
-  }
 
-  console.log(`\n> Summary: Success ${ok}, Failed ${fail}`);
-  if (fail) process.exit(1);
+    let ok = 0;
+    let fail = 0;
+
+    for (const { account } of claimables) {
+      const baseMint: PublicKey = account.baseMint as PublicKey;
+      const mintStr = baseMint.toBase58();
+      console.log(`\n=== Claiming trading fee for baseMint ${mintStr} ===`);
+      try {
+        const runCfg: DbcConfig = { ...config, baseMint: mintStr };
+        await claimTradingFee(runCfg, connection, wallet);
+        console.log(`✔ Success for ${mintStr}`);
+        ok++;
+      } catch (e: any) {
+        console.error(`✖ Failed for ${mintStr}: ${e?.message || String(e)}`);
+        fail++;
+      }
+    }
+
+    console.log(`\n> Summary: Success ${ok}, Failed ${fail}`);
+    if (fail) process.exit(1);
+  } catch (autoErr: any) {
+    // Fallback: use BASE_MINTS if IDL was unavailable or unusable
+    console.warn(`\n[Auto-discovery disabled] ${autoErr?.message || String(autoErr)}`);
+    const ok = await claimByEnvList(config, connection, wallet);
+    if (ok === 0) process.exit(1);
+  }
 }
 
 main().catch((e) => {
