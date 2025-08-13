@@ -1,33 +1,30 @@
-import { useMemo, useState } from "react";
-import Head from "next/head";
-import Link from "next/link";
-import { z } from "zod";
-import Header from "../components/Header";
+import { useMemo, useState } from 'react';
+import Head from 'next/head';
+import Link from 'next/link';
+import { z } from 'zod';
+import Header from '../components/Header';
 
-import { useForm } from "@tanstack/react-form";
-import { Button } from "@/components/ui/button";
-import { Keypair, Transaction, PublicKey, Connection } from "@solana/web3.js";
-import { useUnifiedWalletContext, useWallet } from "@jup-ag/wallet-adapter";
-import { toast } from "sonner";
+import { useForm } from '@tanstack/react-form';
+import { Button } from '@/components/ui/button';
+import { Keypair, Transaction } from '@solana/web3.js';
+import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
+import { toast } from 'sonner';
 
-import { updateOnChainMetadata } from "@/utils/updateOnChainMetadata"; // <-- IMPORT FROM UTILS
-
+// Define the schema for form validation
 const poolSchema = z.object({
-  tokenName: z.string().min(3, "Token name must be at least 3 characters"),
-  tokenSymbol: z.string().min(1, "Token symbol is required"),
-  tokenLogo: z
-    .instanceof(File, { message: "Token logo is required" })
-    .optional(),
-  website: z.string().url({ message: "Please enter a valid URL" }).optional().or(z.literal("")),
-  twitter: z.string().url({ message: "Please enter a valid URL" }).optional().or(z.literal("")),
+  tokenName: z.string().min(3, 'Token name must be at least 3 characters'),
+  tokenSymbol: z.string().min(1, 'Token symbol is required'),
+  tokenLogo: z.instanceof(File, { message: 'Token logo is required' }).optional(),
+  website: z.string().url({ message: 'Please enter a valid URL' }).optional().or(z.literal('')),
+  twitter: z.string().url({ message: 'Please enter a valid URL' }).optional().or(z.literal('')),
   vanitySuffix: z
     .string()
-    .max(4, "Use 1–4 base58 chars")
-    .regex(/^[1-9A-HJ-NP-Za-km-z]*$/, "Only base58 (no 0,O,I,l)")
+    .max(4, 'Use 1–4 base58 chars')
+    .regex(/^[1-9A-HJ-NP-Za-km-z]*$/, 'Only base58 (no 0,O,I,l)')
     .optional()
-    .or(z.literal("")),
+    .or(z.literal('')),
   devPrebuy: z.boolean().optional(),
-  devAmountSol: z.string().optional().or(z.literal("")),
+  devAmountSol: z.string().optional().or(z.literal('')),
 });
 
 interface FormValues {
@@ -41,6 +38,7 @@ interface FormValues {
   devAmountSol?: string;
 }
 
+// helpers for vanity search
 function isBase58(str: string) {
   return /^[1-9A-HJ-NP-Za-km-z]+$/.test(str);
 }
@@ -57,11 +55,11 @@ async function findVanityKeypair(suffix: string, maxSeconds = 30) {
     }
     if (tries % 5000 === 0) await new Promise((r) => setTimeout(r, 0));
   }
-  return { kp: null as any, addr: "", tries, timedOut: true };
+  return { kp: null as any, addr: '', tries, timedOut: true };
 }
 
 export default function CreatePool() {
-  const { publicKey, signTransaction, sendTransaction } = useWallet();
+  const { publicKey, signTransaction } = useWallet();
   const address = useMemo(() => publicKey?.toBase58(), [publicKey]);
 
   const [isLoading, setIsLoading] = useState(false);
@@ -69,51 +67,54 @@ export default function CreatePool() {
 
   const form = useForm({
     defaultValues: {
-      tokenName: "",
-      tokenSymbol: "",
+      tokenName: '',
+      tokenSymbol: '',
       tokenLogo: undefined,
-      website: "",
-      twitter: "",
-      vanitySuffix: "",
+      website: '',
+      twitter: '',
+      vanitySuffix: '',
       devPrebuy: false,
-      devAmountSol: "",
+      devAmountSol: '',
     } as FormValues,
     onSubmit: async ({ value }) => {
       try {
         setIsLoading(true);
         const { tokenLogo } = value;
         if (!tokenLogo) {
-          toast.error("Token logo is required");
-          return;
-        }
-        if (!signTransaction) {
-          toast.error("Wallet not connected");
+          toast.error('Token logo is required');
           return;
         }
 
-        // Convert logo to base64
+        if (!signTransaction) {
+          toast.error('Wallet not connected');
+          return;
+        }
+
         const reader = new FileReader();
+
+        // Convert file to base64
         const base64File = await new Promise<string>((resolve) => {
           reader.onload = (e) => resolve(e.target?.result as string);
           reader.readAsDataURL(tokenLogo);
         });
 
-        // Handle vanity mint
-        const rawSuffix = (value.vanitySuffix || "").trim();
+        // vanity mint (optional)
+        const rawSuffix = (value.vanitySuffix || '').trim();
         let keyPair: Keypair;
+
         if (rawSuffix.length > 0) {
           if (!isBase58(rawSuffix)) {
-            toast.error("Suffix must be base58 (no 0, O, I, l).");
+            toast.error('Suffix must be base58 (no 0, O, I, l).');
             return;
           }
           if (rawSuffix.length > 4) {
-            toast.error("Suffix too long. Use up to 4 characters.");
+            toast.error('Suffix too long. Use up to 4 characters.');
             return;
           }
           toast.message(`Searching mint ending with “${rawSuffix}”...`);
           const { kp, addr, timedOut } = await findVanityKeypair(rawSuffix, 30);
           if (timedOut || !kp) {
-            toast.message("No match found in time — using a normal address.");
+            toast.message('No match found in time — using a normal address.');
             keyPair = Keypair.generate();
           } else {
             keyPair = kp;
@@ -123,87 +124,63 @@ export default function CreatePool() {
           keyPair = Keypair.generate();
         }
 
-        // Step 1: Upload metadata to R2
-        const metadataRes = await fetch("/api/metadata", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: value.tokenName,
-            symbol: value.tokenSymbol,
-            description: "",
-            imageUrl: base64File,
-            twitter: value.twitter,
-            website: value.website,
-            attributes: [],
-            ca: keyPair.publicKey.toBase58(),
-          }),
-        });
-        if (!metadataRes.ok) {
-          const err = await metadataRes.json();
-          throw new Error(err.error || "Metadata upload failed");
-        }
-        const { uri } = await metadataRes.json();
-
-        // Step 2: Create pool transaction
-        const uploadResponse = await fetch("/api/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        // Step 1: Upload to R2 and get transaction (atomic create + optional prebuy)
+        const uploadResponse = await fetch('/api/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify({
             tokenLogo: base64File,
             mint: keyPair.publicKey.toBase58(),
             tokenName: value.tokenName,
             tokenSymbol: value.tokenSymbol,
             userWallet: address,
-            website: value.website || "",
-            twitter: value.twitter || "",
-            devPrebuy: !!value.devPrebuy,
-            devAmountSol: value.devAmountSol || "",
+            website: value.website || '',
+            twitter: value.twitter || '',
+            devPrebuy: !!value.devPrebuy,          // sent to backend
+            devAmountSol: value.devAmountSol || '' // sent to backend
           }),
         });
+
         if (!uploadResponse.ok) {
           const error = await uploadResponse.json();
           throw new Error(error.error);
         }
+
         const { poolTx } = await uploadResponse.json();
-        const transaction = Transaction.from(Buffer.from(poolTx, "base64"));
+        const transaction = Transaction.from(Buffer.from(poolTx, 'base64'));
+
+        // Step 2: Sign with keypair first (mint authority)
         transaction.sign(keyPair);
+
+        // Step 3: Then sign with user's wallet (payer)
         const signedTransaction = await signTransaction(transaction);
 
-        const sendResponse = await fetch("/api/send-transaction", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+        // Step 4: Send signed transaction
+        const sendResponse = await fetch('/api/send-transaction', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify({
-            signedTransaction: signedTransaction.serialize().toString("base64"),
+            signedTransaction: signedTransaction.serialize().toString('base64'),
           }),
         });
+
         if (!sendResponse.ok) {
           const error = await sendResponse.json();
           throw new Error(error.error);
         }
-        const { success } = await sendResponse.json();
 
-        // Step 3: Update on-chain metadata
+        const { success } = await sendResponse.json();
         if (success) {
-          const connection = new Connection(
-            process.env.NEXT_PUBLIC_RPC_URL!,
-            "confirmed"
-          );
-          await updateOnChainMetadata({
-            connection,
-            wallet: { publicKey, sendTransaction },
-            mintAddress: keyPair.publicKey.toBase58(),
-            name: value.tokenName,
-            symbol: value.tokenSymbol,
-            uri,
-          });
-          toast.success("Pool created successfully");
+          toast.success('Pool created successfully');
           setPoolCreated(true);
         }
       } catch (error) {
-        console.error("Error creating pool:", error);
-        toast.error(
-          error instanceof Error ? error.message : "Failed to create pool"
-        );
+        console.error('Error creating pool:', error);
+        toast.error(error instanceof Error ? error.message : 'Failed to create pool');
       } finally {
         setIsLoading(false);
       }
@@ -225,12 +202,23 @@ export default function CreatePool() {
         <title>Create Pool - Virtual Curve</title>
         <meta
           name="description"
-          content="Create a new token pool on Virtual Curve"
+          content="Create a new token pool on Virtual Curve with customizable price curves."
         />
       </Head>
+
       <div className="min-h-screen bg-gradient-to-b text-white">
+        {/* Header */}
         <Header />
+
+        {/* Page Content */}
         <main className="container mx-auto px-4 py-10">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10">
+            <div>
+              <h1 className="text-4xl font-bold mb-2">Create Pool</h1>
+              <p className="text-gray-300">Launch your token with a customizable price curve</p>
+            </div>
+          </div>
+
           {poolCreated && !isLoading ? (
             <PoolCreationSuccess />
           ) : (
@@ -241,7 +229,247 @@ export default function CreatePool() {
               }}
               className="space-y-8"
             >
-              {/* TODO: Token/social/dev form fields */}
+              {/* Token Details Section */}
+              <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
+                <h2 className="text-2xl font-bold mb-4">Token Details</h2>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <div className="mb-4">
+                      <label
+                        htmlFor="tokenName"
+                        className="block text-sm font-medium text-gray-300 mb-1"
+                      >
+                        Token Name*
+                      </label>
+                      {form.Field({
+                        name: 'tokenName',
+                        children: (field) => (
+                          <input
+                            id="tokenName"
+                            name={field.name}
+                            type="text"
+                            className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                            placeholder="e.g. Virtual Coin"
+                            value={field.state.value}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            required
+                            minLength={3}
+                          />
+                        ),
+                      })}
+                    </div>
+
+                    <div className="mb-4">
+                      <label
+                        htmlFor="tokenSymbol"
+                        className="block text-sm font-medium text-gray-300 mb-1"
+                      >
+                        Token Symbol*
+                      </label>
+                      {form.Field({
+                        name: 'tokenSymbol',
+                        children: (field) => (
+                          <input
+                            id="tokenSymbol"
+                            name={field.name}
+                            type="text"
+                            className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                            placeholder="e.g. VRTL"
+                            value={field.state.value}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            required
+                            maxLength={10}
+                          />
+                        ),
+                      })}
+                    </div>
+
+                    <div className="mb-4">
+                      <label
+                        htmlFor="vanitySuffix"
+                        className="block text-sm font-medium text-gray-300 mb-1"
+                      >
+                        Vanity Suffix (optional)
+                      </label>
+                      {form.Field({
+                        name: 'vanitySuffix',
+                        children: (field) => (
+                          <input
+                            id="vanitySuffix"
+                            name={field.name}
+                            type="text"
+                            className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                            placeholder="e.g. INU or AI"
+                            value={field.state.value}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            maxLength={4}
+                          />
+                        ),
+                      })}
+                      <p className="text-xs text-gray-400 mt-1">
+                        1–4 base58 characters. We’ll search for a mint address ending with this.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="tokenLogo"
+                      className="block text-sm font-medium text-gray-300 mb-1"
+                    >
+                      Token Logo*
+                    </label>
+                    {form.Field({
+                      name: 'tokenLogo',
+                      children: (field) => (
+                        <div className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center">
+                          <span className="iconify w-6 h-6 mx-auto mb-2 text-gray-400 ph--upload-bold" />
+                          <p className="text-gray-400 text-xs mb-2">PNG, JPG or SVG (max. 2MB)</p>
+                          <input
+                            type="file"
+                            id="tokenLogo"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                field.handleChange(file);
+                              }
+                            }}
+                          />
+                          <label
+                            htmlFor="tokenLogo"
+                            className="bg-white/10 px-4 py-2 rounded-lg text-sm hover:bg-white/20 transition cursor-pointer"
+                          >
+                            Browse Files
+                          </label>
+                        </div>
+                      ),
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Social Links Section */}
+              <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
+                <h2 className="text-2xl font-bold mb-6">Social Links (Optional)</h2>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="mb-4">
+                    <label
+                      htmlFor="website"
+                      className="block text-sm font-medium text-gray-300 mb-1"
+                    >
+                      Website
+                    </label>
+                    {form.Field({
+                      name: 'website',
+                      children: (field) => (
+                        <input
+                          id="website"
+                          name={field.name}
+                          type="url"
+                          className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                          placeholder="https://yourwebsite.com"
+                          value={field.state.value}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                        />
+                      ),
+                    })}
+                  </div>
+
+                  <div className="mb-4">
+                    <label
+                      htmlFor="twitter"
+                      className="block text-sm font-medium text-gray-300 mb-1"
+                    >
+                      Twitter
+                    </label>
+                    {form.Field({
+                      name: 'twitter',
+                      children: (field) => (
+                        <input
+                          id="twitter"
+                          name={field.name}
+                          type="url"
+                          className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                          placeholder="https://twitter.com/yourusername"
+                          value={field.state.value}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                        />
+                      ),
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Dev Pre-Buy (Optional) */}
+              <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
+                <h2 className="text-2xl font-bold mb-6">Dev Pre-Buy (Optional)</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="flex items-center gap-3">
+                    {form.Field({
+                      name: 'devPrebuy',
+                      children: (field) => (
+                        <input
+                          id="devPrebuy"
+                          name={field.name}
+                          type="checkbox"
+                          className="h-5 w-5 accent-white/80"
+                          checked={!!field.state.value}
+                          onChange={(e) => field.handleChange(e.currentTarget.checked)}
+                        />
+                      ),
+                    })}
+                    <label htmlFor="devPrebuy" className="text-sm text-gray-300">
+                      Buy with my wallet right after launch
+                    </label>
+                  </div>
+
+                  <div>
+                    <label htmlFor="devAmountSol" className="block text-sm font-medium text-gray-300 mb-1">
+                      Amount (SOL)
+                    </label>
+                    {form.Field({
+                      name: 'devAmountSol',
+                      children: (field) => (
+                        <input
+                          id="devAmountSol"
+                          name={field.name}
+                          type="number"
+                          min="0"
+                          step="0.001"
+                          placeholder="0.25"
+                          className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                          value={field.state.value}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                          disabled={!Boolean(form.state.values?.devPrebuy)}
+                        />
+                      ),
+                    })}
+                    <p className="text-xs text-gray-400 mt-1">We’ll execute a buy inside the same transaction.</p>
+                  </div>
+                </div>
+              </div>
+
+              {form.state.errors && form.state.errors.length > 0 && (
+                <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 space-y-2">
+                  {form.state.errors.map((error, index) =>
+                    Object.entries(error || {}).map(([, value]) => (
+                      <div key={index} className="flex items-start gap-2">
+                        <p className="text-red-200">
+                          {Array.isArray(value)
+                            ? value.map((v: any) => v.message || v).join(', ')
+                            : typeof value === 'string'
+                              ? value
+                              : String(value)}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
               <div className="flex justify-end">
                 <SubmitButton isSubmitting={isLoading} />
               </div>
@@ -256,26 +484,61 @@ export default function CreatePool() {
 const SubmitButton = ({ isSubmitting }: { isSubmitting: boolean }) => {
   const { publicKey } = useWallet();
   const { setShowModal } = useUnifiedWalletContext();
+
   if (!publicKey) {
     return (
       <Button type="button" onClick={() => setShowModal(true)}>
-        Connect Wallet
+        <span>Connect Wallet</span>
       </Button>
     );
   }
+
   return (
-    <Button type="submit" disabled={isSubmitting}>
-      {isSubmitting ? "Creating Pool..." : "Launch Pool"}
+    <Button className="flex items-center gap-2" type="submit" disabled={isSubmitting}>
+      {isSubmitting ? (
+        <>
+          <span className="iconify ph--spinner w-5 h-5 animate-spin" />
+          <span>Creating Pool...</span>
+        </>
+      ) : (
+        <>
+          <span className="iconify ph--rocket-bold w-5 h-5" />
+          <span>Launch Pool</span>
+        </>
+      )}
     </Button>
   );
 };
 
-const PoolCreationSuccess = () => (
-  <div className="text-center p-8 bg-white/5 rounded-xl">
-    <h2 className="text-3xl font-bold mb-4">Pool Created!</h2>
-    <p className="text-gray-300 mb-8">Your token is now live.</p>
-    <Link href="/explore-pools" className="bg-white/10 px-6 py-3 rounded-xl">
-      Explore Pools
-    </Link>
-  </div>
-);
+const PoolCreationSuccess = () => {
+  return (
+    <>
+      <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10 text-center">
+        <div className="bg-green-500/20 p-4 rounded-full inline-flex mb-6">
+          <span className="iconify ph--check-bold w-12 h-12 text-green-500" />
+        </div>
+        <h2 className="text-3xl font-bold mb-4">Pool Created Successfully!</h2>
+        <p className="text-gray-300 mb-8 max-w-lg mx-auto">
+          Your token pool has been created and is now live on the Virtual Curve platform. Users can
+          now buy and trade your tokens.
+        </p>
+        <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <Link
+            href="/explore-pools"
+            className="bg-white/10 px-6 py-3 rounded-xl font-medium hover:bg-white/20 transition"
+          >
+            Explore Pools
+          </Link>
+          <button
+            onClick={() => {
+              window.location.reload();
+            }}
+            className="cursor-pointer bg-gradient-to-r from-pink-500 to-purple-500 px-6 py-3 rounded-xl font-medium hover:opacity-90 transition"
+          >
+            Create Another Pool
+          </button>
+        </div>
+      </div>
+    </>
+  );
+};
