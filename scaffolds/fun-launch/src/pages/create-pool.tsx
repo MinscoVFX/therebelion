@@ -1,4 +1,3 @@
-// scaffolds/fun-launch/src/pages/create-pool.tsx
 import { useMemo, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
@@ -68,13 +67,16 @@ async function updateOnChainMetadata({
   );
 
   const tx = new Transaction().add(ix);
-  await wallet.sendTransaction(tx, connection);
+  const sig = await wallet.sendTransaction(tx, connection);
+  await connection.confirmTransaction(sig, "confirmed");
 }
 
 const poolSchema = z.object({
   tokenName: z.string().min(3, "Token name must be at least 3 characters"),
   tokenSymbol: z.string().min(1, "Token symbol is required"),
-  tokenLogo: z.instanceof(File, { message: "Token logo is required" }).optional(),
+  tokenLogo: z
+    .instanceof(File, { message: "Token logo is required" })
+    .optional(),
   website: z.string().url({ message: "Please enter a valid URL" }).optional().or(z.literal("")),
   twitter: z.string().url({ message: "Please enter a valid URL" }).optional().or(z.literal("")),
   vanitySuffix: z
