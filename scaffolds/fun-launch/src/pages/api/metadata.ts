@@ -51,7 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const uri = `${R2_PUBLIC_BASE}${key}`;
 
-    // Append CA to log file
+    // Append CA to log file — newest first
     const logKey = "logs/contract_addresses.txt";
     let existingLog = "";
     try {
@@ -60,7 +60,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } catch {
       existingLog = "";
     }
-    const newLog = existingLog ? `${ca}, ${existingLog}` : ca;
+
+    // Put newest CA first
+    const newLog = existingLog ? `${ca}\n${existingLog}` : ca;
     await s3.putObject({
       Bucket: R2_BUCKET as string,
       Key: logKey,
