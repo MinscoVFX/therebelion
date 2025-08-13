@@ -1,59 +1,91 @@
 // studio/src/scripts/dbc/claim_trading_fee_auto.ts
-import { AnchorProvider, Program, Idl, Wallet as AnchorWallet } from '@coral-xyz/anchor';
 import { Connection, PublicKey } from '@solana/web3.js';
+import { AnchorProvider, Program, Idl, Wallet as AnchorWallet } from '@coral-xyz/anchor';
 import { safeParseKeypairFromFile, parseConfigFromCli } from '../../helpers';
 import { DEFAULT_COMMITMENT_LEVEL } from '../../utils/constants';
 import { DbcConfig } from '../../utils/types';
 import { claimTradingFee } from '../../lib/dbc';
 
-/**
- * We try SDK-first to load the DBC program. If your SDK exports different names,
- * adjust the imports below (see comments).
- */
-let DBC_IDL: Idl | undefined;
-let DBC_PROGRAM_ID: PublicKey | undefined;
-try {
-  // Common SDK exports (adjust if your SDK uses other names)
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const sdk = require('@meteora-ag/dynamic-bonding-curve-sdk');
-  DBC_IDL = sdk.IDL || sdk.DBC_IDL || sdk.DbcIDL || undefined;
-  const pid = sdk.PROGRAM_ID || sdk.DBC_PROGRAM_ID || sdk.DYNAMIC_BONDING_CURVE_PROGRAM_ID;
-  if (pid) DBC_PROGRAM_ID = new PublicKey(pid.toString());
-} catch (_) {}
-
-function resolveProgramId(rpcUrl: string): PublicKey {
-  if (DBC_PROGRAM_ID) return DBC_PROGRAM_ID;
-  const envPid = process.env.DBC_PROGRAM_ID?.trim();
-  if (!envPid) {
-    throw new Error(
-      'DBC program id not found. Set env DBC_PROGRAM_ID or ensure the SDK exports PROGRAM_ID.'
-    );
+function tryLoadSdk() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const sdk = require('@meteora-ag/dynamic-bonding-curve-sdk');
+    const idl: Idl | undefined =
+      sdk.IDL || sdk.DBC_IDL || sdk.DbcIDL || sdk.idl || undefined;
+    const pidLike =
+      sdk.PROGRAM_ID ||
+      sdk.DBC_PROGRAM_ID ||
+      sdk.DYNAMIC_BONDING_CURVE_PROGRAM_ID ||
+      sdk.programId ||
+      undefined;
+    const programId = pidLike ? new PublicKey(pidLike.toString()) : undefined;
+    return { idl, programId };
+  } catch {
+    return { idl: undefined, programId: undefined };
   }
-  return new PublicKey(envPid);
 }
 
-async function loadDbcProgram(
+function requireProgramId(sdkProgramId?: PublicKey): PublicKey {
+  if (sdkProgramId) return sdkProgramId;
+  const fromEnv = process.env.DBC_PROGRAM_ID?.trim();
+  if (!fromEnv) {
+    throw new Error(
+      'DBC program id not found. Set env DBC_PROGRAM_ID, or ensure the SDK exports PROGRAM_ID.'
+    );
+  }
+  return new PublicKey(fromEnv);
+}
+
+async function loadProgram(
   connection: Connection,
   wallet: AnchorWallet
 ): Promise<Program> {
+  const { idl: sdkIdl, programId: sdkPid } = tryLoadSdk();
+  const programId = requireProgramId(sdkPid);
+
   const provider = new AnchorProvider(connection, wallet, {
     commitment: DEFAULT_COMMITMENT_LEVEL,
   });
 
-  if (!DBC_IDL) {
-    // Try to fetch IDL from chain if SDK didn't provide it
-    const pid = resolveProgramId(connection.rpcEndpoint);
-    const fetched = await Program.fetchIdl(pid, provider);
-    if (!fetched) {
+  let idl: Idl | null = (sdkIdl as Idl) || null;
+  if (!idl) {
+    idl = (await Program.fetchIdl(programId, provider)) as Idl | null;
+    if (!idl) {
       throw new Error(
-        'Unable to fetch DBC IDL. Provide IDL from SDK (adjust import) or set DBC_PROGRAM_ID and allow IDL fetch.'
+        'Unable to fetch DBC IDL from chain. Provide IDL via SDK or set DBC_PROGRAM_ID to a program that publishes its IDL.'
       );
     }
-    DBC_IDL = fetched as Idl;
   }
 
-  const programId = resolveProgramId(connection.rpcEndpoint);
-  return new Program(DBC_IDL as Idl, programId, provider);
+  return new Program(idl as Idl, programId, provider);
+}
+
+function looksLikePoolAccount(a: any) {
+  // Anchor decodes to fields on `account`
+  if (!a) return false;
+  const hasBaseMint = a.baseMint instanceof PublicKey || typeof a.baseMint?.toBase58 === 'function';
+  const hasCreator = a.creator instanceof PublicKey || typeof a.creator?.toBase58 === 'function';
+  const hasPartner = a.partner instanceof PublicKey || typeof a.partner?.toBase58 === 'function';
+  // feeClaimer may be optional on some pools; treat as optional but preferred
+  const hasFeeClaimer = a.feeClaimer instanceof PublicKey || typeof a.feeClaimer?.toBase58 === 'function';
+  return hasBaseMint && hasCreator && hasPartner && (hasFeeClaimer || true);
+}
+
+async function findPoolAccountNamespace(program: Program): Promise<string> {
+  const namespaces = Object.keys((program as any).account || {});
+  for (const ns of namespaces) {
+    try {
+      // @ts-ignore dynamic
+      const sample = await (program as any).account[ns].all();
+      if (!Array.isArray(sample) || sample.length === 0) continue;
+      if (looksLikePoolAccount(sample[0].account)) return ns;
+    } catch {
+      // ignore and continue
+    }
+  }
+  throw new Error(
+    'Could not locate the DBC pool account in IDL (no account type with baseMint/creator/partner found).'
+  );
 }
 
 async function main() {
@@ -70,28 +102,27 @@ async function main() {
   const connection = new Connection(config.rpcUrl, DEFAULT_COMMITMENT_LEVEL);
   const wallet = new AnchorWallet(keypair);
 
-  // Load DBC Anchor program
-  const program = await loadDbcProgram(connection, wallet);
+  const program = await loadProgram(connection, wallet);
+  const poolNs = await findPoolAccountNamespace(program);
 
-  // Fetch ALL DBC pools (Anchor auto-deserializes using IDL)
-  // Account name in IDL is usually 'dbcPool'. If your IDL uses a different name,
-  // change 'dbcPool' below accordingly.
-  // @ts-ignore - indexer access on Program.account
-  const pools = await program.account.dbcPool.all();
+  // @ts-ignore dynamic account ns
+  const allPools: Array<{ publicKey: PublicKey; account: any }> = await (program as any).account[
+    poolNs
+  ].all();
 
   const me = keypair.publicKey;
-  const claimables = pools.filter((p: any) => {
-    const a = p.account;
-    // adjust field names if IDL uses different ones:
-    // creator, partner, feeClaimer are common; also try leftoverReceiver if needed
+  const claimables = allPools.filter(({ account }) => {
+    const feeClaimer = account.feeClaimer as PublicKey | undefined;
+    const partner = account.partner as PublicKey | undefined;
+    const creator = account.creator as PublicKey | undefined;
     return (
-      a?.feeClaimer?.equals?.(me) ||
-      a?.partner?.equals?.(me) ||
-      a?.creator?.equals?.(me)
+      feeClaimer?.equals?.(me) ||
+      partner?.equals?.(me) ||
+      creator?.equals?.(me)
     );
   });
 
-  console.log(`\n> Found ${claimables.length} pool(s) where you can claim fees.`);
+  console.log(`\n> Found ${claimables.length} pool(s) claimable by ${me.toBase58()}`);
   if (!claimables.length) {
     console.log('Nothing to claim.');
     return;
@@ -100,13 +131,11 @@ async function main() {
   let ok = 0;
   let fail = 0;
 
-  for (const p of claimables) {
-    // Adjust field name if your IDL differs; usually 'baseMint'
-    const baseMint: PublicKey = p.account.baseMint as PublicKey;
+  for (const { account } of claimables) {
+    const baseMint: PublicKey = account.baseMint as PublicKey;
     const mintStr = baseMint.toBase58();
     console.log(`\n=== Claiming trading fee for baseMint ${mintStr} ===`);
     try {
-      // clone config and set baseMint dynamically
       const runCfg: DbcConfig = { ...config, baseMint: mintStr };
       await claimTradingFee(runCfg, connection, wallet);
       console.log(`✔ Success for ${mintStr}`);
