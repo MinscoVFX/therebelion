@@ -1,0 +1,39 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install pnpm
+        run: npm i -g pnpm@9
+
+      - name: Install dependencies
+        run: pnpm install
+
+      # 👇 This guarantees the AWS SDK v3 S3 client exists during CI builds,
+      # without you doing anything locally.
+      - name: Add AWS SDK S3 (workspace)
+        run: pnpm add @aws-sdk/client-s3 -w
+
+      - name: Type check
+        run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
+
+      - name: Build
+        run: pnpm build
