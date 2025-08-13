@@ -61,15 +61,14 @@ function looksLikePoolAccount(a: any) {
   const hasBaseMint = a.baseMint instanceof PublicKey || typeof a.baseMint?.toBase58 === 'function';
   const hasCreator = a.creator instanceof PublicKey || typeof a.creator?.toBase58 === 'function';
   const hasPartner = a.partner instanceof PublicKey || typeof a.partner?.toBase58 === 'function';
-  const hasFeeClaimer = a.feeClaimer instanceof PublicKey || typeof a.feeClaimer?.toBase58 === 'function';
-  return hasBaseMint && hasCreator && hasPartner && (hasFeeClaimer || true);
+  // feeClaimer may be optional on some pools; don't require it to detect the pool account
+  return hasBaseMint && hasCreator && hasPartner;
 }
 
 async function findPoolAccountNamespace(program: Program): Promise<string> {
   const namespaces = Object.keys((program as any).account || {});
   for (const ns of namespaces) {
     try {
-      // @ts-ignore dynamic
       const sample = await (program as any).account[ns].all();
       if (!Array.isArray(sample) || sample.length === 0) continue;
       if (looksLikePoolAccount(sample[0].account)) return ns;
@@ -97,7 +96,6 @@ async function main() {
   const program = await loadProgram(connection, wallet);
   const poolNs = await findPoolAccountNamespace(program);
 
-  // @ts-ignore dynamic account ns
   const allPools: Array<{ publicKey: PublicKey; account: any }> = await (program as any).account[poolNs].all();
 
   const me = keypair.publicKey;
