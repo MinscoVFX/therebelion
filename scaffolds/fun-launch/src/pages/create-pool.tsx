@@ -6,11 +6,11 @@ import Header from "../components/Header";
 
 import { useForm } from "@tanstack/react-form";
 import { Button } from "@/components/ui/button";
-import { Keypair, Transaction, Connection } from "@solana/web3.js";
+import { Keypair, Transaction, PublicKey, Connection } from "@solana/web3.js";
 import { useUnifiedWalletContext, useWallet } from "@jup-ag/wallet-adapter";
 import { toast } from "sonner";
 
-import { updateOnChainMetadata } from "@/utils/updateOnChainMetadata"; // ✅ use external util
+import { updateOnChainMetadata } from "@/utils/updateOnChainMetadata"; // <-- IMPORT FROM UTILS
 
 const poolSchema = z.object({
   tokenName: z.string().min(3, "Token name must be at least 3 characters"),
@@ -81,8 +81,8 @@ export default function CreatePool() {
     onSubmit: async ({ value }) => {
       try {
         setIsLoading(true);
-
-        if (!value.tokenLogo) {
+        const { tokenLogo } = value;
+        if (!tokenLogo) {
           toast.error("Token logo is required");
           return;
         }
@@ -95,7 +95,7 @@ export default function CreatePool() {
         const reader = new FileReader();
         const base64File = await new Promise<string>((resolve) => {
           reader.onload = (e) => resolve(e.target?.result as string);
-          reader.readAsDataURL(value.tokenLogo);
+          reader.readAsDataURL(tokenLogo);
         });
 
         // Handle vanity mint
@@ -241,7 +241,7 @@ export default function CreatePool() {
               }}
               className="space-y-8"
             >
-              {/* TODO: Your token/social/dev form fields here */}
+              {/* TODO: Token/social/dev form fields */}
               <div className="flex justify-end">
                 <SubmitButton isSubmitting={isLoading} />
               </div>
