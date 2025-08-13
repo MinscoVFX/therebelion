@@ -6,74 +6,17 @@ import Header from '../components/Header';
 
 import { useForm } from '@tanstack/react-form';
 import { Button } from '@/components/ui/button';
-import { Keypair, Transaction, PublicKey, Connection } from '@solana/web3.js';
+import { Keypair, Transaction } from '@solana/web3.js';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
 
-import { createUpdateMetadataAccountV2Instruction } from '@metaplex-foundation/mpl-token-metadata';
-
-const METADATA_PROGRAM_ID = new PublicKey(
-  'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s'
-);
-
-function getMetadataPDA(mint: PublicKey) {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from('metadata'), METADATA_PROGRAM_ID.toBuffer(), mint.toBuffer()],
-    METADATA_PROGRAM_ID
-  )[0];
-}
-
-async function updateOnChainMetadata({
-  connection,
-  wallet,
-  mintAddress,
-  name,
-  symbol,
-  uri,
-}: {
-  connection: Connection;
-  wallet: any;
-  mintAddress: string;
-  name: string;
-  symbol: string;
-  uri: string;
-}) {
-  const mint = new PublicKey(mintAddress);
-  const metadataPDA = getMetadataPDA(mint);
-
-  const ix = createUpdateMetadataAccountV2Instruction(
-    { metadata: metadataPDA, updateAuthority: wallet.publicKey },
-    {
-      updateMetadataAccountArgsV2: {
-        data: {
-          name,
-          symbol,
-          uri,
-          sellerFeeBasisPoints: 0,
-          creators: null,
-          collection: null,
-          uses: null,
-        },
-        updateAuthority: wallet.publicKey,
-        primarySaleHappened: null,
-        isMutable: true,
-      },
-    }
-  );
-
-  const tx = new Transaction().add(ix);
-  await wallet.sendTransaction(tx, connection);
-}
-
-// Define the schema for form validation
 const poolSchema = z.object({
   tokenName: z.string().min(3, 'Token name must be at least 3 characters'),
   tokenSymbol: z.string().min(1, 'Token symbol is required'),
   tokenLogo: z.instanceof(File, { message: 'Token logo is required' }).optional(),
   website: z.string().url({ message: 'Please enter a valid URL' }).optional().or(z.literal('')),
   twitter: z.string().url({ message: 'Please enter a valid URL' }).optional().or(z.literal('')),
-  vanitySuffix: z
-    .string()
+  vanitySuffix: z.string()
     .max(4, 'Use 1–4 base58 chars')
     .regex(/^[1-9A-HJ-NP-Za-km-z]*$/, 'Only base58 (no 0,O,I,l)')
     .optional()
@@ -85,7 +28,7 @@ const poolSchema = z.object({
 interface FormValues {
   tokenName: string;
   tokenSymbol: string;
-  tokenLogo: File | undefined;
+  tokenLogo?: File;
   website?: string;
   twitter?: string;
   vanitySuffix?: string;
@@ -99,23 +42,19 @@ function isBase58(str: string) {
 
 async function findVanityKeypair(suffix: string, maxSeconds = 30) {
   const deadline = Date.now() + maxSeconds * 1000;
-  let tries = 0;
   while (Date.now() < deadline) {
     const kp = Keypair.generate();
-    const addr = kp.publicKey.toBase58();
-    tries++;
-    if (addr.endsWith(suffix)) {
-      return { kp, addr, tries, timedOut: false };
+    if (kp.publicKey.toBase58().endsWith(suffix)) {
+      return { kp, addr: kp.publicKey.toBase58(), timedOut: false };
     }
-    if (tries % 5000 === 0) await new Promise((r) => setTimeout(r, 0));
   }
-  return { kp: null as any, addr: '', tries, timedOut: true };
+  return { kp: null, addr: '', timedOut: true };
 }
 
 export default function CreatePool() {
-  const { publicKey, signTransaction, sendTransaction } = useWallet();
+  const { publicKey, signTransaction } = useWallet();
+  const { setShowModal } = useUnifiedWalletContext();
   const address = useMemo(() => publicKey?.toBase58(), [publicKey]);
-
   const [isLoading, setIsLoading] = useState(false);
   const [poolCreated, setPoolCreated] = useState(false);
 
@@ -133,187 +72,34 @@ export default function CreatePool() {
     onSubmit: async ({ value }) => {
       try {
         setIsLoading(true);
-        const { tokenLogo } = value;
-        if (!tokenLogo) {
-          toast.error('Token logo is required');
-          return;
-        }
 
-        if (!signTransaction) {
-          toast.error('Wallet not connected');
-          return;
-        }
+        if (!value.tokenLogo) return toast.error('Token logo is required');
+        if (!signTransaction) return toast.error('Wallet not connected');
 
         const reader = new FileReader();
         const base64File = await new Promise<string>((resolve) => {
           reader.onload = (e) => resolve(e.target?.result as string);
-          reader.readAsDataURL(tokenLogo);
+          reader.readAsDataURL(value.tokenLogo!);
         });
 
-        const rawSuffix = (value.vanitySuffix || '').trim();
         let keyPair: Keypair;
-
-        if (rawSuffix.length > 0) {
-          if (!isBase58(rawSuffix)) {
-            toast.error('Suffix must be base58 (no 0, O, I, l).');
-            return;
-          }
-          if (rawSuffix.length > 4) {
-            toast.error('Suffix too long. Use up to 4 characters.');
-            return;
-          }
+        const rawSuffix = (value.vanitySuffix || '').trim();
+        if (rawSuffix) {
+          if (!isBase58(rawSuffix)) return toast.error('Suffix must be base58 (no 0, O, I, l).');
+          if (rawSuffix.length > 4) return toast.error('Suffix too long.');
           toast.message(`Searching mint ending with “${rawSuffix}”...`);
           const { kp, addr, timedOut } = await findVanityKeypair(rawSuffix, 30);
-          if (timedOut || !kp) {
-            toast.message('No match found in time — using a normal address.');
-            keyPair = Keypair.generate();
-          } else {
-            keyPair = kp;
-            toast.success(`Found vanity mint: ${addr}`);
-          }
+          keyPair = kp || Keypair.generate();
+          if (kp) toast.success(`Found vanity mint: ${addr}`);
+          else if (timedOut) toast.message('No match found — using a normal address.');
         } else {
           keyPair = Keypair.generate();
         }
 
-        // Step 1: Upload to R2 (metadata API) before creating pool
-        const metadataRes = await fetch('/api/metadata', {
+        // Upload metadata JSON to R2
+        const metaRes = await fetch('/api/metadata', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: value.tokenName,
             symbol: value.tokenSymbol,
-            description: '',
-            imageUrl: base64File,
-            twitter: value.twitter,
-            website: value.website,
-            attributes: [],
-            ca: keyPair.publicKey.toBase58(),
-          }),
-        });
-
-        if (!metadataRes.ok) {
-          const err = await metadataRes.json();
-          throw new Error(err.error || 'Metadata upload failed');
-        }
-
-        const { uri } = await metadataRes.json();
-
-        // Step 2: Create pool transaction
-        const uploadResponse = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tokenLogo: base64File,
-            mint: keyPair.publicKey.toBase58(),
-            tokenName: value.tokenName,
-            tokenSymbol: value.tokenSymbol,
-            userWallet: address,
-            website: value.website || '',
-            twitter: value.twitter || '',
-            devPrebuy: !!value.devPrebuy,
-            devAmountSol: value.devAmountSol || '',
-          }),
-        });
-
-        if (!uploadResponse.ok) {
-          const error = await uploadResponse.json();
-          throw new Error(error.error);
-        }
-
-        const { poolTx } = await uploadResponse.json();
-        const transaction = Transaction.from(Buffer.from(poolTx, 'base64'));
-
-        transaction.sign(keyPair);
-        const signedTransaction = await signTransaction(transaction);
-
-        const sendResponse = await fetch('/api/send-transaction', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            signedTransaction: signedTransaction.serialize().toString('base64'),
-          }),
-        });
-
-        if (!sendResponse.ok) {
-          const error = await sendResponse.json();
-          throw new Error(error.error);
-        }
-
-        const { success } = await sendResponse.json();
-        if (success) {
-          // Step 3: Update on-chain metadata
-          const connection = new Connection(process.env.NEXT_PUBLIC_RPC_URL!, 'confirmed');
-          await updateOnChainMetadata({
-            connection,
-            wallet: { publicKey, sendTransaction },
-            mintAddress: keyPair.publicKey.toBase58(),
-            name: value.tokenName,
-            symbol: value.tokenSymbol,
-            uri,
-          });
-
-          toast.success('Pool created successfully');
-          setPoolCreated(true);
-        }
-      } catch (error) {
-        console.error('Error creating pool:', error);
-        toast.error(error instanceof Error ? error.message : 'Failed to create pool');
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    validators: {
-      onSubmit: ({ value }) => {
-        const result = poolSchema.safeParse(value);
-        if (!result.success) {
-          return result.error.formErrors.fieldErrors;
-        }
-        return undefined;
-      },
-    },
-  });
-
-  return (
-    <>
-      <Head>
-        <title>Create Pool - Virtual Curve</title>
-        <meta name="description" content="Create a new token pool on Virtual Curve" />
-      </Head>
-      <div className="min-h-screen bg-gradient-to-b text-white">
-        <Header />
-        <main className="container mx-auto px-4 py-10">
-          {poolCreated && !isLoading ? <PoolCreationSuccess /> : (
-            <form onSubmit={(e) => { e.preventDefault(); form.handleSubmit(); }} className="space-y-8">
-              {/* token/social/dev fields stay same */}
-              {/* ... copy your existing form fields here ... */}
-              <div className="flex justify-end">
-                <SubmitButton isSubmitting={isLoading} />
-              </div>
-            </form>
-          )}
-        </main>
-      </div>
-    </>
-  );
-}
-
-const SubmitButton = ({ isSubmitting }: { isSubmitting: boolean }) => {
-  const { publicKey } = useWallet();
-  const { setShowModal } = useUnifiedWalletContext();
-  if (!publicKey) {
-    return <Button type="button" onClick={() => setShowModal(true)}>Connect Wallet</Button>;
-  }
-  return (
-    <Button type="submit" disabled={isSubmitting}>
-      {isSubmitting ? 'Creating Pool...' : 'Launch Pool'}
-    </Button>
-  );
-};
-
-const PoolCreationSuccess = () => (
-  <div className="text-center p-8 bg-white/5 rounded-xl">
-    <h2 className="text-3xl font-bold mb-4">Pool Created!</h2>
-    <p className="text-gray-300 mb-8">Your token is now live.</p>
-    <Link href="/explore-pools" className="bg-white/10 px-6 py-3 rounded-xl">Explore Pools</Link>
-  </div>
-);
