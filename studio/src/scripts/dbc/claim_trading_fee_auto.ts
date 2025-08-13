@@ -10,14 +10,9 @@ function tryLoadSdk() {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const sdk = require('@meteora-ag/dynamic-bonding-curve-sdk');
-    const idl: Idl | undefined =
-      sdk.IDL || sdk.DBC_IDL || sdk.DbcIDL || sdk.idl || undefined;
+    const idl: Idl | undefined = sdk.IDL || sdk.DBC_IDL || sdk.DbcIDL || sdk.idl || undefined;
     const pidLike =
-      sdk.PROGRAM_ID ||
-      sdk.DBC_PROGRAM_ID ||
-      sdk.DYNAMIC_BONDING_CURVE_PROGRAM_ID ||
-      sdk.programId ||
-      undefined;
+      sdk.PROGRAM_ID || sdk.DBC_PROGRAM_ID || sdk.DYNAMIC_BONDING_CURVE_PROGRAM_ID || sdk.programId || undefined;
     const programId = pidLike ? new PublicKey(pidLike.toString()) : undefined;
     return { idl, programId };
   } catch {
@@ -29,28 +24,21 @@ function requireProgramId(sdkProgramId?: PublicKey): PublicKey {
   if (sdkProgramId) return sdkProgramId;
   const fromEnv = process.env.DBC_PROGRAM_ID?.trim();
   if (!fromEnv) {
-    throw new Error(
-      'DBC program id not found. Set env DBC_PROGRAM_ID, or ensure the SDK exports PROGRAM_ID.'
-    );
+    throw new Error('DBC program id not found. Set env DBC_PROGRAM_ID, or ensure the SDK exports PROGRAM_ID.');
   }
   return new PublicKey(fromEnv);
 }
 
-async function loadProgram(
-  connection: Connection,
-  wallet: AnchorWallet
-): Promise<Program> {
+async function loadProgram(connection: Connection, wallet: AnchorWallet): Promise<Program> {
   const { idl: sdkIdl, programId: sdkPid } = tryLoadSdk();
   const programId = requireProgramId(sdkPid);
 
-  const provider = new AnchorProvider(connection, wallet, {
-    commitment: DEFAULT_COMMITMENT_LEVEL,
-  });
+  const provider = new AnchorProvider(connection, wallet, { commitment: DEFAULT_COMMITMENT_LEVEL });
 
   let idl: Idl | null = (sdkIdl as Idl) || null;
 
   if (!idl) {
-    // Anchor versions differ on fetchIdl signature; call via `any` and try both orders.
+    // Anchor versions differ on fetchIdl signature; try both via `any`.
     const P: any = Program as any;
     try {
       idl = (await P.fetchIdl(provider, programId)) as Idl | null;
@@ -64,20 +52,16 @@ async function loadProgram(
     }
   }
 
-  const ProgramCtor: any = Program as any; // constructor signatures also vary across versions
+  const ProgramCtor: any = Program as any; // constructor differences across versions
   return new ProgramCtor(idl as Idl, programId, provider);
 }
 
 function looksLikePoolAccount(a: any) {
   if (!a) return false;
-  const hasBaseMint =
-    a.baseMint instanceof PublicKey || typeof a.baseMint?.toBase58 === 'function';
-  const hasCreator =
-    a.creator instanceof PublicKey || typeof a.creator?.toBase58 === 'function';
-  const hasPartner =
-    a.partner instanceof PublicKey || typeof a.partner?.toBase58 === 'function';
-  const hasFeeClaimer =
-    a.feeClaimer instanceof PublicKey || typeof a.feeClaimer?.toBase58 === 'function';
+  const hasBaseMint = a.baseMint instanceof PublicKey || typeof a.baseMint?.toBase58 === 'function';
+  const hasCreator = a.creator instanceof PublicKey || typeof a.creator?.toBase58 === 'function';
+  const hasPartner = a.partner instanceof PublicKey || typeof a.partner?.toBase58 === 'function';
+  const hasFeeClaimer = a.feeClaimer instanceof PublicKey || typeof a.feeClaimer?.toBase58 === 'function';
   return hasBaseMint && hasCreator && hasPartner && (hasFeeClaimer || true);
 }
 
@@ -90,12 +74,10 @@ async function findPoolAccountNamespace(program: Program): Promise<string> {
       if (!Array.isArray(sample) || sample.length === 0) continue;
       if (looksLikePoolAccount(sample[0].account)) return ns;
     } catch {
-      // keep scanning
+      // continue scanning
     }
   }
-  throw new Error(
-    'Could not locate the DBC pool account in IDL (no account type with baseMint/creator/partner found).'
-  );
+  throw new Error('Could not locate the DBC pool account in IDL (no account type with baseMint/creator/partner found).');
 }
 
 async function main() {
@@ -116,17 +98,14 @@ async function main() {
   const poolNs = await findPoolAccountNamespace(program);
 
   // @ts-ignore dynamic account ns
-  const allPools: Array<{ publicKey: PublicKey; account: any }> =
-    await (program as any).account[poolNs].all();
+  const allPools: Array<{ publicKey: PublicKey; account: any }> = await (program as any).account[poolNs].all();
 
   const me = keypair.publicKey;
   const claimables = allPools.filter(({ account }) => {
     const feeClaimer = account.feeClaimer as PublicKey | undefined;
     const partner = account.partner as PublicKey | undefined;
     const creator = account.creator as PublicKey | undefined;
-    return (
-      feeClaimer?.equals?.(me) || partner?.equals?.(me) || creator?.equals?.(me)
-    );
+    return feeClaimer?.equals?.(me) || partner?.equals?.(me) || creator?.equals?.(me);
   });
 
   console.log(`\n> Found ${claimables.length} pool(s) claimable by ${me.toBase58()}`);
