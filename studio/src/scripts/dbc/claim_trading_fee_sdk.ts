@@ -12,7 +12,13 @@ import { DEFAULT_COMMITMENT_LEVEL } from '../../utils/constants';
 import type { DbcConfig } from '../../utils/types';
 import { claimTradingFee as claimFromLib } from '../../lib/dbc';
 
-/** Parse BASE_MINTS env into PublicKey[] */
+type FeeArgs =
+  | { baseMint: PublicKey | string; partner: PublicKey | string }
+  | { mint: PublicKey | string; partner: PublicKey | string };
+
+// Do NOT use the banned `Function` type; define a precise callable shape.
+type GetFeesFn = (args: FeeArgs) => Promise<unknown>;
+
 function parseMints(): PublicKey[] {
   const list = (process.env.BASE_MINTS || '')
     .split(',')
@@ -32,7 +38,6 @@ function parseMints(): PublicKey[] {
   });
 }
 
-/** Resolve the SDK claim function across versions */
 function resolveSdkClaim(client: any) {
   const candidates = [
     'partner.claimTradingFee',
@@ -70,8 +75,8 @@ function resolveSdkClaim(client: any) {
   return undefined;
 }
 
-/** Robust resolver for "get partner fees" across SDK versions */
-function resolveGetPartnerFees(client: any) {
+/** Resolve the SDK "get partner fees" across versions and shapes */
+function resolveGetPartnerFees(client: any): GetFeesFn | undefined {
   const paths = [
     'partner.getPartnerFees',
     'partner.getPartnerFee',
@@ -86,30 +91,29 @@ function resolveGetPartnerFees(client: any) {
       client,
     );
     if (typeof fn === 'function') {
-      return fn.bind(client.partner ?? client);
+      // Bind to client.partner if present for proper `this`
+      return (fn.bind(client.partner ?? client) as unknown) as GetFeesFn;
     }
   }
   return undefined;
 }
 
-/** Try multiple arg shapes and normalize return to lamports:number */
+/** Try multiple arg/return variants, normalize to lamports:number */
 async function getPartnerFeesLamports(
-  rawFn: Function,
+  rawFn: GetFeesFn,
   baseMint: PublicKey,
   partner: PublicKey,
 ): Promise<number | null> {
-  const argVariants = [
-    { baseMint, partner },                                // PKs
-    { baseMint, partner: partner },                       // explicit
-    { mint: baseMint, partner },                          // mint instead of baseMint
-    { baseMint: baseMint.toBase58(), partner: partner },  // baseMint string
-    { baseMint, partner: partner.toBase58() },            // partner string
+  const argVariants: FeeArgs[] = [
+    { baseMint, partner },
+    { mint: baseMint, partner },
+    { baseMint: baseMint.toBase58(), partner },
+    { baseMint, partner: partner.toBase58() },
     { mint: baseMint.toBase58(), partner: partner.toBase58() },
   ];
 
   for (const args of argVariants) {
     try {
-      // Some SDKs return BN; some number; some object
       const res = await rawFn(args);
       if (res == null) continue;
 
@@ -122,33 +126,27 @@ async function getPartnerFeesLamports(
         return res;
       }
       // object shapes
-      const candidates = [
-        'lamports',
-        'amount',
-        'partnerFeeLamports',
-        'partnerFeesLamports',
-        'value',
-      ];
-      for (const key of candidates) {
-        const v = (res as any)[key];
+      const keys = ['lamports', 'amount', 'partnerFeeLamports', 'partnerFeesLamports', 'value'];
+      for (const k of keys) {
+        const v = (res as any)[k];
         if (typeof v?.toNumber === 'function') return v.toNumber();
         if (typeof v === 'number' && Number.isFinite(v)) return v;
       }
-      // array single return?
+      // array with first element
       if (Array.isArray(res) && res.length > 0) {
         const v = res[0];
         if (typeof v?.toNumber === 'function') return v.toNumber();
         if (typeof v === 'number' && Number.isFinite(v)) return v;
         if (typeof v === 'object' && v) {
-          for (const key of candidates) {
-            const vv = (v as any)[key];
+          for (const k of keys) {
+            const vv = (v as any)[k];
             if (typeof vv?.toNumber === 'function') return vv.toNumber();
             if (typeof vv === 'number' && Number.isFinite(vv)) return vv;
           }
         }
       }
     } catch {
-      // try next arg variant
+      // try next variant
     }
   }
   return null;
@@ -180,7 +178,7 @@ async function main() {
   const processed = new Set<string>();
   const mintFeeList: { baseMint: PublicKey; solAmount: number }[] = [];
 
-  // --- Step 1: Fetch only pools with a KNOWN fee amount (robust across SDK versions)
+  // Step 1 — fetch only pools with a KNOWN fee amount (robust across SDKs)
   const rawGetFees = resolveGetPartnerFees(client);
   if (!rawGetFees) {
     console.warn('⚠️  No compatible getPartnerFees method found in SDK — all pools skipped.');
@@ -204,10 +202,10 @@ async function main() {
     }
   }
 
-  // --- Step 2: Sort pools by SOL amount
+  // Step 2 — sort by amount (desc)
   mintFeeList.sort((a, b) => b.solAmount - a.solAmount);
 
-  // --- Step 3: Claim in sorted order
+  // Step 3 — claim
   for (const { baseMint, solAmount } of mintFeeList) {
     const mintStr = baseMint.toBase58();
 
@@ -228,7 +226,7 @@ async function main() {
     console.log(`   Partner fees to claim: ${solAmount} SOL`);
 
     try {
-      // 1) Try repo’s implementation first
+      // Prefer repo’s implementation (matches your lib version best)
       try {
         const runCfg: DbcConfig = { ...cfg, baseMint: mintStr };
         await claimFromLib(runCfg, conn, wallet);
@@ -243,14 +241,13 @@ async function main() {
         }
       }
 
-      // 2) SDK fallback
+      // SDK fallback
       if (!sdkClaim) throw new Error('SDK claim function not found');
       const res = await sdkClaim({
         baseMint,
         payer: me,
         feeClaimer: me,
-        computeUnitPriceMicroLamports:
-          cfg.computeUnitPriceMicroLamports ?? 100_000,
+        computeUnitPriceMicroLamports: cfg.computeUnitPriceMicroLamports ?? 100_000,
       });
 
       if (res.sig) {
@@ -279,7 +276,7 @@ async function main() {
     } catch (e: any) {
       console.error(`✖ Claim failed: ${e?.message || String(e)}`);
       fail++;
-      processed.add(mintStr); // avoid retry in same run
+      processed.add(mintStr);
     }
   }
 
