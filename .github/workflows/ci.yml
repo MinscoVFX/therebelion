@@ -13,38 +13,27 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      # Ensure pnpm exists before using setup-node cache
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
-
-      # Re-add pnpm to PATH in case setup-node tweaked it
       - name: Setup pnpm (post PATH restore)
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
-
-      # Format across ALL workspace packages using each package's own Prettier/plugins
       - name: Auto-format across all packages (Prettier)
         run: pnpm -r exec prettier --write .
-
       - name: Check formatting
         run: pnpm format:check
-
       - name: Lint code
         run: pnpm lint
-
       - name: Check dependency versions
         run: pnpm syncpack:check
 
@@ -54,26 +43,21 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
-
       - name: Setup pnpm (post PATH restore)
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
-
       - name: Build all packages
         run: pnpm build
 
@@ -83,26 +67,21 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
-
       - name: Setup pnpm (post PATH restore)
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
-
       - name: Type check
         run: pnpm run type-check
 
@@ -114,29 +93,21 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      # Ensure pnpm exists before using setup-node cache
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
-
-      # Re-add pnpm to PATH in case setup-node tweaked it
       - name: Setup pnpm (post PATH restore)
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
-
-      # Decode Phantom base58 (32/64) → keypair.json (matches your other workflow)
       - name: Decode PK_B58 to full keypair.json
         run: |
           npx -y -p @solana/web3.js@1.98.2 -p bs58@4 node -e "
@@ -162,16 +133,13 @@ jobs:
         env:
           PK_B58: ${{ secrets.PK_B58 }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
-
       - name: Claim ALL partner fees
         run: pnpm dbc-claim-all-fees --config ./studio/config/dbc_config.jsonc
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
-          BASE_MINTS: ${{ secrets.BASE_MINTS }}
           DBC_OWNER: ${{ secrets.DBC_OWNER }}
           FEE_CLAIMER: ${{ secrets.FEE_CLAIMER }}
           # PRIORITY_MICROLAMPORTS_PER_CU: "1500"
           # MAX_IXS_PER_TX: "14"
-
       - name: Clean up keypair.json
         run: rm -f keypair.json
