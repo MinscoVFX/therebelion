@@ -5,6 +5,7 @@
     "paths": {
       "@/*": ["src/*"]
     },
+    "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "skipLibCheck": true
