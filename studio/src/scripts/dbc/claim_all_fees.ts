@@ -1,8 +1,6 @@
 // studio/src/scripts/dbc/claim_all_fees.ts
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { claimAllTradingFeesForOwner } from "../../lib/dbc/claim_all";
-import * as ConfigHelpers from "../../helpers/config";
-import * as AccountHelpers from "../../helpers/accounts";
 import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 
@@ -16,17 +14,11 @@ async function main() {
       ? argAfterFlag
       : defaultCfgPath;
 
-  // Load config from helper if present; else parse JSONC (comments stripped)
-  const loadCfg =
-    (ConfigHelpers as any).loadDbcConfig ||
-    (ConfigHelpers as any).loadConfig ||
-    (ConfigHelpers as any).getDbcConfig;
+  // Load config (JSONC-friendly)
   const stripJsonComments = (s: string) =>
     s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "");
-  const cfgRaw = loadCfg
-    ? await loadCfg(cfgPath)
-    : JSON.parse(stripJsonComments(readFileSync(cfgPath, "utf8")));
-  const cfg: any = cfgRaw ?? {};
+  const cfgText = readFileSync(cfgPath, "utf8");
+  const cfg: any = JSON.parse(stripJsonComments(cfgText)) ?? {};
 
   const rpcUrl = cfg.rpcUrl || process.env.RPC_URL;
   if (!rpcUrl) throw new Error("Missing rpcUrl (set in dbc_config.jsonc or RPC_URL env)");
@@ -37,17 +29,28 @@ async function main() {
   const feeClaimerStr = cfg.feeClaimer || process.env.FEE_CLAIMER;
   if (!feeClaimerStr) throw new Error("Missing feeClaimer (set cfg.feeClaimer or FEE_CLAIMER env)");
 
-  // Load signer (no require)
+  // Load signer (no require, no helper deps)
   let signer: Keypair | null = null;
-  const getKp =
-    (AccountHelpers as any).getKeypairFromSecretKey ||
-    (AccountHelpers as any).keypairFromSecret ||
-    (AccountHelpers as any).loadKeypairFromSecret;
-  if (cfg.privateKey && getKp) {
-    signer = await getKp(cfg.privateKey);
-  } else if ((process.env.PRIVATE_KEY || process.env.PK || process.env.PRIVATE_KEY_B58) && getKp) {
-    signer = await getKp(process.env.PRIVATE_KEY || process.env.PK || process.env.PRIVATE_KEY_B58);
-  } else {
+  const toKeypair = (v: unknown): Keypair | null => {
+    try {
+      if (Array.isArray(v)) {
+        return Keypair.fromSecretKey(Uint8Array.from(v as number[]));
+      }
+      if (typeof v === "string") {
+        const trimmed = v.trim();
+        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+          const arr = JSON.parse(trimmed) as number[];
+          return Keypair.fromSecretKey(Uint8Array.from(arr));
+        }
+      }
+    } catch {}
+    return null;
+  };
+  signer = toKeypair(cfg.privateKey);
+  if (!signer) signer = toKeypair(process.env.PRIVATE_KEY);
+  if (!signer) signer = toKeypair(process.env.PK);
+  if (!signer) signer = toKeypair(process.env.PRIVATE_KEY_B58); // if base58, rely on CI keypair.json fallback
+  if (!signer) {
     const kpPath = resolve(process.cwd(), "keypair.json");
     if (existsSync(kpPath)) {
       const raw = readFileSync(kpPath, "utf8");
@@ -55,9 +58,10 @@ async function main() {
       signer = Keypair.fromSecretKey(Uint8Array.from(arr));
     }
   }
-  if (!signer) {
-    throw new Error("Unable to load signer keypair (no cfg.privateKey, env, or keypair.json found).");
-  }
+  const assertSigner = (kp: Keypair | null): asserts kp is Keypair => {
+    if (!kp) throw new Error("Unable to load signer keypair (no cfg.privateKey, env, or keypair.json found).");
+  };
+  assertSigner(signer);
 
   const connection = new Connection(rpcUrl, "confirmed");
   const owner = new PublicKey(ownerStr);
