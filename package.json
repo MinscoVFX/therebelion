@@ -27,6 +27,7 @@
     "studio:dlmm": "pnpm --filter @meteora-invent/studio run dlmm:*",
     "studio:dbc": "pnpm --filter @meteora-invent/studio run dbc:*",
     "studio:dbc-claim-all-fees": "pnpm --filter @meteora-invent/studio run dbc-claim-all-fees -- --config ./studio/config/dbc_config.jsonc",
+    "studio:dbc-claim-all-fees-auto": "pnpm --filter @meteora-invent/studio dbc-claim-all-fees-auto",
     "prepare": "husky install",
     "syncpack:check": "syncpack list-mismatches",
     "syncpack:fix": "syncpack fix-mismatches"
