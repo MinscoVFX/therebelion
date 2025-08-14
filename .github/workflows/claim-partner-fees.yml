@@ -64,6 +64,10 @@ jobs:
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
           BASE_MINTS: ${{ secrets.BASE_MINTS }}
+          DBC_OWNER: ${{ secrets.DBC_OWNER }}
+          FEE_CLAIMER: ${{ secrets.FEE_CLAIMER }}
+          # PRIORITY_MICROLAMPORTS_PER_CU: "1500"
+          # MAX_IXS_PER_TX: "14"
           # DBC_PROGRAM_ID: ${{ secrets.DBC_PROGRAM_ID }} # optional, only if overriding SDK's ID
 
       - name: Clean up keypair.json
