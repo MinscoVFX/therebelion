@@ -3,21 +3,28 @@ import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { claimAllTradingFeesForOwner } from "../../lib/dbc/claim_all";
 import * as ConfigHelpers from "../../helpers/config";
 import * as AccountHelpers from "../../helpers/accounts";
-import fs from "fs";
-import path from "path";
+import { readFileSync, existsSync } from "fs";
+import { resolve } from "path";
 
 async function main() {
+  const defaultCfgPath = resolve(process.cwd(), "studio/config/dbc_config.jsonc");
   const cfgFlagIdx = process.argv.indexOf("--config");
-  const cfgPath =
-    cfgFlagIdx !== -1 && process.argv[cfgFlagIdx + 1]
-      ? process.argv[cfgFlagIdx + 1]
-      : "./studio/config/dbc_config.jsonc";
+  const argAfterFlag = cfgFlagIdx >= 0 ? process.argv[cfgFlagIdx + 1] : undefined;
+  const cfgPath: string =
+    typeof argAfterFlag === "string" && argAfterFlag.trim().length > 0
+      ? argAfterFlag
+      : defaultCfgPath;
 
   const loadCfg =
     (ConfigHelpers as any).loadDbcConfig ||
     (ConfigHelpers as any).loadConfig ||
     (ConfigHelpers as any).getDbcConfig;
-  const cfg: any = loadCfg ? await loadCfg(cfgPath) : JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+  const stripJsonComments = (s: string) =>
+    s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "");
+  const cfgRaw = loadCfg
+    ? await loadCfg(cfgPath)
+    : JSON.parse(stripJsonComments(readFileSync(cfgPath, "utf8")));
+  const cfg: any = cfgRaw ?? {};
 
   const rpcUrl = cfg.rpcUrl || process.env.RPC_URL;
   if (!rpcUrl) {
@@ -44,9 +51,9 @@ async function main() {
   } else if ((process.env.PRIVATE_KEY || process.env.PK || process.env.PRIVATE_KEY_B58) && getKp) {
     signer = await getKp(process.env.PRIVATE_KEY || process.env.PK || process.env.PRIVATE_KEY_B58);
   } else {
-    const kpPath = path.resolve(process.cwd(), "keypair.json");
-    if (fs.existsSync(kpPath)) {
-      const raw = fs.readFileSync(kpPath, "utf8");
+    const kpPath = resolve(process.cwd(), "keypair.json");
+    if (existsSync(kpPath)) {
+      const raw = readFileSync(kpPath, "utf8");
       const arr = JSON.parse(raw) as number[];
       signer = Keypair.fromSecretKey(Uint8Array.from(arr));
     }
