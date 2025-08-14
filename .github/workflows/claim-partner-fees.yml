@@ -59,8 +59,8 @@ jobs:
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
 
       # ⬇ Recommended SDK claim script from Meteora docs
-      - name: Run claim trading fee script (SDK)
-        run: npx -y -p tsx tsx studio/src/scripts/dbc/claim_trading_fee_sdk.ts --config ./studio/config/dbc_config.jsonc
+      - name: Run claim ALL trading fees (SDK)
+        run: pnpm --filter @meteora-invent/studio dbc-claim-all-fees --config ./studio/config/dbc_config.jsonc
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
           BASE_MINTS: ${{ secrets.BASE_MINTS }}
