@@ -123,8 +123,23 @@ jobs:
           PK_B58: ${{ secrets.PK_B58 }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
 
+      # Preflight: fail clearly if required env vars are missing
+      - name: Preflight env check
+        run: |
+          for v in RPC_URL DBC_OWNER FEE_CLAIMER; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Missing required env var: $v"
+              exit 1
+            fi
+          done
+        env:
+          RPC_URL: ${{ secrets.RPC_URL }}
+          DBC_OWNER: ${{ secrets.DBC_OWNER }}
+          FEE_CLAIMER: ${{ secrets.FEE_CLAIMER }}
+
+      # Auto-discovery claim (no BASE_MINTS, no --config)
       - name: Claim ALL partner fees
-        run: pnpm dbc-claim-all-fees --config ./studio/config/dbc_config.jsonc
+        run: pnpm studio:dbc-claim-all-fees-auto
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
           DBC_OWNER: ${{ secrets.DBC_OWNER }}
