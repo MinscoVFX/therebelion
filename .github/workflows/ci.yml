@@ -104,4 +104,4 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Type check
-        run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
+        run: pnpm run type-check
