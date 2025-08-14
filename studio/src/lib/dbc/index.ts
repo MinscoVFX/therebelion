@@ -25,6 +25,70 @@ import {
 } from '@meteora-ag/dynamic-bonding-curve-sdk';
 import BN from 'bn.js';
 
+// ---- begin: stable send/confirm helper ----
+import {
+  ComputeBudgetProgram,
+  Connection,
+  Signer,
+  Transaction,
+  VersionedTransaction,
+} from '@solana/web3.js';
+
+async function sendWithFreshBlockhash(
+  connection: Connection,
+  tx: Transaction | VersionedTransaction,
+  signers: Signer[],
+  {
+    cuLimit = 200_000,
+    microLamports = 5_000, // small priority fee; adjust if desired
+    commitment = 'processed' as const,
+    confirmCommitment = 'confirmed' as const,
+    maxRetries = 5,
+    maxAttempts = 3,
+  } = {}
+): Promise<string> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const { blockhash, lastValidBlockHeight, minContextSlot } =
+      await connection.getLatestBlockhashAndContext(commitment);
+
+    // Add priority fee + CU limit and (for legacy) sign with the fresh blockhash
+    if (tx instanceof Transaction) {
+      tx.instructions.unshift(
+        ComputeBudgetProgram.setComputeUnitLimit({ units: cuLimit }),
+        ComputeBudgetProgram.setComputeUnitPrice({ microLamports })
+      );
+      if (signers.length) tx.setSigners(...signers.map((s) => s.publicKey));
+      tx.recentBlockhash = blockhash;
+      tx.sign(...signers);
+    }
+    // If using VersionedTransaction, ensure it was built with `blockhash` above.
+
+    const raw = tx.serialize();
+    const signature = await connection.sendRawTransaction(raw, {
+      skipPreflight: false,
+      preflightCommitment: commitment,
+      maxRetries,
+      minContextSlot,
+    });
+
+    try {
+      await connection.confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        confirmCommitment
+      );
+      return signature;
+    } catch (err: any) {
+      const expired =
+        err?.name === 'TransactionExpiredBlockheightExceededError' ||
+        /block height exceeded/i.test(err?.message ?? '');
+      if (expired && attempt < maxAttempts) continue; // retry with fresh blockhash
+      throw err;
+    }
+  }
+  throw new Error('unreachable: sendWithFreshBlockhash loop');
+}
+// ---- end: stable send/confirm helper ----
+
 /**
  * Create a DBC config
  * @param config - The DBC config
