@@ -60,13 +60,23 @@ async function createDbcClient(connection: Connection): Promise<any | null> {
       const c = await C.create(connection);
       return c || null;
     }
-  } catch {}
+  } catch (err) {
+    if (process?.env?.DEBUG?.toLowerCase?.() === "true") {
+      // eslint-disable-next-line no-console
+      console.debug("[dbc] C.create(connection) failed; will try constructor", err);
+    }
+  }
   try {
     // some SDKs just new up with (connection)
     // eslint-disable-next-line new-cap
     const c = new C(connection);
     return c || null;
-  } catch {}
+  } catch (err) {
+    if (process?.env?.DEBUG?.toLowerCase?.() === "true") {
+      // eslint-disable-next-line no-console
+      console.debug("[dbc] new C(connection) failed; continuing without client", err);
+    }
+  }
   return null;
 }
 
@@ -215,13 +225,27 @@ export async function claimAllTradingFeesForOwner(
           poolPubkey: poolPk,
           feeClaimer,
         });
-      } catch {
+      } catch (err) {
+        if (process?.env?.DEBUG?.toLowerCase?.() === "true") {
+          // eslint-disable-next-line no-console
+          console.debug(
+            "[dbc] buildClaimTradingFeesIx({...}) failed; trying (connection, {...})",
+            err
+          );
+        }
         try {
           ixOrGroup = await buildClaimTradingFeesIx(connection, {
             poolPubkey: poolPk,
             feeClaimer,
           });
-        } catch {
+        } catch (err2) {
+          if (process?.env?.DEBUG?.toLowerCase?.() === "true") {
+            // eslint-disable-next-line no-console
+            console.debug(
+              "[dbc] buildClaimTradingFeesIx(connection, {...}) failed; trying (poolPk, feeClaimer)",
+              err2
+            );
+          }
           ixOrGroup = await buildClaimTradingFeesIx(poolPk, feeClaimer);
         }
       }
