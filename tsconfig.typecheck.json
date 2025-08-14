@@ -1,21 +1,21 @@
 {
-  "extends": "@meteora-invent/config/typescript/base",
+  "extends": "@meteora-invent/config-typescript/base",
   "compilerOptions": {
+    "noEmit": true,
+    "skipLibCheck": true,
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": ["node"],
     "baseUrl": ".",
     "paths": {
       "@meteora-invent/config/*": ["./packages/config/*"],
       "@meteora-invent/studio": ["./studio"],
       "@meteora-invent/scaffold/*": ["./scaffolds/*"],
       "@/*": ["./scaffolds/fun-launch/src/*"]
-    },
-    "noEmit": true,
-    "skipLibCheck": true,
-    "jsx": "react-jsx",
-    "lib": ["DOM", "DOM.Iterable", "ES2020"],
-    "allowSyntheticDefaultImports": true,
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true
+    }
   },
   "include": [
     "packages/**/*.ts",
@@ -25,11 +25,5 @@
     "studio/**/*.ts",
     "studio/**/*.tsx"
   ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "build",
-    ".next",
-    ".turbo"
-  ]
+  "exclude": ["node_modules", "dist", "build", ".next", ".turbo"]
 }
