@@ -1,28 +1,29 @@
 // studio/src/scripts/dbc/claim_all_fees.ts
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { claimAllTradingFeesForOwner } from "../../lib/dbc/claim_all";
-
-// Re-use your existing helpers so config + key handling stays identical
-import { loadDbcConfig } from "../../helpers/config";
-import { getKeypairFromSecretKey } from "../../helpers/accounts";
+import * as ConfigHelpers from "../../helpers/config";
+import * as AccountHelpers from "../../helpers/accounts";
+import fs from "fs";
+import path from "path";
 
 async function main() {
-  // Allow `--config ./studio/config/dbc_config.jsonc` exactly like other scripts
   const cfgFlagIdx = process.argv.indexOf("--config");
   const cfgPath =
     cfgFlagIdx !== -1 && process.argv[cfgFlagIdx + 1]
       ? process.argv[cfgFlagIdx + 1]
       : "./studio/config/dbc_config.jsonc";
 
-  const cfg: any = await loadDbcConfig(cfgPath);
+  const loadCfg =
+    (ConfigHelpers as any).loadDbcConfig ||
+    (ConfigHelpers as any).loadConfig ||
+    (ConfigHelpers as any).getDbcConfig;
+  const cfg: any = loadCfg ? await loadCfg(cfgPath) : JSON.parse(fs.readFileSync(cfgPath, "utf8"));
 
-  // Prefer explicit RPC in config, else env var (keeps parity with your workflow)
   const rpcUrl = cfg.rpcUrl || process.env.RPC_URL;
   if (!rpcUrl) {
     throw new Error("Missing rpcUrl (set in dbc_config.jsonc or RPC_URL env)");
   }
 
-  // The owner of pool CONFIGS (not creator), used by getPoolConfigsByOwner
   const ownerStr = cfg.owner || process.env.DBC_OWNER;
   if (!ownerStr) {
     throw new Error("Missing owner (set cfg.owner or DBC_OWNER env)");
@@ -33,20 +34,25 @@ async function main() {
     throw new Error("Missing feeClaimer (set cfg.feeClaimer or FEE_CLAIMER env)");
   }
 
-  // Signer: same pattern as other studio scripts
-  // Accept: cfg.privateKey (array/base58) or PRIVATE_KEY_B58 env (decoded in workflow)
   let signer: Keypair | null = null;
-
-  if (cfg.privateKey) {
-    signer = await getKeypairFromSecretKey(cfg.privateKey);
-  } else if (process.env.PRIVATE_KEY || process.env.PK || process.env.PRIVATE_KEY_B58) {
-    signer = await getKeypairFromSecretKey(
-      process.env.PRIVATE_KEY || process.env.PK || process.env.PRIVATE_KEY_B58
-    );
+  const getKp =
+    (AccountHelpers as any).getKeypairFromSecretKey ||
+    (AccountHelpers as any).keypairFromSecret ||
+    (AccountHelpers as any).loadKeypairFromSecret;
+  if (cfg.privateKey && getKp) {
+    signer = await getKp(cfg.privateKey);
+  } else if ((process.env.PRIVATE_KEY || process.env.PK || process.env.PRIVATE_KEY_B58) && getKp) {
+    signer = await getKp(process.env.PRIVATE_KEY || process.env.PK || process.env.PRIVATE_KEY_B58);
   } else {
-    // Fallback to the keypair.json generated in CI step
-    // (workflow writes keypair.json from base58 and cleans it up at the end)
-    signer = await getKeypairFromSecretKey(require("../../../../keypair.json"));
+    const kpPath = path.resolve(process.cwd(), "keypair.json");
+    if (fs.existsSync(kpPath)) {
+      const raw = fs.readFileSync(kpPath, "utf8");
+      const arr = JSON.parse(raw) as number[];
+      signer = Keypair.fromSecretKey(Uint8Array.from(arr));
+    }
+  }
+  if (!signer) {
+    throw new Error("Unable to load signer keypair (no cfg.privateKey, env, or keypair.json found).");
   }
 
   const connection = new Connection(rpcUrl, "confirmed");
@@ -68,11 +74,9 @@ async function main() {
     owner,
     feeClaimer,
     {
-      // Provide a signer interface the helper understands
       publicKey: signer.publicKey,
       signTransaction: async (tx: any) => {
-        // VersionedTransaction has .sign, but we standardize via partialSign
-        tx.sign ? tx.sign([signer as Keypair]) : tx.partialSign?.(signer as Keypair);
+        (tx.sign ? tx.sign([signer as Keypair]) : tx.partialSign?.(signer as Keypair));
         return tx;
       },
     },
