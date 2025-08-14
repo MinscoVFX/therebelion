@@ -6,53 +6,100 @@ on:
   pull_request:
     branches: [main, develop]
   schedule:
-    - cron: "0 */6 * * *" # every 6 hours (adjust as needed)
-  workflow_dispatch: # allow manual trigger
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-format:
     name: Lint and Format Check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+          run_install: false
+
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-      - name: Auto-format across all packages (Prettier)
-        run: pnpm -r exec prettier --write .
+          node-version: "20"
+          cache: "pnpm"
+
+      # Cache pnpm store (big speedup)
+      - name: Get pnpm store path
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      # Choose ONE of the following two installs:
+      - name: Install deps (strict)
+        run: pnpm -w install --frozen-lockfile
+      # - name: Install deps (lenient)
+      #   run: pnpm -w install --no-frozen-lockfile
+
+      # REMOVE the write step; only check
+      # - name: Auto-format across all packages (Prettier)
+      #   run: pnpm -r exec prettier --write .
+
       - name: Check formatting
         run: pnpm format:check
+
       - name: Lint code
         run: pnpm lint
+
       - name: Check dependency versions
         run: pnpm syncpack:check
+
+      # Fail if anything modified the tree (optional but useful)
+      - name: Ensure repo is clean
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "::error::Working tree dirty after checks. Run format locally and commit."
+            git status --porcelain
+            exit 1
+          fi
 
   build:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+          run_install: false
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+          node-version: "20"
+          cache: "pnpm"
+      - name: Get pnpm store path
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+      - name: Install deps
+        run: pnpm -w install --frozen-lockfile
       - name: Build all packages
         run: pnpm build
 
@@ -60,19 +107,29 @@ jobs:
     name: Type Check
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+          run_install: false
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+          node-version: "20"
+          cache: "pnpm"
+      - name: Get pnpm store path
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+      - name: Install deps
+        run: pnpm -w install --frozen-lockfile
       - name: Type check
         run: pnpm run type-check
 
@@ -80,42 +137,66 @@ jobs:
     name: Claim Partner Fees
     runs-on: ubuntu-latest
     needs: [lint-and-format, build, type-check]
-    if: github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 15
+    if: |
+      github.event_name == 'schedule' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch'
+    concurrency:
+      group: claim-partner-fees
+      cancel-in-progress: false
+    permissions:
+      contents: read
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+          run_install: false
+      - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'pnpm'
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+          node-version: "20"
+          cache: "pnpm"
+      - name: Get pnpm store path
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+      - name: Install deps
+        run: pnpm -w install --frozen-lockfile
 
-      # Decode Phantom base58 (32/64) → keypair.json at repo root
-      - name: Decode PK_B58 to full keypair.json
+      # Decode Phantom base58 → keypair.json (supports 32-byte seeds and 64-byte secrets)
+      - name: Decode PK_B58 to keypair.json
+        shell: bash
         run: |
-          npx -y -p @solana/web3.js@1.98.2 -p bs58@4 node -e "
+          set -euo pipefail
+          npx -y -p @solana/web3.js@1.98.2 -p bs58@4 -p tweetnacl@1 node -e "
             const fs = require('fs');
-            const b = require('bs58');
+            const bs58 = require('bs58');
+            const nacl = require('tweetnacl');
             const { Keypair } = require('@solana/web3.js');
 
             const s = (process.env.PK_B58 || process.env.PRIVATE_KEY_B58 || '').trim();
             if (!s) throw new Error('Missing PK_B58 or PRIVATE_KEY_B58');
+            const secret = bs58.decode(s);
 
-            const decode = (b && b.decode) ? b.decode : (b.default && b.default.decode);
-            if (typeof decode !== 'function') throw new Error('bs58.decode not available');
-
-            const secret = decode(s);
-            if (secret.length !== 32 && secret.length !== 64) {
-              throw new Error('Decoded key length is ' + secret.length + ' bytes; expected 32 or 64');
+            let kp;
+            if (secret.length === 64) {
+              kp = Keypair.fromSecretKey(Uint8Array.from(secret));
+            } else if (secret.length === 32) {
+              const kpSeed = nacl.sign.keyPair.fromSeed(Uint8Array.from(secret));
+              kp = Keypair.fromSecretKey(Uint8Array.from(kpSeed.secretKey));
+            } else {
+              throw new Error('Unsupported key length: ' + secret.length + ' (expected 32 or 64 bytes)');
             }
 
-            const kp = Keypair.fromSecretKey(secret);
             fs.writeFileSync('keypair.json', JSON.stringify(Array.from(kp.secretKey)));
             console.log('Public key:', kp.publicKey.toBase58());
           "
@@ -123,7 +204,6 @@ jobs:
           PK_B58: ${{ secrets.PK_B58 }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
 
-      # Preflight: fail clearly if required env vars are missing
       - name: Preflight env check
         run: |
           for v in RPC_URL DBC_OWNER FEE_CLAIMER; do
@@ -137,7 +217,6 @@ jobs:
           DBC_OWNER: ${{ secrets.DBC_OWNER }}
           FEE_CLAIMER: ${{ secrets.FEE_CLAIMER }}
 
-      # Auto-discovery claim (uses keypair.json at repo root)
       - name: Claim ALL partner fees
         run: pnpm studio:dbc-claim-all-fees-auto
         env:
@@ -145,6 +224,8 @@ jobs:
           DBC_OWNER: ${{ secrets.DBC_OWNER }}
           FEE_CLAIMER: ${{ secrets.FEE_CLAIMER }}
           KEYPAIR_PATH: ${{ github.workspace }}/keypair.json
+          DEBUG: "true" # optional for richer logs
 
       - name: Clean up keypair.json
+        if: always()
         run: rm -f keypair.json
