@@ -6,6 +6,7 @@ import {
   VersionedTransaction,
   TransactionMessage,
   Keypair,
+  TransactionInstruction,
 } from "@solana/web3.js";
 import * as DBC from "@meteora-ag/dynamic-bonding-curve-sdk";
 
@@ -35,6 +36,22 @@ export async function claimAllTradingFeesForOwner(
     setComputeUnitLimit = 1_000_000,
   } = opts;
 
+  // -- helpers --------------------------------------------------------------
+  const asPubkey = (v: any): PublicKey => {
+    if (v instanceof PublicKey) return v;
+    if (v?.toBase58) {
+      try {
+        return new PublicKey(v.toBase58());
+      } catch {
+        /* noop */
+      }
+    }
+    if (typeof v === "string") return new PublicKey(v);
+    if (v?.pubkey) return asPubkey(v.pubkey);
+    if (v?.publicKey) return asPubkey(v.publicKey);
+    return new PublicKey(v); // will throw if invalid (surface early)
+  };
+
   // 1) Get all pool configs owned by `owner`
   const getPoolConfigsByOwnerFn =
     (DBC as any).getPoolConfigsByOwner ||
@@ -44,7 +61,7 @@ export async function claimAllTradingFeesForOwner(
   if (!getPoolConfigsByOwnerFn) {
     throw new Error("SDK does not expose getPoolConfigsByOwner; please update mapping in claim_all.ts");
   }
-  const poolConfigs = await getPoolConfigsByOwnerFn(connection, owner);
+  const poolConfigs: any[] = await getPoolConfigsByOwnerFn(connection, owner);
 
   // 2) Expand configs → pools
   const getPoolsByConfigFn =
@@ -56,12 +73,12 @@ export async function claimAllTradingFeesForOwner(
     throw new Error("SDK does not expose getPoolsByConfig; please update mapping in claim_all.ts");
   }
   const poolsArrays = await Promise.all(
-    poolConfigs.map((cfg: any) => getPoolsByConfigFn(connection, cfg.pubkey))
+    poolConfigs.map((cfg: any) => getPoolsByConfigFn(connection, asPubkey(cfg?.pubkey ?? cfg)))
   );
-  const pools = poolsArrays.flat();
+  const pools: any[] = poolsArrays.flat();
 
   // 3) Build one claim instruction per pool
-  const claimIxs: any[] = [];
+  const claimIxs: TransactionInstruction[] = [];
   for (const pool of pools) {
     try {
       if (skipIfNoFees) {
@@ -72,7 +89,7 @@ export async function claimAllTradingFeesForOwner(
         if (!fetchPoolStateFn) {
           throw new Error("SDK does not expose fetchPoolState; please update mapping in claim_all.ts");
         }
-        const state: any = await fetchPoolStateFn(connection, pool.pubkey);
+        const state: any = await fetchPoolStateFn(connection, asPubkey(pool?.pubkey ?? pool));
         const pending =
           state?.partnerFeesUnclaimed ??
           state?.feesUnclaimed ??
@@ -96,21 +113,21 @@ export async function claimAllTradingFeesForOwner(
       }
       const ix = await buildClaimTradingFeesIxFn({
         connection,
-        poolPubkey: new PublicKey(pool.pubkey),
+        poolPubkey: asPubkey(pool?.pubkey ?? pool),
         feeClaimer,
       });
 
       if (Array.isArray(ix)) {
-        claimIxs.push(...ix);
+        claimIxs.push(...(ix as TransactionInstruction[]));
       } else if (ix?.instructions) {
-        claimIxs.push(...ix.instructions);
+        claimIxs.push(...(ix.instructions as TransactionInstruction[]));
       } else {
-        claimIxs.push(ix);
+        claimIxs.push(ix as TransactionInstruction);
       }
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn(
-        `Skipping pool ${pool?.pubkey?.toBase58?.() ?? String(pool?.pubkey)}:`,
+        `Skipping pool ${pool?.pubkey?.toBase58?.() ?? pool?.toBase58?.() ?? String(pool?.pubkey ?? pool)}:`,
         e
       );
     }
@@ -121,7 +138,7 @@ export async function claimAllTradingFeesForOwner(
   }
 
   // 4) Chunk into multiple transactions if needed
-  const chunks: any[][] = [];
+  const chunks: TransactionInstruction[][] = [];
   for (let i = 0; i < claimIxs.length; i += maxIxsPerTx) {
     chunks.push(claimIxs.slice(i, i + maxIxsPerTx));
   }
@@ -131,7 +148,7 @@ export async function claimAllTradingFeesForOwner(
 
   const sigs: string[] = [];
   for (const ixChunk of chunks) {
-    const ixs = [];
+    const ixs: TransactionInstruction[] = [];
 
     if (priorityMicrolamportsPerCU > 0) {
       ixs.push(
@@ -159,7 +176,7 @@ export async function claimAllTradingFeesForOwner(
 
     const vtx = new VersionedTransaction(msg);
 
-    const maybeKp = (signer as unknown as Keypair);
+    const maybeKp = signer as unknown as Keypair;
     if ((maybeKp as any)?.secretKey) {
       vtx.sign([maybeKp]);
     } else {
