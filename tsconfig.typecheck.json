@@ -9,26 +9,27 @@
       "@/*": ["./scaffolds/fun-launch/src/*"]
     },
     "noEmit": true,
-    "composite": false,
     "skipLibCheck": true,
     "jsx": "react-jsx",
-    "lib": ["dom", "dom.iterable", "es6"],
-    "allowJs": true,
-    "esModuleInterop": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2020"],
     "allowSyntheticDefaultImports": true,
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false
+    "isolatedModules": true
   },
   "include": [
     "packages/**/*.ts",
-    "packages/**/*.tsx", 
+    "packages/**/*.tsx",
     "scaffolds/**/*.ts",
     "scaffolds/**/*.tsx",
     "studio/**/*.ts",
     "studio/**/*.tsx"
   ],
-  "exclude": ["node_modules", "dist", "build", ".next", ".turbo"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    ".next",
+    ".turbo"
+  ]
 }
