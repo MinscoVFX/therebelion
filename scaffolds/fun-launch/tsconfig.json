@@ -1,14 +1,9 @@
 {
-  "extends": "@meteora-invent/config/typescript/nextjs",
+  "extends": "../../tsconfig.json",
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
-    },
-    "composite": true,
-    "noEmit": false,
-    "strictNullChecks": false
-  },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+      "@/*": ["src/*"]
+    }
+  }
 }
