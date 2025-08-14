@@ -2,7 +2,6 @@
 import {
   Connection,
   PublicKey,
-  Keypair,
   Transaction,
   sendAndConfirmTransaction,
 } from '@solana/web3.js';
@@ -18,7 +17,9 @@ function parseMints(): PublicKey[] {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  if (!list.length) throw new Error('BASE_MINTS is empty. Set a comma-separated list of base mints in Actions secrets.');
+  if (!list.length) {
+    throw new Error('BASE_MINTS is empty. Set a comma-separated list of base mints in Actions secrets.');
+  }
   return list.map((m) => {
     try {
       return new PublicKey(m);
@@ -28,7 +29,7 @@ function parseMints(): PublicKey[] {
   });
 }
 
-function resolveSdkClaim(client: any) {
+function resolveSdkClaim(client: unknown) {
   const candidates = [
     'partner.claimTradingFee',
     'partner.claimPartnerTradingFee',
@@ -38,7 +39,7 @@ function resolveSdkClaim(client: any) {
   ];
   for (const path of candidates) {
     const fn = path.split('.').reduce<any>(
-      (o, k) => (o && o[k] !== undefined ? o[k] : undefined),
+      (o, k) => (o && (o as Record<string, unknown>)[k] !== undefined ? (o as Record<string, unknown>)[k] : undefined),
       client,
     );
     if (typeof fn === 'function') {
@@ -48,7 +49,7 @@ function resolveSdkClaim(client: any) {
         feeClaimer: PublicKey;
         computeUnitPriceMicroLamports?: number;
       }): Promise<{ tx?: Transaction; sig?: string }> => {
-        const res = await fn.call(client.partner ?? client, {
+        const res = await fn.call((client as any).partner ?? client, {
           baseMint: args.baseMint,
           payer: args.payer,
           feeClaimer: args.feeClaimer,
@@ -65,6 +66,19 @@ function resolveSdkClaim(client: any) {
   return undefined;
 }
 
+async function getPartnerFeesSafe(client: any, baseMint: PublicKey, partner: PublicKey): Promise<number | null> {
+  try {
+    if (typeof client.partner?.getPartnerFees === 'function') {
+      const fees = await client.partner.getPartnerFees({ baseMint, partner });
+      const lamports = fees?.toNumber ? fees.toNumber() : Number(fees || 0);
+      return lamports / 1e9;
+    }
+  } catch (err) {
+    console.warn(`⚠️  Could not fetch fees for ${baseMint.toBase58()}: ${err}`);
+  }
+  return null;
+}
+
 async function main() {
   const cfg = (await parseConfigFromCli()) as DbcConfig;
   const keypair = await safeParseKeypairFromFile(cfg.keypairFilePath);
@@ -75,10 +89,12 @@ async function main() {
   const wallet = new AnchorWallet(keypair);
 
   const mints = parseMints();
+  const MIN_SOL_THRESHOLD = parseFloat(process.env.MIN_SOL_THRESHOLD || '0.001');
 
   console.log(`> Claiming partner trading fees with wallet ${me.toBase58()}`);
   console.log(`> RPC: ${rpc}`);
   console.log(`> Pools: ${mints.length}`);
+  console.log(`> Minimum claim threshold: ${MIN_SOL_THRESHOLD} SOL`);
 
   const client = new DynamicBondingCurveClient(conn, DEFAULT_COMMITMENT_LEVEL) as any;
   const sdkClaim = resolveSdkClaim(client);
@@ -86,29 +102,54 @@ async function main() {
   let ok = 0;
   let fail = 0;
 
+  // Step 1 — Get fee amounts
+  const mintFeeList: { baseMint: PublicKey; solAmount: number }[] = [];
   for (const baseMint of mints) {
+    const amount = await getPartnerFeesSafe(client, baseMint, me);
+    if (amount === null) {
+      // Fallback: we don't know fees, so mark high to still try
+      mintFeeList.push({ baseMint, solAmount: Number.MAX_SAFE_INTEGER });
+    } else {
+      mintFeeList.push({ baseMint, solAmount: amount });
+    }
+  }
+
+  // Step 2 — Sort by highest first
+  mintFeeList.sort((a, b) => b.solAmount - a.solAmount);
+
+  // Step 3 — Claim
+  for (const { baseMint, solAmount } of mintFeeList) {
     const mintStr = baseMint.toBase58();
-    console.log(`— Claiming for baseMint ${mintStr} ...`);
+
+    if (solAmount !== Number.MAX_SAFE_INTEGER) {
+      if (solAmount <= 0) {
+        console.log(`ℹ️  No fees for ${mintStr}, skipping`);
+        continue;
+      }
+      if (solAmount < MIN_SOL_THRESHOLD) {
+        console.log(`⚠️  ${mintStr} has ${solAmount} SOL (< ${MIN_SOL_THRESHOLD}), skipping`);
+        continue;
+      }
+    }
+
+    console.log(`— Claiming for baseMint ${mintStr} (${solAmount === Number.MAX_SAFE_INTEGER ? 'unknown fees' : `${solAmount} SOL`})`);
+
     try {
-      // 1) Prefer your repo’s implementation (most compatible with your lib version)
+      // Try your lib implementation first
       try {
         const runCfg: DbcConfig = { ...cfg, baseMint: mintStr };
         await claimFromLib(runCfg, conn, wallet);
         console.log('✔ Claimed via lib/dbc');
         ok++;
-        continue; // next mint
+        continue;
       } catch (e: any) {
-        // Only fall through to SDK if this is NOT a “pool not found / not claimable” type error
         const msg = String(e?.message || e);
-        const unrecoverable =
-          /DBC Pool not found|not claimable|invalid pool|not authorized/i.test(msg);
-        if (unrecoverable) {
+        if (/DBC Pool not found|not claimable|invalid pool|not authorized/i.test(msg)) {
           throw e;
         }
-        // else: try SDK path
       }
 
-      // 2) SDK fallback
+      // SDK fallback
       if (!sdkClaim) throw new Error('SDK claim function not found');
       const res = await sdkClaim({
         baseMint,
@@ -118,16 +159,15 @@ async function main() {
       });
 
       if (res.sig) {
-        console.log(`✔ Claimed via SDK (submitted internally). Tx: ${res.sig}`);
+        console.log(`✔ Claimed via SDK (internal submit). Tx: ${res.sig}`);
         ok++;
         continue;
       }
       if (res.tx) {
-        const tx = res.tx;
-        tx.feePayer = me;
+        res.tx.feePayer = me;
         const { blockhash } = await conn.getLatestBlockhash(DEFAULT_COMMITMENT_LEVEL);
-        tx.recentBlockhash = blockhash;
-        const sig = await sendAndConfirmTransaction(conn, tx, [keypair], {
+        res.tx.recentBlockhash = blockhash;
+        const sig = await sendAndConfirmTransaction(conn, res.tx, [keypair], {
           commitment: DEFAULT_COMMITMENT_LEVEL,
           skipPreflight: true,
           maxRetries: 5,
@@ -139,7 +179,7 @@ async function main() {
 
       throw new Error('SDK did not return a transaction or signature');
     } catch (e: any) {
-      console.error(`✖ Claim failed: ${e?.message || String(e)}`);
+      console.error(`✖ Claim failed for ${mintStr}: ${e?.message || String(e)}`);
       fail++;
     }
   }
