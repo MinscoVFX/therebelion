@@ -18,7 +18,7 @@
     "format:check": "turbo format:check",
     "type-check": "tsc --noEmit -p tsconfig.typecheck.json",
     "clean": "turbo clean && rm -rf node_modules",
-    "dbc-claim-all-fees": "tsx src/scripts/dbc/claim_all_fees.ts --config ./config/dbc_config.jsonc",
+    "dbc-claim-all-fees": "pnpm --filter @meteora-invent/studio dbc-claim-all-fees",
     "studio": "pnpm --filter @meteora-invent/studio",
     "scaffold": "pnpm --filter '@meteora-invent/scaffold-*'",
     "validate-env": "turbo validate-env",
