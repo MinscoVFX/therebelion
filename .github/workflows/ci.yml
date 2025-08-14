@@ -96,7 +96,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      # Decode Phantom base58 (32/64) → keypair.json
+      # Decode Phantom base58 (32/64) → keypair.json at repo root
       - name: Decode PK_B58 to full keypair.json
         run: |
           npx -y -p @solana/web3.js@1.98.2 -p bs58@4 node -e "
@@ -137,13 +137,14 @@ jobs:
           DBC_OWNER: ${{ secrets.DBC_OWNER }}
           FEE_CLAIMER: ${{ secrets.FEE_CLAIMER }}
 
-      # Auto-discovery claim (no BASE_MINTS, no --config)
+      # Auto-discovery claim (uses keypair.json at repo root)
       - name: Claim ALL partner fees
         run: pnpm studio:dbc-claim-all-fees-auto
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
           DBC_OWNER: ${{ secrets.DBC_OWNER }}
           FEE_CLAIMER: ${{ secrets.FEE_CLAIMER }}
+          KEYPAIR_PATH: ${{ github.workspace }}/keypair.json
 
       - name: Clean up keypair.json
         run: rm -f keypair.json
