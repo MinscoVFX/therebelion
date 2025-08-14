@@ -76,9 +76,13 @@ async function main() {
 
   const mints = parseMints();
 
+  // Minimum claimable amount (in SOL) — default: 0.001 SOL
+  const MIN_SOL_THRESHOLD = parseFloat(process.env.MIN_SOL_THRESHOLD || "0.001");
+
   console.log(`> Claiming partner trading fees with wallet ${me.toBase58()}`);
   console.log(`> RPC: ${rpc}`);
   console.log(`> Pools: ${mints.length}`);
+  console.log(`> Minimum claim threshold: ${MIN_SOL_THRESHOLD} SOL`);
 
   const client = new DynamicBondingCurveClient(conn, DEFAULT_COMMITMENT_LEVEL) as any;
   const sdkClaim = resolveSdkClaim(client);
@@ -86,26 +90,63 @@ async function main() {
   let ok = 0;
   let fail = 0;
 
+  // --- Step 1: Fetch all fees first
+  let mintFeeList: { baseMint: PublicKey; solAmount: number }[] = [];
+
   for (const baseMint of mints) {
-    const mintStr = baseMint.toBase58();
-    console.log(`— Claiming for baseMint ${mintStr} ...`);
     try {
-      // 1) Prefer your repo’s implementation (most compatible with your lib version)
+      if (typeof client.partner?.getPartnerFees === 'function') {
+        const fees = await client.partner.getPartnerFees({
+          baseMint,
+          partner: me,
+        });
+        const lamports = fees?.toNumber ? fees.toNumber() : Number(fees || 0);
+        const solAmount = lamports / 1e9;
+        mintFeeList.push({ baseMint, solAmount });
+      } else {
+        console.warn(`⚠️  getPartnerFees() not found in SDK, skipping fee check for ${baseMint.toBase58()}`);
+        mintFeeList.push({ baseMint, solAmount: Number.MAX_SAFE_INTEGER }); // force to top if no check
+      }
+    } catch (err) {
+      console.error(`❌ Failed to fetch fees for ${baseMint.toBase58()}: ${err}`);
+    }
+  }
+
+  // --- Step 2: Sort pools by SOL amount (highest first)
+  mintFeeList.sort((a, b) => b.solAmount - a.solAmount);
+
+  // --- Step 3: Claim in sorted order
+  for (const { baseMint, solAmount } of mintFeeList) {
+    const mintStr = baseMint.toBase58();
+
+    // Skip if below threshold
+    if (solAmount <= 0) {
+      console.log(`ℹ️  No partner fees available for ${mintStr}, skipping...`);
+      continue;
+    }
+    if (solAmount < MIN_SOL_THRESHOLD) {
+      console.log(`⚠️  Fees (${solAmount} SOL) are below threshold (${MIN_SOL_THRESHOLD} SOL), skipping...`);
+      continue;
+    }
+
+    console.log(`— Claiming for baseMint ${mintStr} ...`);
+    console.log(`   Partner fees to claim: ${solAmount} SOL`);
+
+    try {
+      // 1) Try repo’s implementation first
       try {
         const runCfg: DbcConfig = { ...cfg, baseMint: mintStr };
         await claimFromLib(runCfg, conn, wallet);
         console.log('✔ Claimed via lib/dbc');
         ok++;
-        continue; // next mint
+        continue;
       } catch (e: any) {
-        // Only fall through to SDK if this is NOT a “pool not found / not claimable” type error
         const msg = String(e?.message || e);
         const unrecoverable =
           /DBC Pool not found|not claimable|invalid pool|not authorized/i.test(msg);
         if (unrecoverable) {
           throw e;
         }
-        // else: try SDK path
       }
 
       // 2) SDK fallback
