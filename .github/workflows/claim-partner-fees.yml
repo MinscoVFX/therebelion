@@ -2,15 +2,16 @@ name: Claim Partner Fees
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *' # every 6 hours
 
 jobs:
   claim-partner-fees:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # PRE: ensure pnpm exists so setup-node cache:pnpm doesn't fail
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
         with:
@@ -19,10 +20,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
           cache: 'pnpm'
 
-      # POST: re-add pnpm to PATH in case setup-node tweaked it
       - name: Setup pnpm (post PATH restore)
         uses: pnpm/action-setup@v4
         with:
@@ -31,7 +31,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      # ⬇ Decode Phantom base58 (32/64) to full 64-byte keypair.json
       - name: Decode PK_B58 to full keypair.json
         run: |
           npx -y -p @solana/web3.js@1.98.2 -p bs58@4 node -e "
@@ -58,17 +57,14 @@ jobs:
           PK_B58: ${{ secrets.PK_B58 }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
 
-      # ⬇ Recommended SDK claim script from Meteora docs
-      - name: Run claim ALL trading fees (SDK)
-        run: pnpm --filter @meteora-invent/studio dbc-claim-all-fees --config ./studio/config/dbc_config.jsonc
+      - name: Claim ALL partner fees
+        run: pnpm dbc-claim-all-fees --config ./studio/config/dbc_config.jsonc
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
-          BASE_MINTS: ${{ secrets.BASE_MINTS }}
           DBC_OWNER: ${{ secrets.DBC_OWNER }}
           FEE_CLAIMER: ${{ secrets.FEE_CLAIMER }}
           # PRIORITY_MICROLAMPORTS_PER_CU: "1500"
           # MAX_IXS_PER_TX: "14"
-          # DBC_PROGRAM_ID: ${{ secrets.DBC_PROGRAM_ID }} # optional, only if overriding SDK's ID
 
       - name: Clean up keypair.json
         run: rm -f keypair.json
