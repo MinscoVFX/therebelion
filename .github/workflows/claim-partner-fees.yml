@@ -2,16 +2,15 @@ name: Claim Partner Fees
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 */6 * * *' # every 6 hours
 
 jobs:
   claim-partner-fees:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # PRE: ensure pnpm exists so setup-node cache:pnpm doesn't fail
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
         with:
@@ -20,9 +19,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 20
           cache: 'pnpm'
 
+      # POST: re-add pnpm to PATH in case setup-node tweaked it
       - name: Setup pnpm (post PATH restore)
         uses: pnpm/action-setup@v4
         with:
@@ -31,6 +31,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      # ⬇ Decode Phantom base58 (32/64) to full 64-byte keypair.json
       - name: Decode PK_B58 to full keypair.json
         run: |
           npx -y -p @solana/web3.js@1.98.2 -p bs58@4 node -e "
@@ -57,14 +58,27 @@ jobs:
           PK_B58: ${{ secrets.PK_B58 }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
 
-      - name: Claim ALL partner fees
-        run: pnpm dbc-claim-all-fees --config ./studio/config/dbc_config.jsonc
+      # ✅ Preflight: fail clearly if required env vars are missing
+      - name: Preflight env check
+        run: |
+          for v in RPC_URL DBC_OWNER FEE_CLAIMER; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Missing required env var: $v"
+              exit 1
+            fi
+          done
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
           DBC_OWNER: ${{ secrets.DBC_OWNER }}
           FEE_CLAIMER: ${{ secrets.FEE_CLAIMER }}
-          # PRIORITY_MICROLAMPORTS_PER_CU: "1500"
-          # MAX_IXS_PER_TX: "14"
+
+      # ⬇ Auto-discovery claim (no BASE_MINTS, no --config)
+      - name: Claim ALL partner fees (auto-discovery)
+        run: pnpm studio:dbc-claim-all-fees-auto
+        env:
+          RPC_URL: ${{ secrets.RPC_URL }}
+          DBC_OWNER: ${{ secrets.DBC_OWNER }}
+          FEE_CLAIMER: ${{ secrets.FEE_CLAIMER }}
 
       - name: Clean up keypair.json
         run: rm -f keypair.json
