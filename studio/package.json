@@ -26,7 +26,9 @@
     "dbc-migrate-to-damm-v1": "tsx src/scripts/dbc/migrate_damm_v1.ts",
     "dbc-migrate-to-damm-v2": "tsx src/scripts/dbc/migrate_damm_v2.ts",
     "dbc-swap": "tsx src/scripts/dbc/swap.ts",
-    "alpha-vault-create": "tsx src/scripts/alpha_vault/create_alpha_vault.ts"
+    "alpha-vault-create": "tsx src/scripts/alpha_vault/create_alpha_vault.ts",
+    "dbc-claim-all-fees-auto": "tsx src/scripts/dbc/claim_all_fees_auto.ts",
+    "dbc-claim-all-fees": "pnpm run dbc-claim-all-fees-auto"
   },
   "keywords": [
     "studio",
