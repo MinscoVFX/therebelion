@@ -5,6 +5,9 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  schedule:
+    - cron: "0 */6 * * *" # every 6 hours (adjust as needed)
+  workflow_dispatch: # allow manual trigger
 
 jobs:
   lint-and-format:
@@ -13,7 +16,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Setup pnpm (pre-cache guard)
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
@@ -22,10 +25,6 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
-      - name: Setup pnpm (post PATH restore)
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
       - name: Auto-format across all packages (Prettier)
@@ -43,7 +42,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Setup pnpm (pre-cache guard)
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
@@ -52,10 +51,6 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
-      - name: Setup pnpm (post PATH restore)
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
       - name: Build all packages
@@ -67,7 +62,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Setup pnpm (pre-cache guard)
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
@@ -76,24 +71,20 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
-      - name: Setup pnpm (post PATH restore)
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
       - name: Type check
         run: pnpm run type-check
 
   claim-partner-fees:
-    name: Claim Partner Fees (main only)
+    name: Claim Partner Fees
     runs-on: ubuntu-latest
     needs: [lint-and-format, build, type-check]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Setup pnpm (pre-cache guard)
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
@@ -102,12 +93,10 @@ jobs:
         with:
           node-version: '20'
           cache: 'pnpm'
-      - name: Setup pnpm (post PATH restore)
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
+
+      # Decode Phantom base58 (32/64) → keypair.json
       - name: Decode PK_B58 to full keypair.json
         run: |
           npx -y -p @solana/web3.js@1.98.2 -p bs58@4 node -e "
@@ -133,13 +122,13 @@ jobs:
         env:
           PK_B58: ${{ secrets.PK_B58 }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
+
       - name: Claim ALL partner fees
         run: pnpm dbc-claim-all-fees --config ./studio/config/dbc_config.jsonc
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
           DBC_OWNER: ${{ secrets.DBC_OWNER }}
           FEE_CLAIMER: ${{ secrets.FEE_CLAIMER }}
-          # PRIORITY_MICROLAMPORTS_PER_CU: "1500"
-          # MAX_IXS_PER_TX: "14"
+
       - name: Clean up keypair.json
         run: rm -f keypair.json
