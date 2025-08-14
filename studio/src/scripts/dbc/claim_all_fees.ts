@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 
 async function main() {
+  // Resolve config path deterministically (string)
   const defaultCfgPath = resolve(process.cwd(), "studio/config/dbc_config.jsonc");
   const cfgFlagIdx = process.argv.indexOf("--config");
   const argAfterFlag = cfgFlagIdx >= 0 ? process.argv[cfgFlagIdx + 1] : undefined;
@@ -15,6 +16,7 @@ async function main() {
       ? argAfterFlag
       : defaultCfgPath;
 
+  // Load config from helper if present; else parse JSONC (comments stripped)
   const loadCfg =
     (ConfigHelpers as any).loadDbcConfig ||
     (ConfigHelpers as any).loadConfig ||
@@ -27,20 +29,15 @@ async function main() {
   const cfg: any = cfgRaw ?? {};
 
   const rpcUrl = cfg.rpcUrl || process.env.RPC_URL;
-  if (!rpcUrl) {
-    throw new Error("Missing rpcUrl (set in dbc_config.jsonc or RPC_URL env)");
-  }
+  if (!rpcUrl) throw new Error("Missing rpcUrl (set in dbc_config.jsonc or RPC_URL env)");
 
   const ownerStr = cfg.owner || process.env.DBC_OWNER;
-  if (!ownerStr) {
-    throw new Error("Missing owner (set cfg.owner or DBC_OWNER env)");
-  }
+  if (!ownerStr) throw new Error("Missing owner (set cfg.owner or DBC_OWNER env)");
 
   const feeClaimerStr = cfg.feeClaimer || process.env.FEE_CLAIMER;
-  if (!feeClaimerStr) {
-    throw new Error("Missing feeClaimer (set cfg.feeClaimer or FEE_CLAIMER env)");
-  }
+  if (!feeClaimerStr) throw new Error("Missing feeClaimer (set cfg.feeClaimer or FEE_CLAIMER env)");
 
+  // Load signer (no require)
   let signer: Keypair | null = null;
   const getKp =
     (AccountHelpers as any).getKeypairFromSecretKey ||
@@ -73,8 +70,7 @@ async function main() {
       : 0);
 
   const maxIxsPerTx =
-    cfg.maxIxsPerTx ??
-    (process.env.MAX_IXS_PER_TX ? Number(process.env.MAX_IXS_PER_TX) : 14);
+    cfg.maxIxsPerTx ?? (process.env.MAX_IXS_PER_TX ? Number(process.env.MAX_IXS_PER_TX) : 14);
 
   const res = await claimAllTradingFeesForOwner(
     connection,
@@ -83,7 +79,7 @@ async function main() {
     {
       publicKey: signer.publicKey,
       signTransaction: async (tx: any) => {
-        (tx.sign ? tx.sign([signer as Keypair]) : tx.partialSign?.(signer as Keypair));
+        tx.sign ? tx.sign([signer as Keypair]) : tx.partialSign?.(signer as Keypair);
         return tx;
       },
     },
