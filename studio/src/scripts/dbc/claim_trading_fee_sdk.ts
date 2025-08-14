@@ -2,7 +2,6 @@
 import {
   Connection,
   PublicKey,
-  Keypair,
   Transaction,
   sendAndConfirmTransaction,
 } from '@solana/web3.js';
@@ -18,7 +17,11 @@ function parseMints(): PublicKey[] {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  if (!list.length) throw new Error('BASE_MINTS is empty. Set a comma-separated list of base mints in Actions secrets.');
+  if (!list.length) {
+    throw new Error(
+      'BASE_MINTS is empty. Set a comma-separated list of base mints in Actions secrets.',
+    );
+  }
   return list.map((m) => {
     try {
       return new PublicKey(m);
@@ -75,9 +78,7 @@ async function main() {
   const wallet = new AnchorWallet(keypair);
 
   const mints = parseMints();
-
-  // Minimum claimable amount (in SOL) — default: 0.001 SOL
-  const MIN_SOL_THRESHOLD = parseFloat(process.env.MIN_SOL_THRESHOLD || "0.001");
+  const MIN_SOL_THRESHOLD = parseFloat(process.env.MIN_SOL_THRESHOLD || '0.001');
 
   console.log(`> Claiming partner trading fees with wallet ${me.toBase58()}`);
   console.log(`> RPC: ${rpc}`);
@@ -90,9 +91,10 @@ async function main() {
   let ok = 0;
   let fail = 0;
 
-  // --- Step 1: Fetch all fees first
-  let mintFeeList: { baseMint: PublicKey; solAmount: number }[] = [];
+  const processed = new Set<string>(); // Track already processed mints
+  const mintFeeList: { baseMint: PublicKey; solAmount: number }[] = [];
 
+  // --- Step 1: Fetch all fees
   for (const baseMint of mints) {
     try {
       if (typeof client.partner?.getPartnerFees === 'function') {
@@ -104,28 +106,38 @@ async function main() {
         const solAmount = lamports / 1e9;
         mintFeeList.push({ baseMint, solAmount });
       } else {
-        console.warn(`⚠️  getPartnerFees() not found in SDK, skipping fee check for ${baseMint.toBase58()}`);
-        mintFeeList.push({ baseMint, solAmount: Number.MAX_SAFE_INTEGER }); // force to top if no check
+        console.warn(
+          `⚠️  getPartnerFees() not found in SDK, skipping fee check for ${baseMint.toBase58()}`,
+        );
+        mintFeeList.push({ baseMint, solAmount: Number.MAX_SAFE_INTEGER });
       }
     } catch (err) {
       console.error(`❌ Failed to fetch fees for ${baseMint.toBase58()}: ${err}`);
     }
   }
 
-  // --- Step 2: Sort pools by SOL amount (highest first)
+  // --- Step 2: Sort pools by SOL amount
   mintFeeList.sort((a, b) => b.solAmount - a.solAmount);
 
   // --- Step 3: Claim in sorted order
   for (const { baseMint, solAmount } of mintFeeList) {
     const mintStr = baseMint.toBase58();
 
-    // Skip if below threshold
+    if (processed.has(mintStr)) {
+      console.log(`⏩ Already processed ${mintStr}, skipping...`);
+      continue;
+    }
+
     if (solAmount <= 0) {
       console.log(`ℹ️  No partner fees available for ${mintStr}, skipping...`);
+      processed.add(mintStr);
       continue;
     }
     if (solAmount < MIN_SOL_THRESHOLD) {
-      console.log(`⚠️  Fees (${solAmount} SOL) are below threshold (${MIN_SOL_THRESHOLD} SOL), skipping...`);
+      console.log(
+        `⚠️  Fees (${solAmount} SOL) below threshold (${MIN_SOL_THRESHOLD} SOL), skipping...`,
+      );
+      processed.add(mintStr);
       continue;
     }
 
@@ -133,18 +145,17 @@ async function main() {
     console.log(`   Partner fees to claim: ${solAmount} SOL`);
 
     try {
-      // 1) Try repo’s implementation first
+      // 1) Try repo’s implementation
       try {
         const runCfg: DbcConfig = { ...cfg, baseMint: mintStr };
         await claimFromLib(runCfg, conn, wallet);
         console.log('✔ Claimed via lib/dbc');
         ok++;
+        processed.add(mintStr);
         continue;
       } catch (e: any) {
         const msg = String(e?.message || e);
-        const unrecoverable =
-          /DBC Pool not found|not claimable|invalid pool|not authorized/i.test(msg);
-        if (unrecoverable) {
+        if (/DBC Pool not found|not claimable|invalid pool|not authorized/i.test(msg)) {
           throw e;
         }
       }
@@ -155,12 +166,14 @@ async function main() {
         baseMint,
         payer: me,
         feeClaimer: me,
-        computeUnitPriceMicroLamports: cfg.computeUnitPriceMicroLamports ?? 100_000,
+        computeUnitPriceMicroLamports:
+          cfg.computeUnitPriceMicroLamports ?? 100_000,
       });
 
       if (res.sig) {
         console.log(`✔ Claimed via SDK (submitted internally). Tx: ${res.sig}`);
         ok++;
+        processed.add(mintStr);
         continue;
       }
       if (res.tx) {
@@ -175,6 +188,7 @@ async function main() {
         });
         console.log(`✔ Claimed via SDK (signed locally). Tx: ${sig}`);
         ok++;
+        processed.add(mintStr);
         continue;
       }
 
@@ -182,6 +196,7 @@ async function main() {
     } catch (e: any) {
       console.error(`✖ Claim failed: ${e?.message || String(e)}`);
       fail++;
+      processed.add(mintStr); // Avoid retrying failed mints in same run
     }
   }
 
