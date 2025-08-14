@@ -20,6 +20,14 @@
   /* baseMint is required for some actions (not used by claim trading fee). Set to a valid Base58 address to avoid parsing errors. */
   "baseMint": "So11111111111111111111111111111111111111112",
 
+  /* BASE_MINTS is used by claim_trading_fee_sdk.ts.
+     Paste each mint as a separate string; commas separate items.
+     Newlines are fine between items in this array. */
+  "BASE_MINTS": [
+    // "8JbwovsKdAX5M3iWpM8h9HTbGDR51eaM5EhxEojZfvxJ",
+    // "AfHzpGjRzSPr9NjRnx9z3SS731KNBF7E8QQ6WkDMV6Rd"
+  ],
+
   // "dbcConfigAddress": "YOUR_DBC_CONFIG_ADDRESS",
   "dbcConfig": {
     "buildCurveMode": 0, // 0 - buildCurve | 1 - buildCurveWithMarketCap | 2 - buildCurveWithTwoSegments | 3 - buildCurveWithLiquidityWeights
@@ -67,7 +75,7 @@
       "creatorFeePercentage": 0
     },
 
-    /* ⬇⬇⬇ replaced placeholders with your Phantom pubkey ⬇⬇⬇ */
+    /* ⬇⬇⬇ your pubkey for fee/leftover recipients ⬇⬇⬇ */
     "leftoverReceiver": "5eT6oJHsx3iNRqwMhzsdXGqxTWxN8wjfv9SLQdWMLxk6",
     "feeClaimer": "5eT6oJHsx3iNRqwMhzsdXGqxTWxN8wjfv9SLQdWMLxk6"
   },
