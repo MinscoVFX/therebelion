@@ -4,17 +4,36 @@ import { claimAllTradingFeesForOwner } from "../../lib/dbc/claim_all";
 import * as fs from "fs";
 import { resolve } from "path";
 
+function findKeypairPath(): string {
+  // Allow explicit override
+  if (process.env.KEYPAIR_PATH) {
+    const p = resolve(process.env.KEYPAIR_PATH);
+    if (fs.existsSync(p)) return p;
+    throw new Error(`KEYPAIR_PATH was set but not found at: ${p}`);
+  }
+
+  // Try common locations (works whether cwd is repo root or /studio)
+  const candidates = [
+    resolve(process.cwd(), "keypair.json"),           // cwd
+    resolve(process.cwd(), "..", "keypair.json"),     // parent (repo root if cwd is /studio)
+    resolve(process.cwd(), "../..", "keypair.json"),  // safety net
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  throw new Error(
+    `keypair.json not found. Tried:\n${candidates.map((p) => ` - ${p}`).join("\n")}\n` +
+      `Provide KEYPAIR_PATH env to override.`
+  );
+}
+
 async function main() {
   const { RPC_URL, DBC_OWNER, FEE_CLAIMER } = process.env;
   if (!RPC_URL || !DBC_OWNER || !FEE_CLAIMER) {
     throw new Error("Missing RPC_URL, DBC_OWNER, or FEE_CLAIMER in env vars");
   }
 
-  // Use the keypair.json created by the workflow decode step
-  const kpPath = resolve(process.cwd(), "keypair.json");
-  if (!fs.existsSync(kpPath)) {
-    throw new Error(`keypair.json not found at ${kpPath}`);
-  }
+  const kpPath = findKeypairPath();
   const arr = JSON.parse(fs.readFileSync(kpPath, "utf8")) as number[];
   const kp = Keypair.fromSecretKey(Uint8Array.from(arr));
 
