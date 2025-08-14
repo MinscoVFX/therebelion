@@ -2,23 +2,12 @@
 import {
   Connection,
   PublicKey,
-  Transaction,
   ComputeBudgetProgram,
   VersionedTransaction,
   TransactionMessage,
   Keypair,
 } from "@solana/web3.js";
-
-// NOTE: These imports mirror the SDK usage in your existing DBC scripts.
-// If your repo re-exports helpers differently, only adjust the import paths.
-import {
-  getPoolConfigsByOwner,
-  getPoolsByConfig,
-  // Depending on SDK version, these may be under a client helper:
-  // e.g. `import { DbcClient } from "@meteora-ag/dynamic-bonding-curve-sdk"`
-  fetchPoolState,
-  buildClaimTradingFeesIx,
-} from "@meteora-ag/dynamic-bonding-curve-sdk";
+import * as DBC from "@meteora-ag/dynamic-bonding-curve-sdk";
 
 type SignerLike = {
   publicKey?: PublicKey;
@@ -26,17 +15,17 @@ type SignerLike = {
 };
 
 export type ClaimAllOpts = {
-  priorityMicrolamportsPerCU?: number; // e.g. 1500
-  maxIxsPerTx?: number;                // safety cap; 12–18 usually fine
-  skipIfNoFees?: boolean;              // skip pools with zero claimable fees
-  setComputeUnitLimit?: number;        // e.g. 1_000_000
+  priorityMicrolamportsPerCU?: number;
+  maxIxsPerTx?: number;
+  skipIfNoFees?: boolean;
+  setComputeUnitLimit?: number;
 };
 
 export async function claimAllTradingFeesForOwner(
   connection: Connection,
-  owner: PublicKey,        // the owner of the DBC pool configs
-  feeClaimer: PublicKey,   // the wallet that receives partner fees
-  signer: SignerLike,      // wallet adapter / keypair wrapper
+  owner: PublicKey,
+  feeClaimer: PublicKey,
+  signer: SignerLike,
   opts: ClaimAllOpts = {}
 ) {
   const {
@@ -47,11 +36,27 @@ export async function claimAllTradingFeesForOwner(
   } = opts;
 
   // 1) Get all pool configs owned by `owner`
-  const poolConfigs = await getPoolConfigsByOwner(connection, owner);
+  const getPoolConfigsByOwnerFn =
+    (DBC as any).getPoolConfigsByOwner ||
+    (DBC as any).DbcClient?.getPoolConfigsByOwner ||
+    (DBC as any).DBCClient?.getPoolConfigsByOwner ||
+    (DBC as any).PoolConfig?.getByOwner;
+  if (!getPoolConfigsByOwnerFn) {
+    throw new Error("SDK does not expose getPoolConfigsByOwner; please update mapping in claim_all.ts");
+  }
+  const poolConfigs = await getPoolConfigsByOwnerFn(connection, owner);
 
   // 2) Expand configs → pools
+  const getPoolsByConfigFn =
+    (DBC as any).getPoolsByConfig ||
+    (DBC as any).DbcClient?.getPoolsByConfig ||
+    (DBC as any).DBCClient?.getPoolsByConfig ||
+    (DBC as any).Pool?.getByConfig;
+  if (!getPoolsByConfigFn) {
+    throw new Error("SDK does not expose getPoolsByConfig; please update mapping in claim_all.ts");
+  }
   const poolsArrays = await Promise.all(
-    poolConfigs.map((cfg: any) => getPoolsByConfig(connection, cfg.pubkey))
+    poolConfigs.map((cfg: any) => getPoolsByConfigFn(connection, cfg.pubkey))
   );
   const pools = poolsArrays.flat();
 
@@ -60,8 +65,14 @@ export async function claimAllTradingFeesForOwner(
   for (const pool of pools) {
     try {
       if (skipIfNoFees) {
-        const state: any = await fetchPoolState(connection, pool.pubkey);
-        // Try common field names; different SDKs expose BigInt/number.
+        const fetchPoolStateFn =
+          (DBC as any).fetchPoolState ||
+          (DBC as any).DbcClient?.fetchPoolState ||
+          (DBC as any).Pool?.fetchState;
+        if (!fetchPoolStateFn) {
+          throw new Error("SDK does not expose fetchPoolState; please update mapping in claim_all.ts");
+        }
+        const state: any = await fetchPoolStateFn(connection, pool.pubkey);
         const pending =
           state?.partnerFeesUnclaimed ??
           state?.feesUnclaimed ??
@@ -76,13 +87,19 @@ export async function claimAllTradingFeesForOwner(
         }
       }
 
-      const ix = await buildClaimTradingFeesIx({
+      const buildClaimTradingFeesIxFn =
+        (DBC as any).buildClaimTradingFeesIx ||
+        (DBC as any).DbcClient?.buildClaimTradingFeesIx ||
+        (DBC as any).Pool?.buildClaimTradingFeesIx;
+      if (!buildClaimTradingFeesIxFn) {
+        throw new Error("SDK does not expose buildClaimTradingFeesIx; please update mapping in claim_all.ts");
+      }
+      const ix = await buildClaimTradingFeesIxFn({
         connection,
         poolPubkey: new PublicKey(pool.pubkey),
         feeClaimer,
       });
 
-      // Some SDKs return { ix } or { instructions: [] }
       if (Array.isArray(ix)) {
         claimIxs.push(...ix);
       } else if (ix?.instructions) {
@@ -91,7 +108,6 @@ export async function claimAllTradingFeesForOwner(
         claimIxs.push(ix);
       }
     } catch (e) {
-      // Non-fatal — continue building others
       // eslint-disable-next-line no-console
       console.warn(
         `Skipping pool ${pool?.pubkey?.toBase58?.() ?? String(pool?.pubkey)}:`,
@@ -135,7 +151,6 @@ export async function claimAllTradingFeesForOwner(
 
     ixs.push(...ixChunk);
 
-    // Use v0 message to lower TX size; falls back to legacy if needed
     const msg = new TransactionMessage({
       payerKey: payer,
       recentBlockhash: blockhash,
@@ -144,9 +159,8 @@ export async function claimAllTradingFeesForOwner(
 
     const vtx = new VersionedTransaction(msg);
 
-    // If signer is a Keypair, .sign will exist; otherwise expect signTransaction
     const maybeKp = (signer as unknown as Keypair);
-    if (maybeKp?.secretKey) {
+    if ((maybeKp as any)?.secretKey) {
       vtx.sign([maybeKp]);
     } else {
       await signer.signTransaction(vtx);
@@ -157,7 +171,6 @@ export async function claimAllTradingFeesForOwner(
       maxRetries: 3,
     });
 
-    // Optional: confirm each chunk
     await connection.confirmTransaction(
       { signature: sig, blockhash, lastValidBlockHeight },
       "confirmed"
