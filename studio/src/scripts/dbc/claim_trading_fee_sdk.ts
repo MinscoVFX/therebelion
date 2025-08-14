@@ -94,22 +94,33 @@ async function main() {
   const processed = new Set<string>(); // Track already processed mints
   const mintFeeList: { baseMint: PublicKey; solAmount: number }[] = [];
 
-  // --- Step 1: Fetch all fees
+  // --- Step 1: Fetch only pools with a known fee amount
   for (const baseMint of mints) {
     try {
-      if (typeof client.partner?.getPartnerFees === 'function') {
-        const fees = await client.partner.getPartnerFees({
-          baseMint,
-          partner: me,
-        });
-        const lamports = fees?.toNumber ? fees.toNumber() : Number(fees || 0);
-        const solAmount = lamports / 1e9;
+      if (typeof client.partner?.getPartnerFees !== 'function') {
+        console.warn(
+          `⚠️  getPartnerFees() not available in SDK, skipping ${baseMint.toBase58()}`,
+        );
+        continue;
+      }
+
+      const fees = await client.partner.getPartnerFees({
+        baseMint,
+        partner: me,
+      });
+
+      if (!fees || typeof fees.toNumber !== 'function') {
+        console.warn(`⚠️  Unable to parse fees for ${baseMint.toBase58()}, skipping.`);
+        continue;
+      }
+
+      const lamports = fees.toNumber();
+      const solAmount = lamports / 1e9;
+
+      if (solAmount > 0) {
         mintFeeList.push({ baseMint, solAmount });
       } else {
-        console.warn(
-          `⚠️  getPartnerFees() not found in SDK, skipping fee check for ${baseMint.toBase58()}`,
-        );
-        mintFeeList.push({ baseMint, solAmount: Number.MAX_SAFE_INTEGER });
+        console.log(`ℹ️  No partner fees for ${baseMint.toBase58()}, skipping.`);
       }
     } catch (err) {
       console.error(`❌ Failed to fetch fees for ${baseMint.toBase58()}: ${err}`);
@@ -128,11 +139,6 @@ async function main() {
       continue;
     }
 
-    if (solAmount <= 0) {
-      console.log(`ℹ️  No partner fees available for ${mintStr}, skipping...`);
-      processed.add(mintStr);
-      continue;
-    }
     if (solAmount < MIN_SOL_THRESHOLD) {
       console.log(
         `⚠️  Fees (${solAmount} SOL) below threshold (${MIN_SOL_THRESHOLD} SOL), skipping...`,
