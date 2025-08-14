@@ -1,30 +1,24 @@
 {
-  "extends": "@meteora-invent/config-typescript/base",
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "noEmit": true,
     "skipLibCheck": true,
-    "target": "ES2020",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "types": ["node"],
+    "strict": false,
     "baseUrl": ".",
-    "paths": {
-      "@meteora-invent/config/*": ["./packages/config/*"],
-      "@meteora-invent/studio": ["./studio"],
-      "@meteora-invent/scaffold/*": ["./scaffolds/*"],
-      "@/*": ["./scaffolds/fun-launch/src/*"]
-    }
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true
   },
   "include": [
-    "packages/**/*.ts",
-    "packages/**/*.tsx",
-    "studio/**/*.ts",
-    "studio/**/*.tsx"
+    "packages/shared/utils/**/*",
+    "studio/**/*",
+    "scaffolds/fun-launch/**/*"
   ],
   "exclude": [
-    "scaffolds/fun-launch/**",
     "node_modules",
     "dist",
     "build",

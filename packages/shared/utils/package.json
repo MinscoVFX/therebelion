@@ -11,11 +11,12 @@
     "lint:fix": "eslint . --ext .ts,.js --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "build": "echo \"(utils) build stub\""
   },
   "dependencies": {
     "bn.js": "^5.2.2",
-    "decimal.js": "^10.5.0"
+    "decimal.js": "^10.6.0"
   },
   "devDependencies": {
     "@meteora-invent/config-eslint": "workspace:*",

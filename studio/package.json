@@ -28,7 +28,9 @@
     "dbc-swap": "tsx src/scripts/dbc/swap.ts",
     "alpha-vault-create": "tsx src/scripts/alpha_vault/create_alpha_vault.ts",
     "dbc-claim-all-fees-auto": "tsx src/scripts/dbc/claim_all_fees_auto.ts",
-    "dbc-claim-all-fees": "pnpm run dbc-claim-all-fees-auto"
+    "dbc-claim-all-fees": "pnpm run dbc-claim-all-fees-auto",
+    "type-check": "tsc --noEmit",
+    "build": "echo \"(studio) build stub\""
   },
   "keywords": [
     "studio",
@@ -42,7 +44,7 @@
     "@coral-xyz/anchor": "^0.31.1",
     "@meteora-ag/alpha-vault": "^1.1.14",
     "@meteora-ag/cp-amm-sdk": "^1.1.0",
-    "@meteora-ag/dlmm": "^1.5.4",
+    "@meteora-ag/dlmm": "^1.6.1",
     "@meteora-ag/dynamic-amm-sdk": "^1.3.8",
     "@meteora-ag/dynamic-bonding-curve-sdk": "^1.3.5",
     "@meteora-ag/dynamic-fee-sharing-sdk": "^1.0.0",
@@ -52,16 +54,19 @@
     "@meteora-ag/vault-sdk": "^2.3.1",
     "@meteora-ag/zap-sdk": "^1.0.1",
     "@solana/spl-token": "^0.4.13",
+    "@solana/wallet-adapter-wallets": "^0.19.37",
     "@solana/web3.js": "^1.98.2",
     "ajv": "^8.17.1",
     "bn.js": "^5.2.2",
     "bs58": "^6.0.0",
     "csv-parse": "^6.1.0",
     "date-fns": "^4.1.0",
-    "decimal.js": "^10.5.0",
-    "dotenv": "^16.5.0",
+    "decimal.js": "^10.6.0",
+    "dotenv": "^16.6.1",
     "jito-ts": "^4.2.0",
-    "jsonc-parser": "^3.3.1"
+    "js-sha256": "^0.11.1",
+    "jsonc-parser": "^3.3.1",
+    "tiny-invariant": "^1.3.3"
   },
   "devDependencies": {
     "@meteora-invent/config-eslint": "workspace:*",
