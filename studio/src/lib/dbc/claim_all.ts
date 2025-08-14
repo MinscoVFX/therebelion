@@ -161,4 +161,145 @@ export async function claimAllTradingFeesForOwner(
   } else {
     // Fallback: allow manual override via env
     const envCfgs = parsePubkeyList(process.env.DBC_POOL_CONFIGS || null);
-    if (envCfgs.lengt
+    if (envCfgs.length === 0) {
+      throw new Error(
+        "SDK does not expose getPoolConfigsByOwner; set DBC_POOL_CONFIGS with pool-config pubkeys (comma-separated) or update the DBC SDK mapping."
+      );
+    }
+    poolConfigs = envCfgs;
+  }
+
+  // 2) Expand configs → pools (or fallback to env)
+  let pools: PublicKey[] = [];
+  if (getPoolsByConfig) {
+    const arrays = await Promise.all(
+      poolConfigs.map((cfgPk) => getPoolsByConfig(connection, cfgPk))
+    );
+    pools = arrays.flat().map((p: any) => asPubkey(p?.pubkey ?? p));
+  } else {
+    const envPools = parsePubkeyList(process.env.DBC_POOLS || null);
+    if (envPools.length === 0) {
+      throw new Error(
+        "SDK does not expose getPoolsByConfig; set DBC_POOLS with pool pubkeys (comma-separated) or update the DBC SDK mapping."
+      );
+    }
+    pools = envPools;
+  }
+
+  // 3) Build one claim instruction per pool (optionally skip 0-fee pools)
+  const claimIxs: TransactionInstruction[] = [];
+  for (const poolPk of pools) {
+    try {
+      if (skipIfNoFees && fetchPoolState) {
+        const state: any = await fetchPoolState(connection, poolPk);
+        const pending =
+          state?.partnerFeesUnclaimed ??
+          state?.feesUnclaimed ??
+          state?.claimablePartnerFees ??
+          0n;
+        const isZero =
+          (typeof pending === "bigint" && pending === 0n) ||
+          (typeof pending === "number" && pending === 0);
+        if (isZero) continue;
+      }
+
+      if (!buildClaimTradingFeesIx) {
+        throw new Error("SDK does not expose buildClaimTradingFeesIx");
+      }
+
+      // Try flexible call shapes
+      let ixOrGroup: any;
+      try {
+        ixOrGroup = await buildClaimTradingFeesIx({
+          connection,
+          poolPubkey: poolPk,
+          feeClaimer,
+        });
+      } catch {
+        try {
+          ixOrGroup = await buildClaimTradingFeesIx(connection, {
+            poolPubkey: poolPk,
+            feeClaimer,
+          });
+        } catch {
+          ixOrGroup = await buildClaimTradingFeesIx(poolPk, feeClaimer);
+        }
+      }
+
+      if (Array.isArray(ixOrGroup)) {
+        claimIxs.push(...(ixOrGroup as TransactionInstruction[]));
+      } else if (ixOrGroup?.instructions) {
+        claimIxs.push(...(ixOrGroup.instructions as TransactionInstruction[]));
+      } else if (ixOrGroup) {
+        claimIxs.push(ixOrGroup as TransactionInstruction);
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn(`Skipping pool ${poolPk.toBase58?.() ?? String(poolPk)}:`, e);
+    }
+  }
+
+  if (claimIxs.length === 0) {
+    return { sent: 0, sigs: [], note: "No claimable fees found or no IXs built." };
+  }
+
+  // 4) Chunk into multiple transactions if needed
+  const chunks: TransactionInstruction[][] = [];
+  for (let i = 0; i < claimIxs.length; i += maxIxsPerTx) {
+    chunks.push(claimIxs.slice(i, i + maxIxsPerTx));
+  }
+
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+  const payer = feeClaimer;
+
+  const sigs: string[] = [];
+  for (const ixChunk of chunks) {
+    const ixs: TransactionInstruction[] = [];
+
+    if (priorityMicrolamportsPerCU > 0) {
+      ixs.push(
+        ComputeBudgetProgram.setComputeUnitPrice({
+          microLamports: priorityMicrolamportsPerCU,
+        })
+      );
+    }
+    if (setComputeUnitLimit && setComputeUnitLimit > 0) {
+      ixs.push(
+        ComputeBudgetProgram.setComputeUnitLimit({
+          units: setComputeUnitLimit,
+        })
+      );
+    }
+
+    ixs.push(...ixChunk);
+
+    const msg = new TransactionMessage({
+      payerKey: payer,
+      recentBlockhash: blockhash,
+      instructions: ixs,
+    }).compileToV0Message();
+
+    const vtx = new VersionedTransaction(msg);
+
+    const maybeKp = signer as unknown as Keypair;
+    if ((maybeKp as any)?.secretKey) {
+      vtx.sign([maybeKp]);
+    } else {
+      await signer.signTransaction(vtx);
+    }
+
+    const sig = await connection.sendTransaction(vtx, {
+      skipPreflight: false,
+      maxRetries: 3,
+    });
+
+    await connection.confirmTransaction(
+      { signature: sig, blockhash, lastValidBlockHeight },
+      "confirmed"
+    );
+
+    sigs.push(sig);
+  }
+
+  return { sent: sigs.length, sigs };
+}
