@@ -20,10 +20,15 @@
   "include": [
     "packages/**/*.ts",
     "packages/**/*.tsx",
-    "scaffolds/**/*.ts",
-    "scaffolds/**/*.tsx",
     "studio/**/*.ts",
     "studio/**/*.tsx"
   ],
-  "exclude": ["node_modules", "dist", "build", ".next", ".turbo"]
+  "exclude": [
+    "scaffolds/fun-launch/**",
+    "node_modules",
+    "dist",
+    "build",
+    ".next",
+    ".turbo"
+  ]
 }
