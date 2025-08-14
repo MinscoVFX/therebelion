@@ -43,7 +43,7 @@ async function main() {
           return Keypair.fromSecretKey(Uint8Array.from(arr));
         }
       }
-    } catch {}
+    } catch (e) { void e; }
     return null;
   };
   signer = toKeypair(cfg.privateKey);
@@ -58,10 +58,10 @@ async function main() {
       signer = Keypair.fromSecretKey(Uint8Array.from(arr));
     }
   }
-  const assertSigner = (kp: Keypair | null): asserts kp is Keypair => {
-    if (!kp) throw new Error("Unable to load signer keypair (no cfg.privateKey, env, or keypair.json found).");
-  };
-  assertSigner(signer);
+  if (!signer) {
+    throw new Error("Unable to load signer keypair (no cfg.privateKey, env, or keypair.json found).");
+  }
+  const signerKp: Keypair = signer;
 
   const connection = new Connection(rpcUrl, "confirmed");
   const owner = new PublicKey(ownerStr);
@@ -81,9 +81,9 @@ async function main() {
     owner,
     feeClaimer,
     {
-      publicKey: signer.publicKey,
+      publicKey: signerKp.publicKey,
       signTransaction: async (tx: any) => {
-        tx.sign ? tx.sign([signer as Keypair]) : tx.partialSign?.(signer as Keypair);
+        tx.sign ? tx.sign([signerKp]) : tx.partialSign?.(signerKp);
         return tx;
       },
     },
