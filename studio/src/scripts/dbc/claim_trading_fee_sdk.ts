@@ -4,6 +4,7 @@ import {
   PublicKey,
   Transaction,
   sendAndConfirmTransaction,
+  ComputeBudgetProgram,
 } from '@solana/web3.js';
 import { Wallet as AnchorWallet } from '@coral-xyz/anchor';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
@@ -17,9 +18,7 @@ function parseMints(): PublicKey[] {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  if (!list.length) {
-    throw new Error('BASE_MINTS is empty. Set a comma-separated list of base mints in Actions secrets.');
-  }
+  if (!list.length) throw new Error('BASE_MINTS is empty. Set a comma-separated list of base mints in Actions secrets.');
   return list.map((m) => {
     try {
       return new PublicKey(m);
@@ -106,12 +105,10 @@ async function main() {
   const mintFeeList: { baseMint: PublicKey; solAmount: number }[] = [];
   for (const baseMint of mints) {
     const amount = await getPartnerFeesSafe(client, baseMint, me);
-    if (amount === null) {
-      // Fallback: we don't know fees, so mark high to still try
-      mintFeeList.push({ baseMint, solAmount: Number.MAX_SAFE_INTEGER });
-    } else {
-      mintFeeList.push({ baseMint, solAmount: amount });
-    }
+    mintFeeList.push({
+      baseMint,
+      solAmount: amount === null ? Number.MAX_SAFE_INTEGER : amount,
+    });
   }
 
   // Step 2 — Sort by highest first
@@ -135,7 +132,7 @@ async function main() {
     console.log(`— Claiming for baseMint ${mintStr} (${solAmount === Number.MAX_SAFE_INTEGER ? 'unknown fees' : `${solAmount} SOL`})`);
 
     try {
-      // Try your lib implementation first
+      // Try lib first
       try {
         const runCfg: DbcConfig = { ...cfg, baseMint: mintStr };
         await claimFromLib(runCfg, conn, wallet);
@@ -165,13 +162,38 @@ async function main() {
       }
       if (res.tx) {
         res.tx.feePayer = me;
-        const { blockhash } = await conn.getLatestBlockhash(DEFAULT_COMMITMENT_LEVEL);
-        res.tx.recentBlockhash = blockhash;
-        const sig = await sendAndConfirmTransaction(conn, res.tx, [keypair], {
-          commitment: DEFAULT_COMMITMENT_LEVEL,
-          skipPreflight: true,
-          maxRetries: 5,
-        });
+        res.tx.add(
+          ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }),
+          ComputeBudgetProgram.setComputeUnitPrice({ microLamports: cfg.computeUnitPriceMicroLamports ?? 100_000 })
+        );
+
+        let attempt = 0;
+        let sent = false;
+        let sig: string | undefined;
+        let lastErr: any;
+
+        while (attempt < 3 && !sent) {
+          attempt++;
+          try {
+            const latest = await conn.getLatestBlockhash(DEFAULT_COMMITMENT_LEVEL);
+            res.tx.recentBlockhash = latest.blockhash;
+
+            sig = await sendAndConfirmTransaction(conn, res.tx, [keypair], {
+              commitment: DEFAULT_COMMITMENT_LEVEL,
+              skipPreflight: false,
+              maxRetries: 3,
+            });
+            sent = true;
+          } catch (err: any) {
+            lastErr = err;
+            if (!/block height exceeded|blockhash not found/i.test(String(err?.message))) {
+              break; // not retryable
+            }
+            console.warn(`Retrying ${mintStr} due to expired blockhash (attempt ${attempt})`);
+          }
+        }
+
+        if (!sent) throw lastErr;
         console.log(`✔ Claimed via SDK (signed locally). Tx: ${sig}`);
         ok++;
         continue;
