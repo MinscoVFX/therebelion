@@ -12,6 +12,7 @@ import { DEFAULT_COMMITMENT_LEVEL } from '../../utils/constants';
 import type { DbcConfig } from '../../utils/types';
 import { claimTradingFee as claimFromLib } from '../../lib/dbc';
 
+/** Parse BASE_MINTS env into PublicKey[] */
 function parseMints(): PublicKey[] {
   const list = (process.env.BASE_MINTS || '')
     .split(',')
@@ -31,6 +32,7 @@ function parseMints(): PublicKey[] {
   });
 }
 
+/** Resolve the SDK claim function across versions */
 function resolveSdkClaim(client: any) {
   const candidates = [
     'partner.claimTradingFee',
@@ -68,6 +70,90 @@ function resolveSdkClaim(client: any) {
   return undefined;
 }
 
+/** Robust resolver for "get partner fees" across SDK versions */
+function resolveGetPartnerFees(client: any) {
+  const paths = [
+    'partner.getPartnerFees',
+    'partner.getPartnerFee',
+    'getPartnerFees',
+    'getPartnerFee',
+    'partner.getClaimablePartnerFees',
+    'getClaimablePartnerFees',
+  ];
+  for (const path of paths) {
+    const fn = path.split('.').reduce<any>(
+      (o, k) => (o && o[k] !== undefined ? o[k] : undefined),
+      client,
+    );
+    if (typeof fn === 'function') {
+      return fn.bind(client.partner ?? client);
+    }
+  }
+  return undefined;
+}
+
+/** Try multiple arg shapes and normalize return to lamports:number */
+async function getPartnerFeesLamports(
+  rawFn: Function,
+  baseMint: PublicKey,
+  partner: PublicKey,
+): Promise<number | null> {
+  const argVariants = [
+    { baseMint, partner },                                // PKs
+    { baseMint, partner: partner },                       // explicit
+    { mint: baseMint, partner },                          // mint instead of baseMint
+    { baseMint: baseMint.toBase58(), partner: partner },  // baseMint string
+    { baseMint, partner: partner.toBase58() },            // partner string
+    { mint: baseMint.toBase58(), partner: partner.toBase58() },
+  ];
+
+  for (const args of argVariants) {
+    try {
+      // Some SDKs return BN; some number; some object
+      const res = await rawFn(args);
+      if (res == null) continue;
+
+      // BN-like
+      if (typeof (res as any)?.toNumber === 'function') {
+        return (res as any).toNumber();
+      }
+      // direct number
+      if (typeof res === 'number' && Number.isFinite(res)) {
+        return res;
+      }
+      // object shapes
+      const candidates = [
+        'lamports',
+        'amount',
+        'partnerFeeLamports',
+        'partnerFeesLamports',
+        'value',
+      ];
+      for (const key of candidates) {
+        const v = (res as any)[key];
+        if (typeof v?.toNumber === 'function') return v.toNumber();
+        if (typeof v === 'number' && Number.isFinite(v)) return v;
+      }
+      // array single return?
+      if (Array.isArray(res) && res.length > 0) {
+        const v = res[0];
+        if (typeof v?.toNumber === 'function') return v.toNumber();
+        if (typeof v === 'number' && Number.isFinite(v)) return v;
+        if (typeof v === 'object' && v) {
+          for (const key of candidates) {
+            const vv = (v as any)[key];
+            if (typeof vv?.toNumber === 'function') return vv.toNumber();
+            if (typeof vv === 'number' && Number.isFinite(vv)) return vv;
+          }
+        }
+      }
+    } catch {
+      // try next arg variant
+    }
+  }
+  return null;
+}
+
 async function main() {
   const cfg = (await parseConfigFromCli()) as DbcConfig;
   const keypair = await safeParseKeypairFromFile(cfg.keypairFilePath);
@@ -91,39 +177,30 @@ async function main() {
   let ok = 0;
   let fail = 0;
 
-  const processed = new Set<string>(); // Track already processed mints
+  const processed = new Set<string>();
   const mintFeeList: { baseMint: PublicKey; solAmount: number }[] = [];
 
-  // --- Step 1: Fetch only pools with a known fee amount
-  for (const baseMint of mints) {
-    try {
-      if (typeof client.partner?.getPartnerFees !== 'function') {
-        console.warn(
-          `⚠️  getPartnerFees() not available in SDK, skipping ${baseMint.toBase58()}`,
-        );
-        continue;
+  // --- Step 1: Fetch only pools with a KNOWN fee amount (robust across SDK versions)
+  const rawGetFees = resolveGetPartnerFees(client);
+  if (!rawGetFees) {
+    console.warn('⚠️  No compatible getPartnerFees method found in SDK — all pools skipped.');
+  } else {
+    for (const baseMint of mints) {
+      try {
+        const lamports = await getPartnerFeesLamports(rawGetFees, baseMint, me);
+        if (lamports === null) {
+          console.warn(`⚠️  Could not read fees for ${baseMint.toBase58()}, skipping.`);
+          continue;
+        }
+        const solAmount = lamports / 1e9;
+        if (solAmount > 0) {
+          mintFeeList.push({ baseMint, solAmount });
+        } else {
+          console.log(`ℹ️  No partner fees for ${baseMint.toBase58()}, skipping.`);
+        }
+      } catch (err) {
+        console.error(`❌ Failed to fetch fees for ${baseMint.toBase58()}: ${err}`);
       }
-
-      const fees = await client.partner.getPartnerFees({
-        baseMint,
-        partner: me,
-      });
-
-      if (!fees || typeof fees.toNumber !== 'function') {
-        console.warn(`⚠️  Unable to parse fees for ${baseMint.toBase58()}, skipping.`);
-        continue;
-      }
-
-      const lamports = fees.toNumber();
-      const solAmount = lamports / 1e9;
-
-      if (solAmount > 0) {
-        mintFeeList.push({ baseMint, solAmount });
-      } else {
-        console.log(`ℹ️  No partner fees for ${baseMint.toBase58()}, skipping.`);
-      }
-    } catch (err) {
-      console.error(`❌ Failed to fetch fees for ${baseMint.toBase58()}: ${err}`);
     }
   }
 
@@ -151,7 +228,7 @@ async function main() {
     console.log(`   Partner fees to claim: ${solAmount} SOL`);
 
     try {
-      // 1) Try repo’s implementation
+      // 1) Try repo’s implementation first
       try {
         const runCfg: DbcConfig = { ...cfg, baseMint: mintStr };
         await claimFromLib(runCfg, conn, wallet);
@@ -202,7 +279,7 @@ async function main() {
     } catch (e: any) {
       console.error(`✖ Claim failed: ${e?.message || String(e)}`);
       fail++;
-      processed.add(mintStr); // Avoid retrying failed mints in same run
+      processed.add(mintStr); // avoid retry in same run
     }
   }
 
