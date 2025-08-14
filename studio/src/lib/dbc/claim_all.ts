@@ -22,6 +22,113 @@ export type ClaimAllOpts = {
   setComputeUnitLimit?: number;
 };
 
+// ---- internal helpers -------------------------------------------------------
+
+const asPubkey = (v: any): PublicKey => {
+  if (v instanceof PublicKey) return v;
+  if (v?.toBase58) {
+    const s = v.toBase58();
+    return new PublicKey(s);
+  }
+  if (typeof v === "string") return new PublicKey(v);
+  if (v?.pubkey) return asPubkey(v.pubkey);
+  if (v?.publicKey) return asPubkey(v.publicKey);
+  // will throw if invalid (surface early)
+  return new PublicKey(v);
+};
+
+const parsePubkeyList = (raw?: string | null): PublicKey[] => {
+  if (!raw) return [];
+  return raw
+    .split(/[,\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => new PublicKey(s));
+};
+
+async function createDbcClient(connection: Connection): Promise<any | null> {
+  // Try common creation shapes
+  const C: any =
+    (DBC as any).DbcClient ||
+    (DBC as any).DBCClient ||
+    (DBC as any).Client ||
+    null;
+  if (!C) return null;
+
+  try {
+    if (typeof C.create === "function") {
+      const c = await C.create(connection);
+      return c || null;
+    }
+  } catch {}
+  try {
+    // some SDKs just new up with (connection)
+    // eslint-disable-next-line new-cap
+    const c = new C(connection);
+    return c || null;
+  } catch {}
+  return null;
+}
+
+function pickFn(obj: any, names: string[]): ((...a: any[]) => any) | null {
+  for (const n of names) {
+    const fn = obj?.[n];
+    if (typeof fn === "function") return fn.bind(obj);
+  }
+  return null;
+}
+
+async function resolveFns(connection: Connection) {
+  // Try top-level functions
+  const top = DBC as any;
+
+  // Optionally create a client, then probe instance methods
+  const client = await createDbcClient(connection);
+
+  // Functions to get pool-configs by owner
+  const getPoolConfigsByOwner =
+    pickFn(top, [
+      "getPoolConfigsByOwner",
+      "getPoolConfigsForOwner",
+      "getPoolConfigs",
+    ]) ||
+    pickFn(top?.PoolConfig, ["getByOwner", "getAllByOwner"]) ||
+    pickFn(client, [
+      "getPoolConfigsByOwner",
+      "getPoolConfigsForOwner",
+      "fetchPoolConfigsByOwner",
+      "listPoolConfigsByOwner",
+    ]);
+
+  // Functions to expand config → pools
+  const getPoolsByConfig =
+    pickFn(top, ["getPoolsByConfig"]) ||
+    pickFn(top?.Pool, ["getByConfig", "getAllByConfig"]) ||
+    pickFn(client, ["getPoolsByConfig", "listPoolsByConfig"]);
+
+  // Fetch state (to skip 0-fee pools quickly)
+  const fetchPoolState =
+    pickFn(top, ["fetchPoolState"]) ||
+    pickFn(top?.Pool, ["fetchState", "getState"]) ||
+    pickFn(client, ["fetchPoolState", "getPoolState"]);
+
+  // Build claim ix
+  const buildClaimTradingFeesIx =
+    pickFn(top, ["buildClaimTradingFeesIx"]) ||
+    pickFn(top?.Pool, ["buildClaimTradingFeesIx"]) ||
+    pickFn(client, ["buildClaimTradingFeesIx"]);
+
+  return {
+    client,
+    getPoolConfigsByOwner,
+    getPoolsByConfig,
+    fetchPoolState,
+    buildClaimTradingFeesIx,
+  };
+}
+
+// ---- main -------------------------------------------------------------------
+
 export async function claimAllTradingFeesForOwner(
   connection: Connection,
   owner: PublicKey,
@@ -36,165 +143,22 @@ export async function claimAllTradingFeesForOwner(
     setComputeUnitLimit = 1_000_000,
   } = opts;
 
-  // -- helpers --------------------------------------------------------------
-  const asPubkey = (v: any): PublicKey => {
-    if (v instanceof PublicKey) return v;
-    if (v?.toBase58) {
-      try {
-        return new PublicKey(v.toBase58());
-      } catch {
-        /* noop */
-      }
-    }
-    if (typeof v === "string") return new PublicKey(v);
-    if (v?.pubkey) return asPubkey(v.pubkey);
-    if (v?.publicKey) return asPubkey(v.publicKey);
-    return new PublicKey(v); // will throw if invalid (surface early)
-  };
+  const {
+    getPoolConfigsByOwner,
+    getPoolsByConfig,
+    fetchPoolState,
+    buildClaimTradingFeesIx,
+  } = await resolveFns(connection);
 
-  // 1) Get all pool configs owned by `owner`
-  const getPoolConfigsByOwnerFn =
-    (DBC as any).getPoolConfigsByOwner ||
-    (DBC as any).DbcClient?.getPoolConfigsByOwner ||
-    (DBC as any).DBCClient?.getPoolConfigsByOwner ||
-    (DBC as any).PoolConfig?.getByOwner;
-  if (!getPoolConfigsByOwnerFn) {
-    throw new Error("SDK does not expose getPoolConfigsByOwner; please update mapping in claim_all.ts");
-  }
-  const poolConfigs: any[] = await getPoolConfigsByOwnerFn(connection, owner);
-
-  // 2) Expand configs → pools
-  const getPoolsByConfigFn =
-    (DBC as any).getPoolsByConfig ||
-    (DBC as any).DbcClient?.getPoolsByConfig ||
-    (DBC as any).DBCClient?.getPoolsByConfig ||
-    (DBC as any).Pool?.getByConfig;
-  if (!getPoolsByConfigFn) {
-    throw new Error("SDK does not expose getPoolsByConfig; please update mapping in claim_all.ts");
-  }
-  const poolsArrays = await Promise.all(
-    poolConfigs.map((cfg: any) => getPoolsByConfigFn(connection, asPubkey(cfg?.pubkey ?? cfg)))
-  );
-  const pools: any[] = poolsArrays.flat();
-
-  // 3) Build one claim instruction per pool
-  const claimIxs: TransactionInstruction[] = [];
-  for (const pool of pools) {
-    try {
-      if (skipIfNoFees) {
-        const fetchPoolStateFn =
-          (DBC as any).fetchPoolState ||
-          (DBC as any).DbcClient?.fetchPoolState ||
-          (DBC as any).Pool?.fetchState;
-        if (!fetchPoolStateFn) {
-          throw new Error("SDK does not expose fetchPoolState; please update mapping in claim_all.ts");
-        }
-        const state: any = await fetchPoolStateFn(connection, asPubkey(pool?.pubkey ?? pool));
-        const pending =
-          state?.partnerFeesUnclaimed ??
-          state?.feesUnclaimed ??
-          state?.claimablePartnerFees ??
-          0n;
-
-        if (
-          (typeof pending === "bigint" && pending === 0n) ||
-          (typeof pending === "number" && pending === 0)
-        ) {
-          continue;
-        }
-      }
-
-      const buildClaimTradingFeesIxFn =
-        (DBC as any).buildClaimTradingFeesIx ||
-        (DBC as any).DbcClient?.buildClaimTradingFeesIx ||
-        (DBC as any).Pool?.buildClaimTradingFeesIx;
-      if (!buildClaimTradingFeesIxFn) {
-        throw new Error("SDK does not expose buildClaimTradingFeesIx; please update mapping in claim_all.ts");
-      }
-      const ix = await buildClaimTradingFeesIxFn({
-        connection,
-        poolPubkey: asPubkey(pool?.pubkey ?? pool),
-        feeClaimer,
-      });
-
-      if (Array.isArray(ix)) {
-        claimIxs.push(...(ix as TransactionInstruction[]));
-      } else if (ix?.instructions) {
-        claimIxs.push(...(ix.instructions as TransactionInstruction[]));
-      } else {
-        claimIxs.push(ix as TransactionInstruction);
-      }
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `Skipping pool ${pool?.pubkey?.toBase58?.() ?? pool?.toBase58?.() ?? String(pool?.pubkey ?? pool)}:`,
-        e
-      );
-    }
-  }
-
-  if (claimIxs.length === 0) {
-    return { sent: 0, sigs: [], note: "No claimable fees found or no IXs built." };
-  }
-
-  // 4) Chunk into multiple transactions if needed
-  const chunks: TransactionInstruction[][] = [];
-  for (let i = 0; i < claimIxs.length; i += maxIxsPerTx) {
-    chunks.push(claimIxs.slice(i, i + maxIxsPerTx));
-  }
-
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-  const payer = feeClaimer;
-
-  const sigs: string[] = [];
-  for (const ixChunk of chunks) {
-    const ixs: TransactionInstruction[] = [];
-
-    if (priorityMicrolamportsPerCU > 0) {
-      ixs.push(
-        ComputeBudgetProgram.setComputeUnitPrice({
-          microLamports: priorityMicrolamportsPerCU,
-        })
-      );
-    }
-
-    if (setComputeUnitLimit && setComputeUnitLimit > 0) {
-      ixs.push(
-        ComputeBudgetProgram.setComputeUnitLimit({
-          units: setComputeUnitLimit,
-        })
-      );
-    }
-
-    ixs.push(...ixChunk);
-
-    const msg = new TransactionMessage({
-      payerKey: payer,
-      recentBlockhash: blockhash,
-      instructions: ixs,
-    }).compileToV0Message();
-
-    const vtx = new VersionedTransaction(msg);
-
-    const maybeKp = signer as unknown as Keypair;
-    if ((maybeKp as any)?.secretKey) {
-      vtx.sign([maybeKp]);
-    } else {
-      await signer.signTransaction(vtx);
-    }
-
-    const sig = await connection.sendTransaction(vtx, {
-      skipPreflight: false,
-      maxRetries: 3,
-    });
-
-    await connection.confirmTransaction(
-      { signature: sig, blockhash, lastValidBlockHeight },
-      "confirmed"
-    );
-
-    sigs.push(sig);
-  }
-
-  return { sent: sigs.length, sigs };
-}
+  // 1) Discover pool configs for owner (or fallback to env)
+  let poolConfigs: PublicKey[] = [];
+  if (getPoolConfigsByOwner) {
+    const raw = await getPoolConfigsByOwner(connection, owner);
+    // normalize any shape to PublicKey list
+    poolConfigs = (Array.isArray(raw) ? raw : [raw])
+      .filter(Boolean)
+      .map((cfg: any) => asPubkey(cfg?.pubkey ?? cfg));
+  } else {
+    // Fallback: allow manual override via env
+    const envCfgs = parsePubkeyList(process.env.DBC_POOL_CONFIGS || null);
+    if (envCfgs.lengt
