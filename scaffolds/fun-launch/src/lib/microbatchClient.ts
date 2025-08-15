@@ -1,4 +1,3 @@
-// scaffolds/fun-launch/src/lib/microbatchClient.ts
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
@@ -19,10 +18,11 @@ function toBase64(u8: Uint8Array) {
   // Browser-safe base64 without new deps
   if (typeof window !== 'undefined' && typeof btoa !== 'undefined') {
     let s = '';
-    for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+    // for..of avoids "number | undefined" index typing under strict mode
+    for (const b of u8) s += String.fromCharCode(b);
     return btoa(s);
   }
-  // Node/Vercel: global Buffer exists
+  // Node/Vercel
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
   return Buffer.from(u8).toString('base64');
@@ -45,9 +45,6 @@ async function postJSON(url: string, body: unknown) {
 
 async function pollSignature(url: string, key: string, timeoutMs = 7000) {
   const start = Date.now();
-  // simple long-poll loop
-  // note: API returns {status:'pending'} until flushed, {signature} on success, or {error} on send failure
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     const r = await fetch(`${url}?id=${encodeURIComponent(key)}`);
     const txt = await r.text();
