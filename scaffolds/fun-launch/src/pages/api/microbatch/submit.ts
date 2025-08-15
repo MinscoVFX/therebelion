@@ -1,4 +1,3 @@
-// scaffolds/fun-launch/src/pages/api/microbatch/submit.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 // In-memory queue + result map (per server instance)
@@ -18,14 +17,18 @@ function scheduleFlush() {
   if (scheduled) return;
   scheduled = true;
   const wait = BASE_MS + Math.floor(Math.random() * JITTER) - Math.floor(JITTER / 2);
+
   setTimeout(async () => {
     scheduled = false;
-    const batch = queue.splice(0, queue.length);
+    const batch: Pending[] = queue.splice(0, queue.length);
 
     // Shuffle so no one can time top-of-batch priority
     for (let i = batch.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [batch[i], batch[j]] = [batch[j], batch[i]];
+      // Explicit swap to keep TS happy under strictNullChecks
+      const tmp: Pending = batch[i]!;
+      batch[i] = batch[j]!;
+      batch[j] = tmp;
     }
 
     // Fast sequential sends — typically land in the same slot
