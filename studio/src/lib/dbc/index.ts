@@ -5,6 +5,7 @@ import {
   Transaction,
   ComputeBudgetProgram,
   Signer,
+  Commitment, // <-- important: accept full Commitment union
 } from '@solana/web3.js';
 import { Wallet } from '@coral-xyz/anchor';
 import BN from 'bn.js';
@@ -36,13 +37,31 @@ async function sendWithFreshBlockhash(
   connection: Connection,
   tx: Transaction,
   signers: Signer[],
-  {
-    commitment = 'processed' as const,
-    confirmCommitment = 'confirmed' as const,
+  opts?: {
+    commitment?: Commitment;         // <-- widened type
+    confirmCommitment?: Commitment;  // <-- widened type
+    maxRetries?: number;
+    maxAttempts?: number;
+  }
+): Promise<string> {
+  const {
+    commitment: commitmentParam,
+    confirmCommitment: confirmParam,
     maxRetries = DEFAULT_SEND_TX_MAX_RETRIES,
     maxAttempts = 3,
-  } = {}
-): Promise<string> {
+  } = opts ?? {};
+
+  // Normalize to safe, modern values regardless of older aliases (e.g., "recent")
+  const commitment: Commitment =
+    commitmentParam === 'processed' || commitmentParam === 'confirmed' || commitmentParam === 'finalized'
+      ? commitmentParam
+      : 'processed';
+
+  const confirmCommitment: Commitment =
+    confirmParam === 'processed' || confirmParam === 'confirmed' || confirmParam === 'finalized'
+      ? confirmParam
+      : 'confirmed';
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     // getLatestBlockhashAndContext -> { context, value }
     const { value, context } = await connection.getLatestBlockhashAndContext(commitment);
