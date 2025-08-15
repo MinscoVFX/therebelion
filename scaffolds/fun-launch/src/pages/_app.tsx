@@ -6,6 +6,8 @@ import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adap
 import { useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useWindowWidthListener } from '@/lib/device';
+import { useMicrobatchPatch } from '@/hooks/useMicrobatchPatch';
+import { useUnifiedWallet } from '@jup-ag/wallet-adapter'; // gives wallet + connection
 
 export default function App({ Component, pageProps }: AppProps) {
   const wallets: Adapter[] = useMemo(() => {
@@ -17,6 +19,10 @@ export default function App({ Component, pageProps }: AppProps) {
   const queryClient = useMemo(() => new QueryClient(), []);
 
   useWindowWidthListener();
+
+  // Patch wallet.sendTransaction globally if microbatch is enabled
+  const { wallet, connection } = useUnifiedWallet();
+  useMicrobatchPatch(wallet as any, connection);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -31,7 +37,6 @@ export default function App({ Component, pageProps }: AppProps) {
             url: 'https://jup.ag',
             iconUrls: ['https://jup.ag/favicon.ico'],
           },
-          // notificationCallback: WalletNotification,
           theme: 'dark',
           lang: 'en',
         }}
