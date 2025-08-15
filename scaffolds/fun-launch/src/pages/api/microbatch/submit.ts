@@ -22,12 +22,11 @@ function scheduleFlush() {
     scheduled = false;
     const batch: Pending[] = queue.splice(0, queue.length);
 
-    // Shuffle so no one can time top-of-batch priority
+    // Shuffle (simple Fisher–Yates without destructuring swap)
     for (let i = batch.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      // Explicit swap to keep TS happy under strictNullChecks
-      const tmp: Pending = batch[i]!;
-      batch[i] = batch[j]!;
+      const tmp = batch[i] as Pending;  // definite assignment
+      batch[i] = batch[j] as Pending;
       batch[j] = tmp;
     }
 
