@@ -1,0 +1,59 @@
+name: Claim Leftover SOL (DBC)
+
+on:
+  workflow_dispatch:
+    inputs:
+      BASE_MINTS:
+        description: 'Comma-separated base mints to check (optional, overrides config)'
+        required: false
+        default: ''
+      LEFTOVER_RECEIVER:
+        description: 'Override leftover receiver (optional; defaults to signer)'
+        required: false
+        default: ''
+
+jobs:
+  claim-leftovers:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # PRE: ensure pnpm exists so setup-node cache:pnpm doesn't fail
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      # POST: re-add pnpm to PATH in case setup-node tweaked it
+      - name: Setup pnpm (post PATH restore)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build (if needed)
+        run: pnpm -w build || echo "Skip build"
+
+      - name: Run leftover claim
+        env:
+          # REQUIRED
+          RPC_URL: ${{ secrets.RPC_URL }} # e.g. https://mainnet.helius-rpc.com/?api-key=XXXX
+          PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }} # base64-encoded secret key bytes
+          DBC_CONFIG_KEY: ${{ secrets.DBC_CONFIG_KEY }}
+
+          # OPTIONAL
+          BASE_MINTS: ${{ github.event.inputs.BASE_MINTS }}
+          LEFTOVER_RECEIVER: ${{ github.event.inputs.LEFTOVER_RECEIVER }}
+        run: |
+          echo "Running leftover claim..."
+          npx -y tsx studio/src/scripts/dbc/claim_leftovers.ts --config ./studio/config/dbc_config.jsonc
