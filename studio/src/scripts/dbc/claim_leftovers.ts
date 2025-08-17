@@ -1,4 +1,5 @@
 // studio/src/scripts/dbc/claim_leftovers.ts
+
 import {
   Connection,
   Keypair,
@@ -12,7 +13,6 @@ import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk
 
 import { parseConfigFromCli, safeParseKeypairFromFile } from '../../helpers';
 import { DEFAULT_COMMITMENT_LEVEL } from '../../utils/constants';
-import type { DbcConfig } from '../../utils/types';
 
 type LeftoverReport = {
   baseMint: string;
@@ -24,63 +24,58 @@ type LeftoverReport = {
 };
 
 function parseBaseMintsFromEnv(): PublicKey[] {
-  const env = (process.env.BASE_MINTS || '')
+  const list = (process.env.BASE_MINTS || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  return env.map((s) => new PublicKey(s));
+  if (!list.length) {
+    throw new Error(
+      'BASE_MINTS is empty. Set a comma-separated list of base mints in Actions inputs or secrets.'
+    );
+  }
+  return list.map((m) => new PublicKey(m));
 }
 
 async function getSigner(): Promise<Keypair> {
-  // Priority: PRIVATE_KEY_B58 -> KEYPAIR_PATH (same as your other scripts)
-  const b58 = process.env.PRIVATE_KEY_B58 || '';
-  if (b58) {
-    try {
-      const bs = Uint8Array.from(Buffer.from(b58, 'base64'));
-      return Keypair.fromSecretKey(bs);
-    } catch (e) {
-      throw new Error('Invalid PRIVATE_KEY_B58 (expected base64-encoded secret key bytes).');
-    }
+  // Priority: PRIVATE_KEY_B58 -> KEYPAIR_PATH (same pattern as your other scripts)
+  const b64 = process.env.PRIVATE_KEY_B58 || '';
+  if (b64) {
+    const secret = Uint8Array.from(Buffer.from(b64, 'base64'));
+    return Keypair.fromSecretKey(secret);
   }
+  // In your repo, this helper takes no args.
   const kp = await safeParseKeypairFromFile();
   return kp;
 }
 
 async function main() {
-  const cfg: DbcConfig = await parseConfigFromCli('Using config file:');
-  const DBC_CONFIG_KEY = process.env.DBC_CONFIG_KEY || cfg?.dbcConfigKey || '';
-  if (!DBC_CONFIG_KEY) throw new Error('DBC_CONFIG_KEY is empty. Set it in repo secrets or config file.');
+  // Keep this call so the script mirrors your other scripts’ CLI behavior,
+  // but we don’t rely on any typed fields from the returned object.
+  await parseConfigFromCli();
 
   const rpcUrl =
-    process.env.RPC_URL ||
-    cfg?.rpc ||
-    'https://api.mainnet-beta.solana.com';
-  const connection = new Connection(rpcUrl, { commitment: DEFAULT_COMMITMENT_LEVEL });
+    process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
+  const connection = new Connection(rpcUrl, {
+    commitment: DEFAULT_COMMITMENT_LEVEL,
+  });
 
   const signer = await getSigner();
   const wallet = new AnchorWallet(signer);
 
-  const client = await DynamicBondingCurveClient.load(connection, wallet);
+  // Avoid `.load()` since your installed SDK type doesn’t have it.
+  // Use `any` to be resilient to constructor signature drift across SDK versions.
+  const client: any = new (DynamicBondingCurveClient as any)(connection, wallet);
 
-  // Prefer explicit list from env. If empty, fall back to config’s baseMints.
-  let baseMints: PublicKey[] = [];
-  const envBaseMints = parseBaseMintsFromEnv();
-  if (envBaseMints.length) {
-    baseMints = envBaseMints;
-  } else if (Array.isArray(cfg?.baseMints) && cfg.baseMints.length) {
-    baseMints = cfg.baseMints.map((m) => new PublicKey(m));
-  } else {
-    console.log('> No BASE_MINTS provided and none in config. Nothing to scan.');
-    return;
-  }
+  // Required inputs
+  const baseMints = parseBaseMintsFromEnv();
 
-  // Optional: leftoverReceiver override; else rely on what’s stored in the on-chain config
-  const leftoverReceiverStr = process.env.LEFTOVER_RECEIVER || cfg?.leftoverReceiver || signer.publicKey.toBase58();
-  const leftoverReceiver = new PublicKey(leftoverReceiverStr);
+  // Optional override; default to signer
+  const leftoverReceiver =
+    (process.env.LEFTOVER_RECEIVER && new PublicKey(process.env.LEFTOVER_RECEIVER)) ||
+    signer.publicKey;
 
   console.log(`> Claiming leftovers with wallet ${signer.publicKey.toBase58()}`);
   console.log(`> RPC: ${rpcUrl}`);
-  console.log(`> Config key: ${DBC_CONFIG_KEY}`);
   console.log(`> leftoverReceiver: ${leftoverReceiver.toBase58()}`);
   console.log(`> Base mints to scan: ${baseMints.length}`);
 
@@ -91,17 +86,15 @@ async function main() {
     const report: LeftoverReport = { baseMint: baseMint.toBase58(), status: 'skipped' };
 
     try {
-      // Fetch pool by base mint; SDK naming differs across versions, so try a couple options.
-      // 1) Preferred helper:
-      let pool: any | undefined;
-      if (typeof (client as any).getPoolByBaseMint === 'function') {
-        pool = await (client as any).getPoolByBaseMint(baseMint);
-      } else if (typeof (client as any).fetchPoolByBaseMint === 'function') {
-        pool = await (client as any).fetchPoolByBaseMint(baseMint);
-      } else {
-        // Fallback: try public mapping by address if your repo exposes one
-        // (Your repo previously mapped pools in claim_all.ts; we gracefully exit here if not available.)
-        throw new Error('SDK does not expose getPoolByBaseMint/fetchPoolByBaseMint on this version.');
+      // Try common SDK helper names across versions
+      let pool: any | undefined = undefined;
+      if (typeof client.getPoolByBaseMint === 'function') {
+        pool = await client.getPoolByBaseMint(baseMint);
+      } else if (typeof client.fetchPoolByBaseMint === 'function') {
+        pool = await client.fetchPoolByBaseMint(baseMint);
+      } else if (typeof client.getPool === 'function') {
+        // some versions take the base mint directly
+        pool = await client.getPool(baseMint);
       }
 
       if (!pool) throw new Error('DBC Pool not found for this base mint.');
@@ -109,11 +102,10 @@ async function main() {
       report.pool = pool?.pubkey?.toBase58?.() ?? pool?.address?.toBase58?.() ?? '(unknown)';
       report.poolConfig = pool?.config?.toBase58?.() ?? '(unknown)';
 
-      // Detect completion & leftover availability:
-      // Different SDK versions attach these under different fields; check a few:
+      // Determine completion/finished status across SDK variants
       const status =
-        pool?.state?.status ||
-        pool?.status ||
+        pool?.state?.status ??
+        pool?.status ??
         '';
       const isCompleted =
         status === 'completed' ||
@@ -121,10 +113,10 @@ async function main() {
         pool?.state?.isFinished === true ||
         pool?.isFinished === true;
 
-      // Quote vault (SOL) balance
+      // Locate the quote (SOL) vault public key
       const quoteVaultPk: PublicKey | undefined =
-        pool?.vaultQuote ||
-        pool?.quoteVault ||
+        pool?.vaultQuote ??
+        pool?.quoteVault ??
         pool?.state?.vaultQuote;
 
       if (!quoteVaultPk) {
@@ -148,30 +140,30 @@ async function main() {
         continue;
       }
 
-      // Build leftover claim instruction
-      // Prefer a high-level helper if it exists; else fall back to a lower-level builder.
+      // Build an instruction using whatever the SDK exposes in your version
       let ix;
-      if (typeof (client as any).buildClaimLeftoverInstruction === 'function') {
-        ix = await (client as any).buildClaimLeftoverInstruction({
+      if (typeof client.buildClaimLeftoverInstruction === 'function') {
+        ix = await client.buildClaimLeftoverInstruction({
           pool,
           leftoverReceiver,
           payer: signer.publicKey,
         });
-      } else if (typeof (client as any).claimLeftoverInstruction === 'function') {
-        ix = await (client as any).claimLeftoverInstruction({
+      } else if (typeof client.claimLeftoverInstruction === 'function') {
+        ix = await client.claimLeftoverInstruction({
           pool,
           leftoverReceiver,
           payer: signer.publicKey,
         });
-      } else if (typeof (client as any).claimLeftoverBase === 'function') {
-        // Some SDKs expose a direct RPC call builder
-        ix = await (client as any).claimLeftoverBase({
+      } else if (typeof client.claimLeftoverBase === 'function') {
+        ix = await client.claimLeftoverBase({
           poolPublicKey: new PublicKey(report.pool!),
           leftoverReceiver,
           payer: signer.publicKey,
         });
       } else {
-        throw new Error('SDK version missing a leftover-claim builder. Update @meteora-ag/dynamic-bonding-curve-sdk.');
+        throw new Error(
+          'SDK version missing a leftover-claim builder. Update @meteora-ag/dynamic-bonding-curve-sdk.'
+        );
       }
 
       const tx = new Transaction().add(ix);
@@ -196,7 +188,7 @@ async function main() {
     }
   }
 
-  // CSV-ish summary for Actions artifact/logs
+  // CSV summary (nice for Actions logs/artifacts)
   console.log('\nbaseMint,pool,poolConfig,status,signature,error');
   for (const r of results) {
     console.log(
