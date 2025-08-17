@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       BASE_MINTS:
-        description: 'Comma-separated base mints to check (optional, overrides config)'
-        required: false
-        default: ''
+        description: 'Comma-separated base mints to check (REQUIRED)'
+        required: true
       LEFTOVER_RECEIVER:
         description: 'Override leftover receiver (optional; defaults to signer)'
         required: false
@@ -20,7 +19,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # PRE: ensure pnpm exists so setup-node cache:pnpm doesn't fail
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
         with:
@@ -32,7 +30,6 @@ jobs:
           node-version: 20
           cache: 'pnpm'
 
-      # POST: re-add pnpm to PATH in case setup-node tweaked it
       - name: Setup pnpm (post PATH restore)
         uses: pnpm/action-setup@v4
         with:
@@ -44,16 +41,31 @@ jobs:
       - name: Build (if needed)
         run: pnpm -w build || echo "Skip build"
 
+      # Guard: fail early if BASE_MINTS somehow empty
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ github.event.inputs.BASE_MINTS }}" ]; then
+            echo "BASE_MINTS is required (comma-separated base mints)."
+            exit 1
+          fi
+
       - name: Run leftover claim
         env:
           # REQUIRED
-          RPC_URL: ${{ secrets.RPC_URL }} # e.g. https://mainnet.helius-rpc.com/?api-key=XXXX
-          PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }} # base64-encoded secret key bytes
-          DBC_CONFIG_KEY: ${{ secrets.DBC_CONFIG_KEY }}
+          RPC_URL: ${{ secrets.RPC_URL }}                 # e.g. https://mainnet.helius-rpc.com/?api-key=XXXX
+          PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }} # base64 of secret key bytes (NOT base58)
+          # DBC_CONFIG_KEY: ${{ secrets.DBC_CONFIG_KEY }} # not used by this script; safe to remove
 
           # OPTIONAL
           BASE_MINTS: ${{ github.event.inputs.BASE_MINTS }}
           LEFTOVER_RECEIVER: ${{ github.event.inputs.LEFTOVER_RECEIVER }}
         run: |
           echo "Running leftover claim..."
-          npx -y tsx studio/src/scripts/dbc/claim_leftovers.ts --config ./studio/config/dbc_config.jsonc
+          npx -y tsx studio/src/scripts/dbc/claim_leftovers.ts --config ./studio/config/dbc_config.jsonc | tee leftovers_log.txt
+
+      # Optional: upload the log (useful to download the CSV-ish summary)
+      - name: Upload log artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: leftovers-log
+          path: leftovers_log.txt
