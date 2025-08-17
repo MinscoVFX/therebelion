@@ -43,27 +43,22 @@ async function getSigner(): Promise<Keypair> {
     const secret = Uint8Array.from(Buffer.from(b64, 'base64'));
     return Keypair.fromSecretKey(secret);
   }
-  // In your repo, this helper takes no args.
   const kp = await safeParseKeypairFromFile();
   return kp;
 }
 
 async function main() {
-  // Keep this call so the script mirrors your other scripts’ CLI behavior,
-  // but we don’t rely on any typed fields from the returned object.
-  await parseConfigFromCli();
+  // Mirror other scripts: parse CLI args (e.g. --config ./studio/config/dbc_config.jsonc)
+  // We don’t rely on the returned object to avoid type drift.
+  parseConfigFromCli(process.argv);
 
-  const rpcUrl =
-    process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
-  const connection = new Connection(rpcUrl, {
-    commitment: DEFAULT_COMMITMENT_LEVEL,
-  });
+  const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
+  const connection = new Connection(rpcUrl, { commitment: DEFAULT_COMMITMENT_LEVEL });
 
   const signer = await getSigner();
   const wallet = new AnchorWallet(signer);
 
-  // Avoid `.load()` since your installed SDK type doesn’t have it.
-  // Use `any` to be resilient to constructor signature drift across SDK versions.
+  // Avoid `.load()`; use constructor and cast to any to smooth over SDK version differences.
   const client: any = new (DynamicBondingCurveClient as any)(connection, wallet);
 
   // Required inputs
@@ -87,13 +82,12 @@ async function main() {
 
     try {
       // Try common SDK helper names across versions
-      let pool: any | undefined = undefined;
+      let pool: any | undefined;
       if (typeof client.getPoolByBaseMint === 'function') {
         pool = await client.getPoolByBaseMint(baseMint);
       } else if (typeof client.fetchPoolByBaseMint === 'function') {
         pool = await client.fetchPoolByBaseMint(baseMint);
       } else if (typeof client.getPool === 'function') {
-        // some versions take the base mint directly
         pool = await client.getPool(baseMint);
       }
 
@@ -103,21 +97,16 @@ async function main() {
       report.poolConfig = pool?.config?.toBase58?.() ?? '(unknown)';
 
       // Determine completion/finished status across SDK variants
-      const status =
-        pool?.state?.status ??
-        pool?.status ??
-        '';
+      const status = pool?.state?.status ?? pool?.status ?? '';
       const isCompleted =
         status === 'completed' ||
         status === 'finished' ||
         pool?.state?.isFinished === true ||
         pool?.isFinished === true;
 
-      // Locate the quote (SOL) vault public key
+      // Locate the quote (SOL) vault
       const quoteVaultPk: PublicKey | undefined =
-        pool?.vaultQuote ??
-        pool?.quoteVault ??
-        pool?.state?.vaultQuote;
+        pool?.vaultQuote ?? pool?.quoteVault ?? pool?.state?.vaultQuote;
 
       if (!quoteVaultPk) {
         console.log('  > No quote vault field on pool; skipping.');
@@ -140,7 +129,7 @@ async function main() {
         continue;
       }
 
-      // Build an instruction using whatever the SDK exposes in your version
+      // Build claim instruction using whichever helper exists in this SDK version
       let ix;
       if (typeof client.buildClaimLeftoverInstruction === 'function') {
         ix = await client.buildClaimLeftoverInstruction({
@@ -188,7 +177,7 @@ async function main() {
     }
   }
 
-  // CSV summary (nice for Actions logs/artifacts)
+  // CSV-ish summary for Actions logs/artifacts
   console.log('\nbaseMint,pool,poolConfig,status,signature,error');
   for (const r of results) {
     console.log(
