@@ -27,8 +27,8 @@ type LeftoverReport = {
   status: 'claimed' | 'skipped' | 'error';
   signature?: string;
   error?: string;
-  usedConfig?: string;
-  usedProgram?: string;
+  usedConfig?: string;   // base58 (or "(default)")
+  usedProgram?: string;  // base58 (or empty for default)
 };
 
 /* ------------------------------ inputs/env ------------------------------ */
@@ -36,38 +36,40 @@ type LeftoverReport = {
 function parseBaseMintsFromEnv(): PublicKey[] {
   const raw = env('BASE_MINTS');
   if (!raw) throw new Error('BASE_MINTS is empty.');
-  const parts = raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
   if (!parts.length) throw new Error('No valid base mints found in BASE_MINTS.');
   return parts.map((s) => new PublicKey(s));
 }
 
-function parseConfigKeys(): string[] {
+/** Returns a list of config PublicKeys; if ENV is empty, returns [null] to indicate SDK default. */
+function parseConfigKeys(): (PublicKey | null)[] {
   const raw = env('DBC_CONFIG_KEYS');
-  if (!raw) return ['(default)'];
-  const list = raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return list.length ? list : ['(default)'];
-}
-
-function parseProgramIds(): (PublicKey | null)[] {
-  const raw = env('DBC_PROGRAM_IDS');
   if (!raw) return [null];
-  const parts = raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
   if (!parts.length) return [null];
   const out: (PublicKey | null)[] = [];
   for (const p of parts) {
     try {
       out.push(new PublicKey(p));
     } catch {
-      // ignore invalid entry
+      // skip invalid
+    }
+  }
+  return out.length ? out : [null];
+}
+
+/** Returns a list of program ids (or [null] for sdk default). */
+function parseProgramIds(): (PublicKey | null)[] {
+  const raw = env('DBC_PROGRAM_IDS');
+  if (!raw) return [null];
+  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!parts.length) return [null];
+  const out: (PublicKey | null)[] = [];
+  for (const p of parts) {
+    try {
+      out.push(new PublicKey(p));
+    } catch {
+      // skip invalid one
     }
   }
   return out.length ? out : [null];
@@ -150,27 +152,26 @@ function safeQuoteVault(pool: any): PublicKey | null {
 
 /**
  * Build candidate clients for every (configKey × programId) combo.
- * Keep ctor permissive to survive sdk signature changes.
+ * configKey may be null (use SDK default) or a PublicKey.
  */
 function buildClientCombos(
   connection: Connection,
   wallet: MinimalWallet,
-  configKeys: string[],
+  configKeys: (PublicKey | null)[],
   programIds: (PublicKey | null)[]
-): Array<{ label: string; client: any; programId: PublicKey | null; configKey: string }> {
-  const combos: Array<{ label: string; client: any; programId: PublicKey | null; configKey: string }> = [];
+): Array<{ label: string; client: any; programId: PublicKey | null; configKey: PublicKey | null }> {
+  const combos: Array<{ label: string; client: any; programId: PublicKey | null; configKey: PublicKey | null }> = [];
   for (const configKey of configKeys) {
     for (const programId of programIds) {
       let client: any;
       try {
-        // Common constructor shapes:
+        // Typical constructors across SDK versions:
         // new Client(conn, wallet)
-        // new Client(conn, wallet, configKey)
-        // (programId is often a field, not a ctor arg)
-        if (configKey === '(default)') {
-          client = new (DynamicBondingCurveClient as any)(connection, wallet);
-        } else {
+        // new Client(conn, wallet, configPubkey)
+        if (configKey) {
           client = new (DynamicBondingCurveClient as any)(connection, wallet, configKey);
+        } else {
+          client = new (DynamicBondingCurveClient as any)(connection, wallet);
         }
         if (programId) {
           try {
@@ -180,6 +181,7 @@ function buildClientCombos(
           }
         }
       } catch {
+        // Fallback: try without config, then set programId if present
         client = new (DynamicBondingCurveClient as any)(connection, wallet);
         if (programId) {
           try {
@@ -189,7 +191,7 @@ function buildClientCombos(
           }
         }
       }
-      const label = `${configKey}${programId ? ` @ ${programId.toBase58()}` : ''}`;
+      const label = `${configKey ? configKey.toBase58() : '(default)'}${programId ? ` @ ${programId.toBase58()}` : ''}`;
       combos.push({ label, client, programId, configKey });
     }
   }
@@ -205,11 +207,11 @@ async function fetchPoolByBaseMint(client: any, baseMint: PublicKey): Promise<an
         const p = await f.call(client, baseMint);
         if (p) return p;
       } catch {
-        // try next name
+        // try next
       }
     }
   }
-  // fallback: scan lists if exposed by this sdk build
+  // fallback: scan list if exposed
   for (const fn of ['listPools', 'getAllPools', 'fetchAllPools']) {
     const f = client?.[fn];
     if (typeof f === 'function') {
@@ -251,8 +253,8 @@ async function main() {
   const lr = env('LEFTOVER_RECEIVER');
   const leftoverReceiver = lr ? new PublicKey(lr) : signer.publicKey;
 
-  const configKeys = parseConfigKeys();
-  const programIds = parseProgramIds();
+  const configKeys = parseConfigKeys();      // now PublicKey|null
+  const programIds = parseProgramIds();      // PublicKey|null
   const combos = buildClientCombos(connection, wallet, configKeys, programIds);
 
   console.log(`Wallet: ${signer.publicKey.toBase58()}`);
@@ -260,7 +262,7 @@ async function main() {
   console.log(`Commitment: ${COMMITMENT}`);
   console.log(`Receiver: ${leftoverReceiver.toBase58()}`);
   console.log(`Base mints: ${baseMints.length}`);
-  console.log(`Config keys: ${configKeys.join(', ')}`);
+  console.log(`Config keys: ${configKeys.map((c) => (c ? c.toBase58() : '(default)')).join(', ')}`);
   console.log(`Program IDs: ${programIds.map((p) => (p ? p.toBase58() : '(default)')).join(', ')}`);
 
   const results: LeftoverReport[] = [];
@@ -273,7 +275,7 @@ async function main() {
       const report: LeftoverReport = {
         baseMint: baseMint.toBase58(),
         status: 'skipped',
-        usedConfig: configKey,
+        usedConfig: configKey ? configKey.toBase58() : '(default)',
         usedProgram: programId ? programId.toBase58() : '',
       };
 
@@ -300,7 +302,7 @@ async function main() {
         if (!completed) throw new Error('Curve not completed');
         if (bal === 0) throw new Error('No leftover SOL');
 
-        // Build claim instruction (sdk method name varies by version)
+        // Build claim instruction (sdk name varies)
         let ix: any;
         if (typeof client.buildClaimLeftoverInstruction === 'function') {
           ix = await client.buildClaimLeftoverInstruction({ pool, leftoverReceiver, payer: signer.publicKey });
@@ -308,7 +310,7 @@ async function main() {
           ix = await client.claimLeftoverInstruction({ pool, leftoverReceiver, payer: signer.publicKey });
         } else if (typeof client.claimLeftoverBase === 'function') {
           ix = await client.claimLeftoverBase({
-            poolPublicKey: new PublicKey(report.pool || pool?.pubkey || pool?.address),
+            poolPublicKey: new PublicKey(report.pool || (pool as any)?.pubkey || (pool as any)?.address),
             leftoverReceiver,
             payer: signer.publicKey,
           });
