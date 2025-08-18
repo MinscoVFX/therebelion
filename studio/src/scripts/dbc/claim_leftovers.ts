@@ -11,7 +11,8 @@ import {
 import { Wallet as AnchorWallet } from '@coral-xyz/anchor';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 
-import { parseConfigFromCli, safeParseKeypairFromFile } from '../../helpers';
+// NOTE: Only import what's actually used to avoid type/arg mismatches.
+import { safeParseKeypairFromFile } from '../../helpers';
 import { DEFAULT_COMMITMENT_LEVEL } from '../../utils/constants';
 
 type LeftoverReport = {
@@ -49,9 +50,8 @@ async function getSigner(): Promise<Keypair> {
 }
 
 async function main() {
-  // Keep CLI parity (e.g., --config ./studio/config/dbc_config.jsonc).
-  // Your helper expects 1 arg (argv), so pass it.
-  parseConfigFromCli(process.argv);
+  // No CLI helper here (avoids arg-count mismatch across repos).
+  // Everything is driven by env vars: RPC_URL, BASE_MINTS, LEFTOVER_RECEIVER, PRIVATE_KEY_B58.
 
   const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
   const connection = new Connection(rpcUrl, { commitment: DEFAULT_COMMITMENT_LEVEL });
