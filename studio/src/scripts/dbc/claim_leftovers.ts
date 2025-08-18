@@ -1,4 +1,5 @@
 // studio/src/scripts/dbc/claim_leftovers.ts
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import {
   Connection,
@@ -7,18 +8,14 @@ import {
   Transaction,
   sendAndConfirmTransaction,
   LAMPORTS_PER_SOL,
+  type Commitment,
 } from '@solana/web3.js';
-import { Wallet as AnchorWallet } from '@coral-xyz/anchor';
+import * as nacl from 'tweetnacl';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 
-// Import helpers, then alias-cast to relax strict typings (prevents TS2554)
-import { parseConfigFromCli as _parseConfigFromCli, safeParseKeypairFromFile as _safeParseKeypairFromFile } from '../../helpers';
-import { DEFAULT_COMMITMENT_LEVEL } from '../../utils/constants';
-
-// ---- Casted wrappers to neutralize signature drift across repos ----
-const parseConfigFromCliAny = _parseConfigFromCli as unknown as (argv?: unknown) => unknown;
-const safeParseKeypairFromFileAny = _safeParseKeypairFromFile as unknown as () => Promise<Keypair>;
-// --------------------------------------------------------------------
+// If your repo has a constant, great; otherwise fall back safely.
+const COMMITMENT: Commitment =
+  (process.env.COMMITMENT_LEVEL as Commitment) || ('confirmed' as Commitment);
 
 type LeftoverReport = {
   baseMint: string;
@@ -29,6 +26,36 @@ type LeftoverReport = {
   error?: string;
 };
 
+// Tiny base58 decoder so we don't rely on external deps at runtime.
+function base58Decode(input: string): Uint8Array {
+  const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const BASE = 58;
+  if (input.length === 0) return new Uint8Array();
+  const bytes: number[] = [0];
+  for (let i = 0; i < input.length; i++) {
+    const c = input[i];
+    const val = ALPHABET.indexOf(c);
+    if (val < 0) throw new Error('Invalid base58 character');
+    // multiply by 58 and add val
+    for (let j = 0; j < bytes.length; j++) bytes[j] *= BASE;
+    bytes[0] += val;
+    // carry
+    let carry = 0;
+    for (let j = 0; j < bytes.length; j++) {
+      bytes[j] += carry;
+      carry = bytes[j] >> 8;
+      bytes[j] &= 0xff;
+    }
+    while (carry) {
+      bytes.push(carry & 0xff);
+      carry >>= 8;
+    }
+  }
+  // leading zeros
+  for (let k = 0; k < input.length && input[k] === '1'; k++) bytes.push(0);
+  return new Uint8Array(bytes.reverse());
+}
+
 function parseBaseMintsFromEnv(): PublicKey[] {
   const list = (process.env.BASE_MINTS || '')
     .split(',')
@@ -36,49 +63,105 @@ function parseBaseMintsFromEnv(): PublicKey[] {
     .filter(Boolean);
   if (!list.length) {
     throw new Error(
-      'BASE_MINTS is empty. Set a comma-separated list of base mints in Actions inputs or secrets.'
+      'BASE_MINTS is empty. Paste a comma-separated list into the workflow input.'
     );
   }
   return list.map((m) => new PublicKey(m));
 }
 
-async function getSigner(): Promise<Keypair> {
-  // PRIVATE_KEY_B58 (base64 of secret key bytes) takes precedence
-  const b64 = process.env.PRIVATE_KEY_B58 || '';
-  if (b64) {
-    const secret = Uint8Array.from(Buffer.from(b64, 'base64'));
-    return Keypair.fromSecretKey(secret);
+function decodeSignerSecret(): Uint8Array {
+  // Accept multiple env names for convenience:
+  // - PRIVATE_KEY_BASE64 (recommended)
+  // - PRIVATE_KEY_B58   (ok)
+  // - PRIVATE_KEY       (either base64 or base58)
+  // - PRIVATE_KEY_JSON  (JSON array string "[12,34,...]")
+  const json = process.env.PRIVATE_KEY_JSON || '';
+  if (json) {
+    const arr = JSON.parse(json) as number[];
+    const bytes = Uint8Array.from(arr);
+    if (bytes.length === 64) return bytes;
+    if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
+    throw new Error('PRIVATE_KEY_JSON must be a 32 or 64 byte array.');
   }
-  // Repo helper (casted to 0-arg form)
-  const kp = await safeParseKeypairFromFileAny();
-  return kp;
+
+  const raw =
+    process.env.PRIVATE_KEY_BASE64 ||
+    process.env.PRIVATE_KEY_B58 ||
+    process.env.PRIVATE_KEY ||
+    '';
+
+  if (!raw) {
+    throw new Error(
+      'Set one of PRIVATE_KEY_BASE64, PRIVATE_KEY_B58, PRIVATE_KEY, or PRIVATE_KEY_JSON.'
+    );
+  }
+
+  // Try base64 first
+  try {
+    const b = Buffer.from(raw, 'base64');
+    if (b.length === 64) return new Uint8Array(b);
+    if (b.length === 32) return nacl.sign.keyPair.fromSeed(new Uint8Array(b)).secretKey;
+  } catch {
+    // ignore
+  }
+
+  // Try base58
+  try {
+    const b58 = base58Decode(raw);
+    if (b58.length === 64) return b58;
+    if (b58.length === 32) return nacl.sign.keyPair.fromSeed(b58).secretKey;
+  } catch {
+    // ignore
+  }
+
+  throw new Error(
+    'Could not decode signer secret. Provide 64-byte base64/base58 secret key, 32-byte seed, or JSON array.'
+  );
 }
 
+function getSigner(): Keypair {
+  const secret = decodeSignerSecret();
+  return Keypair.fromSecretKey(secret);
+}
+
+type MinimalWallet = {
+  publicKey: PublicKey;
+  payer?: Keypair;
+  signTransaction: (tx: Transaction) => Promise<Transaction>;
+  signAllTransactions: (txs: Transaction[]) => Promise<Transaction[]>;
+};
+
 async function main() {
-  // Keep parity with your other scripts (accepts --config). Casted to allow 0/1 args signatures.
-  parseConfigFromCliAny(process.argv);
-
   const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
-  const connection = new Connection(rpcUrl, { commitment: DEFAULT_COMMITMENT_LEVEL });
+  const connection = new Connection(rpcUrl, { commitment: COMMITMENT });
 
-  const signer = await getSigner();
-  const wallet = new AnchorWallet(signer);
+  const signer = getSigner();
+  const wallet: MinimalWallet = {
+    publicKey: signer.publicKey,
+    payer: signer,
+    signTransaction: async (tx) => {
+      tx.partialSign(signer);
+      return tx;
+    },
+    signAllTransactions: async (txs) => {
+      txs.forEach((t) => t.partialSign(signer));
+      return txs;
+    },
+  };
 
-  // Use constructor; cast to any to avoid SDK type drift issues
+  // Construct the DBC client but keep it fully dynamic to sidestep TS type drift across versions.
   const client: any = new (DynamicBondingCurveClient as any)(connection, wallet);
 
-  // Required inputs
   const baseMints = parseBaseMintsFromEnv();
-
-  // Optional override; default to signer
   const leftoverReceiver =
     (process.env.LEFTOVER_RECEIVER && new PublicKey(process.env.LEFTOVER_RECEIVER)) ||
     signer.publicKey;
 
-  console.log(`> Claiming leftovers with wallet ${signer.publicKey.toBase58()}`);
+  console.log(`> Wallet: ${signer.publicKey.toBase58()}`);
   console.log(`> RPC: ${rpcUrl}`);
+  console.log(`> Commitment: ${COMMITMENT}`);
   console.log(`> leftoverReceiver: ${leftoverReceiver.toBase58()}`);
-  console.log(`> Base mints to scan: ${baseMints.length}`);
+  console.log(`> Base mints: ${baseMints.length}`);
 
   const results: LeftoverReport[] = [];
 
@@ -87,22 +170,20 @@ async function main() {
     const report: LeftoverReport = { baseMint: baseMint.toBase58(), status: 'skipped' };
 
     try {
-      // Try common SDK helper names across versions
+      // Work across SDK variants
       let pool: any | undefined;
-      if (typeof client.getPoolByBaseMint === 'function') {
-        pool = await client.getPoolByBaseMint(baseMint);
-      } else if (typeof client.fetchPoolByBaseMint === 'function') {
-        pool = await client.fetchPoolByBaseMint(baseMint);
-      } else if (typeof client.getPool === 'function') {
-        pool = await client.getPool(baseMint);
+      const candFns = ['getPoolByBaseMint', 'fetchPoolByBaseMint', 'getPool'];
+      for (const fn of candFns) {
+        if (typeof client[fn] === 'function') {
+          pool = await client[fn](baseMint);
+          if (pool) break;
+        }
       }
-
-      if (!pool) throw new Error('DBC Pool not found for this base mint.');
+      if (!pool) throw new Error('DBC pool not found for this base mint.');
 
       report.pool = pool?.pubkey?.toBase58?.() ?? pool?.address?.toBase58?.() ?? '(unknown)';
       report.poolConfig = pool?.config?.toBase58?.() ?? '(unknown)';
 
-      // Determine completion/finished status across SDK variants
       const status = pool?.state?.status ?? pool?.status ?? '';
       const isCompleted =
         status === 'completed' ||
@@ -110,14 +191,11 @@ async function main() {
         pool?.state?.isFinished === true ||
         pool?.isFinished === true;
 
-      // Locate the quote (SOL) vault
-      const quoteVaultPk =
-        (pool as any)?.vaultQuote ??
-        (pool as any)?.quoteVault ??
-        (pool as any)?.state?.vaultQuote;
+      const quoteVaultPk: PublicKey | undefined =
+        pool?.vaultQuote ?? pool?.quoteVault ?? pool?.state?.vaultQuote;
 
       if (!quoteVaultPk) {
-        console.log('  > No quote vault field on pool; skipping.');
+        console.log('  > No quote vault on pool; skipping.');
         results.push(report);
         continue;
       }
@@ -137,7 +215,6 @@ async function main() {
         continue;
       }
 
-      // Build claim instruction using whichever helper exists in this SDK version
       let ix;
       if (typeof client.buildClaimLeftoverInstruction === 'function') {
         ix = await client.buildClaimLeftoverInstruction({
@@ -159,7 +236,7 @@ async function main() {
         });
       } else {
         throw new Error(
-          'SDK version missing a leftover-claim builder. Update @meteora-ag/dynamic-bonding-curve-sdk.'
+          'SDK missing leftover-claim builder on this version. Update @meteora-ag/dynamic-bonding-curve-sdk.'
         );
       }
 
@@ -185,7 +262,6 @@ async function main() {
     }
   }
 
-  // CSV-ish summary for Actions logs/artifacts
   console.log('\nbaseMint,pool,poolConfig,status,signature,error');
   for (const r of results) {
     console.log(
