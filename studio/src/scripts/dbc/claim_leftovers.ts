@@ -1,7 +1,7 @@
 /**
  * Claim DBC bonding-curve leftovers across (BASE_MINTS × DBC_CONFIG_KEYS × optional DBC_PROGRAM_IDS).
  *
- * Env (via repo/org Secrets):
+ * Required env:
  *   RPC_URL
  *   BASE_MINTS            # comma-separated base mint addresses
  *   DBC_CONFIG_KEYS       # comma-separated config keys
@@ -42,7 +42,7 @@ async function loadDbcSdk(): Promise<Record<string, unknown> | null> {
       console.log(`[INFO] Loaded Meteora SDK: ${mod}`);
       return sdk as Record<string, unknown>;
     } catch (e) {
-      // add a statement to satisfy eslint(no-empty)
+      // not empty: explain which candidate failed for eslint(no-empty)
       const msg = (e as any)?.message ? String((e as any).message) : String(e);
       console.debug(`[INFO] SDK candidate not found: ${mod} (${msg})`);
     }
