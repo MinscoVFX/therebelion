@@ -13,9 +13,8 @@ import {
 import * as nacl from 'tweetnacl';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 
-// If your repo has a constant, great; otherwise fall back safely.
 const COMMITMENT: Commitment =
-  (process.env.COMMITMENT_LEVEL as Commitment) || ('confirmed' as Commitment);
+  ((process.env.COMMITMENT_LEVEL as Commitment) ?? 'confirmed') as Commitment;
 
 type LeftoverReport = {
   baseMint: string;
@@ -26,20 +25,17 @@ type LeftoverReport = {
   error?: string;
 };
 
-// Tiny base58 decoder so we don't rely on external deps at runtime.
+// Minimal base58 decoder (avoids external deps)
 function base58Decode(input: string): Uint8Array {
   const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
   const BASE = 58;
   if (input.length === 0) return new Uint8Array();
   const bytes: number[] = [0];
   for (let i = 0; i < input.length; i++) {
-    const c = input[i];
-    const val = ALPHABET.indexOf(c);
+    const val = ALPHABET.indexOf(input[i]);
     if (val < 0) throw new Error('Invalid base58 character');
-    // multiply by 58 and add val
     for (let j = 0; j < bytes.length; j++) bytes[j] *= BASE;
     bytes[0] += val;
-    // carry
     let carry = 0;
     for (let j = 0; j < bytes.length; j++) {
       bytes[j] += carry;
@@ -51,71 +47,94 @@ function base58Decode(input: string): Uint8Array {
       carry >>= 8;
     }
   }
-  // leading zeros
   for (let k = 0; k < input.length && input[k] === '1'; k++) bytes.push(0);
   return new Uint8Array(bytes.reverse());
 }
 
 function parseBaseMintsFromEnv(): PublicKey[] {
-  const list = (process.env.BASE_MINTS || '')
+  const raw = process.env.BASE_MINTS ?? '';
+  const list = raw
     .split(',')
     .map((s) => s.trim())
-    .filter(Boolean);
-  if (!list.length) {
+    .filter((s) => s.length > 0);
+  if (list.length === 0) {
     throw new Error(
-      'BASE_MINTS is empty. Paste a comma-separated list into the workflow input.'
+      'BASE_MINTS is empty. Provide a comma-separated list via workflow input or secret.'
     );
   }
   return list.map((m) => new PublicKey(m));
 }
 
 function decodeSignerSecret(): Uint8Array {
-  // Accept multiple env names for convenience:
-  // - PRIVATE_KEY_BASE64 (recommended)
-  // - PRIVATE_KEY_B58   (ok)
-  // - PRIVATE_KEY       (either base64 or base58)
-  // - PRIVATE_KEY_JSON  (JSON array string "[12,34,...]")
-  const json = process.env.PRIVATE_KEY_JSON || '';
-  if (json) {
-    const arr = JSON.parse(json) as number[];
-    const bytes = Uint8Array.from(arr);
-    if (bytes.length === 64) return bytes;
-    if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
-    throw new Error('PRIVATE_KEY_JSON must be a 32 or 64 byte array.');
+  const jsonStr = process.env.PRIVATE_KEY_JSON;
+  if (jsonStr && jsonStr.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(jsonStr.trim());
+      if (Array.isArray(parsed)) {
+        const bytes = Uint8Array.from(parsed as number[]);
+        if (bytes.length === 64) return bytes;
+        if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
+      }
+      throw new Error('PRIVATE_KEY_JSON must be a JSON array of 32 or 64 numbers.');
+    } catch (e: any) {
+      throw new Error(`Failed to parse PRIVATE_KEY_JSON: ${e?.message ?? e}`);
+    }
   }
 
-  const raw =
-    process.env.PRIVATE_KEY_BASE64 ||
-    process.env.PRIVATE_KEY_B58 ||
-    process.env.PRIVATE_KEY ||
-    '';
+  const rawB64 = process.env.PRIVATE_KEY_BASE64 ?? '';
+  if (rawB64.length > 0) {
+    const b = Buffer.from(rawB64, 'base64');
+    const bytes = new Uint8Array(b);
+    if (bytes.length === 64) return bytes;
+    if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
+    throw new Error(`PRIVATE_KEY_BASE64 length ${bytes.length} unsupported (need 32 or 64).`);
+  }
 
-  if (!raw) {
+  const rawB58 = process.env.PRIVATE_KEY_B58 ?? '';
+  if (rawB58.length > 0) {
+    const bytes = base58Decode(rawB58);
+    if (bytes.length === 64) return bytes;
+    if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
+    throw new Error(`PRIVATE_KEY_B58 length ${bytes.length} unsupported (need 32 or 64).`);
+  }
+
+  const rawAny = process.env.PRIVATE_KEY ?? '';
+  if (rawAny.length > 0) {
+    // Try JSON
+    try {
+      const parsed = JSON.parse(rawAny);
+      if (Array.isArray(parsed)) {
+        const bytes = Uint8Array.from(parsed as number[]);
+        if (bytes.length === 64) return bytes;
+        if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
+      }
+    } catch {
+      // not JSON
+    }
+    // Try base64
+    try {
+      const b = Buffer.from(rawAny, 'base64');
+      const bytes = new Uint8Array(b);
+      if (bytes.length === 64) return bytes;
+      if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
+    } catch {
+      // not base64
+    }
+    // Try base58
+    try {
+      const bytes = base58Decode(rawAny);
+      if (bytes.length === 64) return bytes;
+      if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
+    } catch {
+      // not base58
+    }
     throw new Error(
-      'Set one of PRIVATE_KEY_BASE64, PRIVATE_KEY_B58, PRIVATE_KEY, or PRIVATE_KEY_JSON.'
+      'PRIVATE_KEY provided, but format not recognized (expected JSON array, base64, or base58).'
     );
   }
 
-  // Try base64 first
-  try {
-    const b = Buffer.from(raw, 'base64');
-    if (b.length === 64) return new Uint8Array(b);
-    if (b.length === 32) return nacl.sign.keyPair.fromSeed(new Uint8Array(b)).secretKey;
-  } catch {
-    // ignore
-  }
-
-  // Try base58
-  try {
-    const b58 = base58Decode(raw);
-    if (b58.length === 64) return b58;
-    if (b58.length === 32) return nacl.sign.keyPair.fromSeed(b58).secretKey;
-  } catch {
-    // ignore
-  }
-
   throw new Error(
-    'Could not decode signer secret. Provide 64-byte base64/base58 secret key, 32-byte seed, or JSON array.'
+    'Missing signer secret. Set one of: PRIVATE_KEY_BASE64, PRIVATE_KEY_B58, PRIVATE_KEY_JSON, or PRIVATE_KEY.'
   );
 }
 
@@ -132,7 +151,7 @@ type MinimalWallet = {
 };
 
 async function main() {
-  const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
+  const rpcUrl = process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com';
   const connection = new Connection(rpcUrl, { commitment: COMMITMENT });
 
   const signer = getSigner();
@@ -149,13 +168,12 @@ async function main() {
     },
   };
 
-  // Construct the DBC client but keep it fully dynamic to sidestep TS type drift across versions.
   const client: any = new (DynamicBondingCurveClient as any)(connection, wallet);
 
   const baseMints = parseBaseMintsFromEnv();
-  const leftoverReceiver =
-    (process.env.LEFTOVER_RECEIVER && new PublicKey(process.env.LEFTOVER_RECEIVER)) ||
-    signer.publicKey;
+
+  const lr = process.env.LEFTOVER_RECEIVER ?? '';
+  const leftoverReceiver = lr.length > 0 ? new PublicKey(lr) : signer.publicKey;
 
   console.log(`> Wallet: ${signer.publicKey.toBase58()}`);
   console.log(`> RPC: ${rpcUrl}`);
@@ -170,13 +188,16 @@ async function main() {
     const report: LeftoverReport = { baseMint: baseMint.toBase58(), status: 'skipped' };
 
     try {
-      // Work across SDK variants
       let pool: any | undefined;
       const candFns = ['getPoolByBaseMint', 'fetchPoolByBaseMint', 'getPool'];
       for (const fn of candFns) {
-        if (typeof client[fn] === 'function') {
-          pool = await client[fn](baseMint);
-          if (pool) break;
+        const maybe = (client as any)[fn];
+        if (typeof maybe === 'function') {
+          const p = await maybe.call(client, baseMint);
+          if (p) {
+            pool = p;
+            break;
+          }
         }
       }
       if (!pool) throw new Error('DBC pool not found for this base mint.');
@@ -184,23 +205,25 @@ async function main() {
       report.pool = pool?.pubkey?.toBase58?.() ?? pool?.address?.toBase58?.() ?? '(unknown)';
       report.poolConfig = pool?.config?.toBase58?.() ?? '(unknown)';
 
-      const status = pool?.state?.status ?? pool?.status ?? '';
+      const status: string = (pool?.state?.status ?? pool?.status ?? '') as string;
       const isCompleted =
         status === 'completed' ||
         status === 'finished' ||
         pool?.state?.isFinished === true ||
         pool?.isFinished === true;
 
-      const quoteVaultPk: PublicKey | undefined =
-        pool?.vaultQuote ?? pool?.quoteVault ?? pool?.state?.vaultQuote;
+      const qv: PublicKey | undefined =
+        (pool as any)?.vaultQuote ??
+        (pool as any)?.quoteVault ??
+        (pool as any)?.state?.vaultQuote;
 
-      if (!quoteVaultPk) {
+      if (!qv) {
         console.log('  > No quote vault on pool; skipping.');
         results.push(report);
         continue;
       }
 
-      const vaultBal = await connection.getBalance(new PublicKey(quoteVaultPk));
+      const vaultBal = await connection.getBalance(new PublicKey(qv));
       console.log(`  > Vault SOL: ${(vaultBal / LAMPORTS_PER_SOL).toFixed(6)} SOL`);
       console.log(`  > Status: ${status || '(unknown)'} | Completed: ${isCompleted}`);
 
