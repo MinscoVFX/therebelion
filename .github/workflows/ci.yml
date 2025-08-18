@@ -103,6 +103,5 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      # Build-mode typecheck resolves TS6305 by emitting referenced d.ts outputs in the CI workspace
-      - name: Type check (build mode)
-        run: pnpm exec tsc -b --verbose
+      - name: Type check
+        run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
