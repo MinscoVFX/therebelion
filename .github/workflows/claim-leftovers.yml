@@ -58,5 +58,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      # Use dlx so we don't depend on 'tsx' being in your package.json
       - name: Claim leftovers
-        run: pnpm tsx studio/src/scripts/dbc/claim_leftovers.ts
+        run: pnpm dlx tsx studio/src/scripts/dbc/claim_leftovers.ts
