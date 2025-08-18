@@ -35,7 +35,7 @@ type AttemptResult = {
 async function loadDbcSdk(): Promise<Record<string, unknown> | null> {
   const candidates = [
     '@meteora-ag/dynamic-bonding-curve-sdk', // correct npm package
-    '@meteora-ag/dbc-sdk',                   // fallback alias if you ever add it
+    '@meteora-ag/dbc-sdk',                   // fallback alias if ever present
   ];
 
   for (const mod of candidates) {
