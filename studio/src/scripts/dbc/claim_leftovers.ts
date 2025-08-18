@@ -147,3 +147,188 @@ function buildClientCombos(
         } else {
           client = new (DynamicBondingCurveClient as any)(connection, wallet, configKey);
         }
+        // some SDK builds expose .programId; if so, set it
+        if (programId) {
+          try {
+            (client as any).programId = programId;
+          } catch {
+            /* ignore */
+          }
+        }
+      } catch {
+        // last resort: bare ctor
+        client = new (DynamicBondingCurveClient as any)(connection, wallet);
+        if (programId) {
+          try {
+            (client as any).programId = programId;
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      const label = `${configKey}${programId ? ` @ ${programId.toBase58()}` : ''}`;
+      combos.push({ label, client, programId, configKey });
+    }
+  }
+  return combos;
+}
+
+/** Try all known SDK methods (across versions) to fetch a pool by baseMint. */
+async function fetchPoolByBaseMint(client: any, baseMint: PublicKey): Promise<any | null> {
+  for (const fn of ['getPoolByBaseMint', 'fetchPoolByBaseMint', 'getPool']) {
+    const f = client?.[fn];
+    if (typeof f === 'function') {
+      try {
+        const p = await f.call(client, baseMint);
+        if (p) return p;
+      } catch {
+        // try next
+      }
+    }
+  }
+  // bonus fallback: if SDK exposes something like list/getAll pools, try to search
+  for (const fn of ['listPools', 'getAllPools', 'fetchAllPools']) {
+    const f = client?.[fn];
+    if (typeof f === 'function') {
+      try {
+        const list = await f.call(client);
+        if (Array.isArray(list)) {
+          for (const p of list) {
+            const bm = p?.baseMint || p?.state?.baseMint;
+            try {
+              if (bm && new PublicKey(bm).equals(baseMint)) return p;
+            } catch {
+              /* ignore bad pubkey */
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return null;
+}
+
+// ---------- Main ----------
+async function main() {
+  const rpcUrl = env('RPC_URL') || 'https://api.mainnet-beta.solana.com';
+  const connection = new Connection(rpcUrl, { commitment: COMMITMENT });
+
+  const signer = getSigner();
+  const wallet: MinimalWallet = {
+    publicKey: signer.publicKey,
+    payer: signer,
+    signTransaction: async (tx) => (tx.partialSign(signer), tx),
+    signAllTransactions: async (txs) => (txs.forEach((t) => t.partialSign(signer)), txs),
+  };
+
+  const baseMints = parseBaseMintsFromEnv();
+  const lr = env('LEFTOVER_RECEIVER');
+  const leftoverReceiver = lr ? new PublicKey(lr) : signer.publicKey;
+
+  const configKeys = parseConfigKeys();
+  const programIds = parseProgramIds();
+  const combos = buildClientCombos(connection, wallet, configKeys, programIds);
+
+  console.log(`Wallet: ${signer.publicKey.toBase58()}`);
+  console.log(`RPC: ${rpcUrl}`);
+  console.log(`Commitment: ${COMMITMENT}`);
+  console.log(`Receiver: ${leftoverReceiver.toBase58()}`);
+  console.log(`Base mints: ${baseMints.length}`);
+  console.log(`Config keys: ${configKeys.join(', ')}`);
+  console.log(`Program IDs: ${programIds.map((p) => (p ? p.toBase58() : '(default)')).join(', ')}`);
+
+  const results: LeftoverReport[] = [];
+
+  for (const baseMint of baseMints) {
+    let claimedOrFound = false;
+
+    for (const { label, client, programId, configKey } of combos) {
+      console.log(`\n— Searching pool for ${baseMint.toBase58()} using ${label} ...`);
+      const report: LeftoverReport = {
+        baseMint: baseMint.toBase58(),
+        status: 'skipped',
+        usedConfig: configKey,
+        usedProgram: programId ? programId.toBase58() : '',
+      };
+
+      try {
+        const pool = await fetchPoolByBaseMint(client, baseMint);
+        if (!pool) {
+          console.log('  > No pool with this base mint on this config/program.');
+          results.push({ ...report, status: 'error', error: 'Pool not found for this combo' });
+          continue;
+        }
+
+        report.pool = safeToBase58Field(pool, 'pubkey', 'address');
+        report.poolConfig = safeToBase58Field(pool, 'config', 'config');
+
+        const { status, completed } = safePoolStatus(pool);
+        const qv = safeQuoteVault(pool);
+        if (!qv) throw new Error('No quote vault found on pool');
+
+        const bal = await connection.getBalance(qv);
+        console.log(`  > Vault: ${(bal / LAMPORTS_PER_SOL).toFixed(6)} SOL | Status: ${status} | Completed: ${completed}`);
+
+        if (!completed) throw new Error('Curve not completed');
+        if (bal === 0) throw new Error('No leftover SOL');
+
+        let ix: any;
+        if (typeof client.buildClaimLeftoverInstruction === 'function') {
+          ix = await client.buildClaimLeftoverInstruction({ pool, leftoverReceiver, payer: signer.publicKey });
+        } else if (typeof client.claimLeftoverInstruction === 'function') {
+          ix = await client.claimLeftoverInstruction({ pool, leftoverReceiver, payer: signer.publicKey });
+        } else if (typeof client.claimLeftoverBase === 'function') {
+          ix = await client.claimLeftoverBase({
+            poolPublicKey: new PublicKey(report.pool || pool?.pubkey || pool?.address),
+            leftoverReceiver,
+            payer: signer.publicKey,
+          });
+        } else {
+          throw new Error('SDK has no leftover claim builder in this version');
+        }
+
+        const tx = new Transaction().add(ix);
+        tx.feePayer = signer.publicKey;
+        tx.recentBlockhash = (await connection.getLatestBlockhash('finalized')).blockhash;
+
+        const sig = await sendAndConfirmTransaction(connection, tx, [signer], { commitment: 'confirmed' });
+        console.log(`  > ✅ Claimed leftovers. Signature: ${sig}`);
+        report.status = 'claimed';
+        report.signature = sig;
+
+        results.push(report);
+        claimedOrFound = true;
+        // once claimed on one config/program, no need to try other combos for this base mint
+        break;
+      } catch (e: any) {
+        const msg = e?.message || String(e);
+        console.log(`  > ✖ ${msg}`);
+        results.push({ ...report, status: 'error', error: msg });
+      }
+    }
+
+    if (!claimedOrFound) {
+      console.log(`\nNo claimable pool found for ${baseMint.toBase58()} across all configs/programs.`);
+    }
+  }
+
+  console.log('\nbaseMint,pool,poolConfig,status,signature,error,usedConfig,usedProgram');
+  for (const r of results) {
+    console.log(
+      [
+        r.baseMint,
+        r.pool || '',
+        r.poolConfig || '',
+        r.status,
+        r.signature || '',
+        (r.error || '').replace(/[\r\n,]+/g, ' '),
+        r.usedConfig || '',
+        r.usedProgram || '',
+      ].join(',')
+    );
+  }
+}
+
+main().catch((e) => (console.error(e), process.exit(1)));
