@@ -34,10 +34,9 @@ type AttemptResult = {
 // Lazy dynamic import of the Meteora DBC SDK in a way that avoids `import/no-unresolved`
 async function loadDbcSdk(): Promise<Record<string, unknown> | null> {
   try {
-    // Construct the module name in pieces to avoid static analysis false positives.
     const mod = '@meteora-ag/' + 'dbc-sdk';
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore  — TS can’t type this without installed types; we handle at runtime.
+    // @ts-ignore
     const sdk = await import(mod);
     return sdk as Record<string, unknown>;
   } catch (e) {
@@ -129,7 +128,6 @@ async function sendGeneric(
       return sig;
     }
 
-    // Assume array of Ixs or single Ix-like
     const ixs = Array.isArray(txOrIxs) ? txOrIxs : [txOrIxs];
     if (ixs.length === 0) return null;
 
@@ -197,7 +195,6 @@ async function main() {
   if (!ok) {
     console.error('[FATAL] Missing/invalid required configuration. Exiting cleanly.');
     process.exit(0);
-    return;
   }
 
   // Signer
@@ -209,20 +206,16 @@ async function main() {
     } else {
       console.error('[WARN] PK_B58 provided without PRIVATE_KEY_B58. A signer is required to submit transactions.');
       process.exit(0);
-      return;
     }
   } catch (e) {
     console.error('[ERROR] Unable to construct signer from PRIVATE_KEY_B58:', String(e));
     process.exit(0);
-    return;
   }
 
   const connection = new Connection(RPC_URL, 'confirmed');
   const sdk = await loadDbcSdk();
   if (!sdk) {
-    // Keep CI green, but explain.
     process.exit(0);
-    return;
   }
 
   // Entrypoint discovery
@@ -325,7 +318,6 @@ async function main() {
         if (/no claimable|nothing to claim|not claimable|pool not found|no pool/i.test(msg)) {
           return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'noop', reason: msg };
         }
-        // try next arg shape
       }
     }
 
@@ -374,5 +366,5 @@ async function main() {
 
 main().catch((e) => {
   console.error('[FATAL] Unhandled error:', String(e));
-  process.exit(0); // keep CI green for non-critical failure
+  process.exit(0);
 });
