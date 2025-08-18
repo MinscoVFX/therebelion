@@ -1,12 +1,12 @@
 /**
  * Claim DBC bonding-curve leftovers across (BASE_MINTS × DBC_CONFIG_KEYS × optional DBC_PROGRAM_IDS).
  *
- * Secrets required:
+ * Env (via repo/org Secrets):
  *   RPC_URL
  *   BASE_MINTS            # comma-separated base mint addresses
  *   DBC_CONFIG_KEYS       # comma-separated config keys
  *   LEFTOVER_RECEIVER     # pubkey to receive leftovers
- *   (PK_B58 or PRIVATE_KEY_B58)  # wallet
+ *   (PK_B58 or PRIVATE_KEY_B58)
  *
  * Optional:
  *   DBC_PROGRAM_IDS       # comma-separated program IDs
@@ -41,13 +41,18 @@ async function loadDbcSdk(): Promise<Record<string, unknown> | null> {
       const sdk = await import(mod);
       console.log(`[INFO] Loaded Meteora SDK: ${mod}`);
       return sdk as Record<string, unknown>;
-    } catch (_) {}
+    } catch (e) {
+      // add a statement to satisfy eslint(no-empty)
+      const msg = (e as any)?.message ? String((e as any).message) : String(e);
+      console.debug(`[INFO] SDK candidate not found: ${mod} (${msg})`);
+    }
   }
   console.error('[FATAL] Failed to load Meteora DBC SDK (tried dbc-sdk and dynamic-bonding-curve-sdk).');
   return null;
 }
 
-// ---------- helpers ----------
+// ---- Small helpers ----------------------------------------------------------
+
 function csvEnv(name: string, required = true): string[] {
   const raw = process.env[name]?.trim() ?? '';
   if (!raw) {
@@ -56,6 +61,7 @@ function csvEnv(name: string, required = true): string[] {
   }
   return raw.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
 }
+
 function expectEnv(name: string): string {
   const v = process.env[name]?.trim();
   if (!v) {
@@ -64,20 +70,29 @@ function expectEnv(name: string): string {
   }
   return v;
 }
+
 function safePubkey(s: string, label: string): PublicKey | null {
-  try { return new PublicKey(s); }
-  catch { console.error(`[ERROR] Invalid pubkey for ${label}: ${s}`); return null; }
+  try {
+    return new PublicKey(s);
+  } catch {
+    console.error(`[ERROR] Invalid pubkey for ${label}: ${s}`);
+    return null;
+  }
 }
-function nowIso() { return new Date().toISOString(); }
+
+function nowIso() {
+  return new Date().toISOString();
+}
 
 async function withBackoff<T>(fn: () => Promise<T>, label: string, attempts = 3): Promise<T | null> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
-    try { return await fn(); }
-    catch (e) {
+    try {
+      return await fn();
+    } catch (e) {
       lastErr = e;
       const ms = 500 * Math.pow(2, i);
-      console.warn(`[WARN] ${label} failed (${i + 1}/${attempts}): ${String(e)}; retrying in ${ms}ms…`);
+      console.warn(`[WARN] ${label} failed (attempt ${i + 1}/${attempts}): ${String(e)}; retrying in ${ms}ms…`);
       await new Promise((r) => setTimeout(r, ms));
     }
   }
@@ -96,7 +111,10 @@ async function sendGeneric(
 
     if (txOrIxs instanceof VersionedTransaction) {
       txOrIxs.sign([payer, ...extraSigners]);
-      const sig = await withBackoff(() => connection.sendTransaction(txOrIxs, { skipPreflight: false }), 'send v0 tx');
+      const sig = await withBackoff(
+        () => connection.sendTransaction(txOrIxs, { skipPreflight: false }),
+        'send v0 tx'
+      );
       if (!sig) return null;
       await withBackoff(() => connection.confirmTransaction(sig, 'confirmed'), 'confirm v0 tx', 5);
       return sig;
@@ -106,12 +124,16 @@ async function sendGeneric(
       txOrIxs.feePayer = payer.publicKey;
       txOrIxs.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
       txOrIxs.sign(payer, ...extraSigners);
-      const sig = await withBackoff(() => connection.sendRawTransaction(txOrIxs.serialize(), { skipPreflight: false }), 'send legacy tx');
+      const sig = await withBackoff(
+        () => connection.sendRawTransaction(txOrIxs.serialize(), { skipPreflight: false }),
+        'send legacy tx'
+      );
       if (!sig) return null;
       await withBackoff(() => connection.confirmTransaction(sig, 'confirmed'), 'confirm legacy tx', 5);
       return sig;
     }
 
+    // Assume array of Ixs or single Ix-like
     const ixs = Array.isArray(txOrIxs) ? txOrIxs : [txOrIxs];
     if (ixs.length === 0) return null;
 
@@ -120,7 +142,10 @@ async function sendGeneric(
     legacy.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
     legacy.sign(payer, ...extraSigners);
 
-    const sig = await withBackoff(() => connection.sendRawTransaction(legacy.serialize(), { skipPreflight: false }), 'send built tx');
+    const sig = await withBackoff(
+      () => connection.sendRawTransaction(legacy.serialize(), { skipPreflight: false }),
+      'send built tx'
+    );
     if (!sig) return null;
     await withBackoff(() => connection.confirmTransaction(sig, 'confirmed'), 'confirm built tx', 5);
     return sig;
@@ -167,7 +192,8 @@ function findCallableDeep(root: Record<string, unknown> | null) {
   return null as { obj: any; fnName: string } | null;
 }
 
-// ---------- main ----------
+// ---- Main -------------------------------------------------------------------
+
 async function main() {
   console.log(`[INFO] DBC leftover claim job start @ ${nowIso()}`);
 
@@ -223,9 +249,15 @@ async function main() {
   const results: AttemptResult[] = [];
 
   console.log('[INFO] Starting claims:');
-  console.log(`       base mints = ${BASE_MINTS.length}, configs = ${DBC_CONFIG_KEYS.length}, programs = ${programs.length}`);
+  console.log(
+    `       base mints = ${BASE_MINTS.length}, configs = ${DBC_CONFIG_KEYS.length}, programs = ${programs.length}`
+  );
 
-  async function attemptClaimOne(baseMintStr: string, configKeyStr: string, programIdStr?: string): Promise<AttemptResult> {
+  async function attemptClaimOne(
+    baseMintStr: string,
+    configKeyStr: string,
+    programIdStr?: string
+  ): Promise<AttemptResult> {
     const baseMint = safePubkey(baseMintStr, 'baseMint');
     const configKey = safePubkey(configKeyStr, 'configKey');
     const programId = programIdStr ? safePubkey(programIdStr, 'programId') : undefined;
@@ -279,7 +311,8 @@ async function main() {
     for (const configKey of DBC_CONFIG_KEYS) {
       for (const programId of programs) {
         const res = await attemptClaimOne(baseMint, configKey, programId);
-        const tag = `${baseMint.slice(0, 6)}… ${configKey.slice(0, 6)}…` + (programId ? ` ${programId.slice(0, 6)}…` : '');
+        const tag =
+          `${baseMint.slice(0, 6)}… ${configKey.slice(0, 6)}…` + (programId ? ` ${programId.slice(0, 6)}…` : '');
         if (res.status === 'claimed') {
           console.log(`[OK]   Claimed leftovers for ${tag}  -> ${res.txSig}`);
         } else if (res.status === 'noop') {
@@ -294,7 +327,16 @@ async function main() {
 
   console.log('\nbaseMint,configKey,programId,status,txSig,reason');
   for (const r of results) {
-    console.log([r.baseMint, r.configKey, r.programId ?? '', r.status, r.txSig ?? '', (r.reason ?? '').replace(/[\r\n,]+/g, ' ').slice(0, 300)].join(','));
+    console.log(
+      [
+        r.baseMint,
+        r.configKey,
+        r.programId ?? '',
+        r.status,
+        r.txSig ?? '',
+        (r.reason ?? '').replace(/[\r\n,]+/g, ' ').slice(0, 300),
+      ].join(',')
+    );
   }
 
   const anyClaimed = results.some((r) => r.status === 'claimed');
