@@ -1,101 +1,84 @@
-name: Claim Leftover SOL (DBC)
+name: Claim DBC Bonding-Curve Leftovers
 
 on:
-  workflow_dispatch:
-    inputs:
-      BASE_MINTS:
-        description: 'Comma-separated base mints to check/claim (leave blank to use secret)'
-        required: false
-        default: ''
-      LEFTOVER_RECEIVER:
-        description: 'Override leftover receiver (optional; defaults to signer)'
-        required: false
-        default: ''
-      COMMITMENT_LEVEL:
-        description: 'Solana commitment level (processed|confirmed|finalized)'
-        required: false
-        default: 'confirmed'
+  workflow_dispatch: {}         # run manually from the Actions tab
+  schedule:
+    - cron: "15 * * * *"        # run hourly at :15 (UTC)
 
 jobs:
   claim-leftovers:
     runs-on: ubuntu-latest
 
+    # All env is taken from repo/org Secrets (Settings → Secrets and variables → Actions)
+    # REQUIRED:
+    #   - RPC_URL
+    #   - BASE_MINTS            (comma-separated list of base mint addresses)
+    #   - DBC_CONFIG_KEYS       (comma-separated list of config keys)
+    #   - LEFTOVER_RECEIVER     (Solana pubkey to receive leftovers)
+    #   - *one* of PK_B58 or PRIVATE_KEY_B58 (wallet)
+    # OPTIONAL:
+    #   - DBC_PROGRAM_IDS       (comma-separated program IDs; leave empty to use SDK defaults)
+    env:
+      RPC_URL: ${{ secrets.RPC_URL }}
+      BASE_MINTS: ${{ secrets.BASE_MINTS }}
+      DBC_CONFIG_KEYS: ${{ secrets.DBC_CONFIG_KEYS }}
+      DBC_PROGRAM_IDS: ${{ secrets.DBC_PROGRAM_IDS }}
+      LEFTOVER_RECEIVER: ${{ secrets.LEFTOVER_RECEIVER }}
+      PK_B58: ${{ secrets.PK_B58 }}
+      PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
+
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm (pre-cache guard)
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
-
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'pnpm'
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          require() {
+            local name="$1"
+            if [ -z "${!name:-}" ]; then
+              echo "::error title=Missing secret::$name is required but not set"
+              exit 1
+            fi
+          }
+
+          # Required:
+          require RPC_URL
+          require BASE_MINTS
+          require DBC_CONFIG_KEYS
+          require LEFTOVER_RECEIVER
+
+          # Wallet: one of PK_B58 or PRIVATE_KEY_B58 must be present
+          if [ -z "${PK_B58:-}" ] && [ -z "${PRIVATE_KEY_B58:-}" ]; then
+            echo "::error title=Missing wallet secret::Provide PK_B58 (preferred) or PRIVATE_KEY_B58"
+            exit 1
+          fi
+
+          # Optional DBC_PROGRAM_IDS — warn if missing (SDK defaults will be used)
+          if [ -z "${DBC_PROGRAM_IDS:-}" ]; then
+            echo "::notice title=Optional::DBC_PROGRAM_IDS not set; using SDK defaults (if your script supports it)."
+          fi
+
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      # Robust CJS/ESM bs58 handling (works with 4/5)
-      - name: Decode PK_B58 -> keypair.json (handles 32/64 bytes)
-        run: |
-          npx -y -p @solana/web3.js@1.98.2 -p bs58@5 -p tweetnacl@1 node -e "
-            const fs = require('fs');
-            const bs58mod = require('bs58');
-            const nacl = require('tweetnacl');
-            const { Keypair } = require('@solana/web3.js');
+      # Optional typecheck (skip emit)
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit
 
-            const s = (process.env.PK_B58 || process.env.PRIVATE_KEY_B58 || '').trim();
-            if (!s) throw new Error('Missing PK_B58 or PRIVATE_KEY_B58 secret');
-
-            const decode =
-              (bs58mod && typeof bs58mod.decode === 'function' && bs58mod.decode) ||
-              (bs58mod && bs58mod.default && typeof bs58mod.default.decode === 'function' && bs58mod.default.decode);
-
-            if (typeof decode !== 'function') {
-              throw new Error('bs58.decode not available (bs58 module shape unexpected)');
-            }
-
-            const secret = decode(s);
-            let secret64;
-            if (secret.length === 64) {
-              secret64 = secret;
-            } else if (secret.length === 32) {
-              secret64 = nacl.sign.keyPair.fromSeed(secret).secretKey;
-            } else {
-              throw new Error('Decoded key length is ' + secret.length + ' bytes; expected 32 or 64');
-            }
-
-            const kp = Keypair.fromSecretKey(secret64);
-            fs.writeFileSync('keypair.json', JSON.stringify(Array.from(kp.secretKey)));
-            console.log('Public key:', kp.publicKey.toBase58());
-          "
-        env:
-          PK_B58: ${{ secrets.PK_B58 }}
-          PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
-
-      - name: Type check
-        run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
-
-      - name: Build (optional)
-        run: pnpm -w build || echo "Skip build"
-
-      - name: Run leftover claim
-        env:
-          RPC_URL: ${{ secrets.RPC_URL }}
-          KEYPAIR_PATH: ./keypair.json
-          COMMITMENT_LEVEL: ${{ github.event.inputs.COMMITMENT_LEVEL }}
-          BASE_MINTS: ${{ github.event.inputs.BASE_MINTS != '' && github.event.inputs.BASE_MINTS || secrets.BASE_MINTS }}
-          LEFTOVER_RECEIVER: ${{ github.event.inputs.LEFTOVER_RECEIVER }}
-          # NEW: try every config/program combo (comma-separated)
-          DBC_CONFIG_KEYS: ${{ secrets.DBC_CONFIG_KEYS }}
-          DBC_PROGRAM_IDS: ${{ secrets.DBC_PROGRAM_IDS }}
-        run: |
-          echo "Running leftover claim..."
-          npx -y tsx studio/src/scripts/dbc/claim_leftovers.ts
-
-      - name: Clean up keypair.json
-        if: always()
-        run: rm -f keypair.json
+      # Run the script directly with ts-node (no build needed)
+      - name: Claim leftovers
+        run: pnpm dlx ts-node studio/src/scripts/dbc/claim_leftovers.ts
