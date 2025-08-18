@@ -11,7 +11,7 @@ import {
 import { Wallet as AnchorWallet } from '@coral-xyz/anchor';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 
-// NOTE: Only import what's actually used to avoid type/arg mismatches.
+// Import ONLY the helper we use (to avoid arg-count/type mismatches)
 import { safeParseKeypairFromFile } from '../../helpers';
 import { DEFAULT_COMMITMENT_LEVEL } from '../../utils/constants';
 
@@ -44,14 +44,13 @@ async function getSigner(): Promise<Keypair> {
     const secret = Uint8Array.from(Buffer.from(b64, 'base64'));
     return Keypair.fromSecretKey(secret);
   }
-  // helper expects 0 args in your repo
+  // Your helper expects 0 args — do NOT pass anything.
   const kp = await safeParseKeypairFromFile();
   return kp;
 }
 
 async function main() {
-  // No CLI helper here (avoids arg-count mismatch across repos).
-  // Everything is driven by env vars: RPC_URL, BASE_MINTS, LEFTOVER_RECEIVER, PRIVATE_KEY_B58.
+  // No CLI helper here — everything is driven by env: RPC_URL, BASE_MINTS, LEFTOVER_RECEIVER, PRIVATE_KEY_B58
 
   const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
   const connection = new Connection(rpcUrl, { commitment: DEFAULT_COMMITMENT_LEVEL });
@@ -59,7 +58,7 @@ async function main() {
   const signer = await getSigner();
   const wallet = new AnchorWallet(signer);
 
-  // Use constructor; cast to any to avoid SDK type drift issues
+  // Use constructor; cast to any to smooth over SDK version differences
   const client: any = new (DynamicBondingCurveClient as any)(connection, wallet);
 
   // Required inputs
