@@ -1,8 +1,17 @@
 /**
  * Claim DBC bonding-curve leftovers across (BASE_MINTS × DBC_CONFIG_KEYS × optional DBC_PROGRAM_IDS).
- * Secrets: RPC_URL, BASE_MINTS, DBC_CONFIG_KEYS, LEFTOVER_RECEIVER, (PK_B58 or PRIVATE_KEY_B58)
- * Optional: DBC_PROGRAM_IDS
+ *
+ * Secrets required:
+ *   RPC_URL
+ *   BASE_MINTS            # comma-separated base mint addresses
+ *   DBC_CONFIG_KEYS       # comma-separated config keys
+ *   LEFTOVER_RECEIVER     # pubkey to receive leftovers
+ *   (PK_B58 or PRIVATE_KEY_B58)  # wallet
+ *
+ * Optional:
+ *   DBC_PROGRAM_IDS       # comma-separated program IDs
  */
+
 import 'dotenv/config';
 import bs58 from 'bs58';
 import {
@@ -22,6 +31,7 @@ type AttemptResult = {
   reason?: string;
 };
 
+// Try common Meteora DBC SDK package names
 async function loadDbcSdk(): Promise<Record<string, unknown> | null> {
   const candidates = ['@meteora-ag/dbc-sdk', '@meteora-ag/dynamic-bonding-curve-sdk'];
   for (const mod of candidates) {
@@ -120,7 +130,7 @@ async function sendGeneric(
   }
 }
 
-// brute-force search of callable names in root or nested containers
+// Discover a leftovers-claim function anywhere in the SDK exports
 function findCallableDeep(root: Record<string, unknown> | null) {
   if (!root) return null as { obj: any; fnName: string } | null;
   const nameMatches = (n: string) => /(left.*over|claim.*left|withdraw.*left)/i.test(n);
@@ -134,11 +144,9 @@ function findCallableDeep(root: Record<string, unknown> | null) {
     return null;
   };
 
-  // first pass: root exports
   const direct = tryObj(root);
   if (direct) return direct;
 
-  // second pass: common containers
   const containers = [
     'DBC', 'Dbc', 'client', 'Client', 'Meteora', 'meteora',
     'DynamicBondingCurveClient', 'DynamicBondingCurve', 'Sdk', 'SDK'
@@ -149,7 +157,6 @@ function findCallableDeep(root: Record<string, unknown> | null) {
     if (hit) return hit;
   }
 
-  // third pass: scan nested plain objects one level deep
   for (const key of Object.keys(root)) {
     const v = (root as any)[key];
     if (v && typeof v === 'object') {
@@ -157,7 +164,6 @@ function findCallableDeep(root: Record<string, unknown> | null) {
       if (hit) return hit;
     }
   }
-
   return null as { obj: any; fnName: string } | null;
 }
 
@@ -211,9 +217,7 @@ async function main() {
     process.exit(0);
   }
 
-  // find a callable leftover entrypoint
-  const callable =
-    findCallableDeep(sdk); // regex scan across export names
+  const callable = findCallableDeep(sdk);
 
   const programs = DBC_PROGRAM_IDS.length > 0 ? DBC_PROGRAM_IDS : [undefined];
   const results: AttemptResult[] = [];
@@ -229,15 +233,13 @@ async function main() {
       return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'error', reason: 'Invalid pubkey in inputs' };
     }
 
-    // No callable? fail fast with a clear reason.
     if (!callable) {
       return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'error', reason: 'Claim entrypoint not found in SDK' };
     }
 
-    // argument shapes commonly seen
     const argShapes = [
       { args: [{ baseMint, configKey, programId, receiver: (leftoverReceiver as PublicKey) }], label: 'obj' },
-      { args: [baseMint, configKey, (leftoverReceiver as PublicKey), programId].filter(Boolean), label: 'pos-min' },
+      { args: [baseMint, configKey, (leftoverReceiver as PublicKey), programId].filter(Boolean), label: 'pos-min' }
     ];
 
     for (const shape of argShapes) {
