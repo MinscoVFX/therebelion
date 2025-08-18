@@ -59,7 +59,6 @@ jobs:
             if (secret.length === 64) {
               secret64 = secret;
             } else if (secret.length === 32) {
-              // expand seed -> full secretKey
               secret64 = nacl.sign.keyPair.fromSeed(secret).secretKey;
             } else {
               throw new Error('Decoded key length is ' + secret.length + ' bytes; expected 32 or 64');
@@ -72,6 +71,9 @@ jobs:
         env:
           PK_B58: ${{ secrets.PK_B58 }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
+
+      - name: Type check
+        run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
 
       - name: Build (optional)
         run: pnpm -w build || echo "Skip build"
