@@ -24,7 +24,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Ensure pnpm is available (also helps setup-node cache=pnpm)
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
         with:
@@ -36,7 +35,6 @@ jobs:
           node-version: 20
           cache: 'pnpm'
 
-      # Re-add pnpm to PATH (defensive)
       - name: Setup pnpm (post PATH restore)
         uses: pnpm/action-setup@v4
         with:
@@ -45,20 +43,27 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      # 🔐 Decode Phantom/Backpack base58 to a proper 64-byte keypair.json.
-      #    Handles both 32-byte seeds and 64-byte secret keys.
+      # Robust bs58 decode (handles CJS/ESM shape)
       - name: Decode PK_B58 -> keypair.json (handles 32/64 bytes)
         run: |
           npx -y -p @solana/web3.js@1.98.2 -p bs58@4 -p tweetnacl@1 node -e "
             const fs = require('fs');
-            const bs58 = require('bs58');
+            const bs58mod = require('bs58');
             const nacl = require('tweetnacl');
             const { Keypair } = require('@solana/web3.js');
 
             const s = (process.env.PK_B58 || process.env.PRIVATE_KEY_B58 || '').trim();
             if (!s) throw new Error('Missing PK_B58 or PRIVATE_KEY_B58 secret');
 
-            const secret = bs58.decode(s);
+            const decode =
+              (bs58mod && typeof bs58mod.decode === 'function' && bs58mod.decode) ||
+              (bs58mod && bs58mod.default && typeof bs58mod.default.decode === 'function' && bs58mod.default.decode);
+
+            if (typeof decode !== 'function') {
+              throw new Error('bs58.decode not available (bs58 module shape unexpected)');
+            }
+
+            const secret = decode(s);
             let secret64;
             if (secret.length === 64) {
               secret64 = secret;
@@ -84,19 +89,10 @@ jobs:
 
       - name: Run leftover claim
         env:
-          # REQUIRED
           RPC_URL: ${{ secrets.RPC_URL }}
-
-          # Script will read this path
           KEYPAIR_PATH: ./keypair.json
-
-          # COMMITMENT for the script (processed|confirmed|finalized)
           COMMITMENT_LEVEL: ${{ github.event.inputs.COMMITMENT_LEVEL }}
-
-          # Prefer the workflow input; if blank, fall back to secret
           BASE_MINTS: ${{ github.event.inputs.BASE_MINTS != '' && github.event.inputs.BASE_MINTS || secrets.BASE_MINTS }}
-
-          # Optional; defaults to signer if blank
           LEFTOVER_RECEIVER: ${{ github.event.inputs.LEFTOVER_RECEIVER }}
         run: |
           echo "Running leftover claim..."
