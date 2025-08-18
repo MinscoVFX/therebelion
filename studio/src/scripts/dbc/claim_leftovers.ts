@@ -11,9 +11,14 @@ import {
 import { Wallet as AnchorWallet } from '@coral-xyz/anchor';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 
-// Import ONLY the helper we use (to avoid arg-count/type mismatches)
-import { safeParseKeypairFromFile } from '../../helpers';
+// Import helpers, then alias-cast to relax strict typings (prevents TS2554)
+import { parseConfigFromCli as _parseConfigFromCli, safeParseKeypairFromFile as _safeParseKeypairFromFile } from '../../helpers';
 import { DEFAULT_COMMITMENT_LEVEL } from '../../utils/constants';
+
+// ---- Casted wrappers to neutralize signature drift across repos ----
+const parseConfigFromCliAny = _parseConfigFromCli as unknown as (argv?: unknown) => unknown;
+const safeParseKeypairFromFileAny = _safeParseKeypairFromFile as unknown as () => Promise<Keypair>;
+// --------------------------------------------------------------------
 
 type LeftoverReport = {
   baseMint: string;
@@ -38,19 +43,20 @@ function parseBaseMintsFromEnv(): PublicKey[] {
 }
 
 async function getSigner(): Promise<Keypair> {
-  // Priority: PRIVATE_KEY_B58 -> KEYPAIR_PATH (same pattern as your other scripts)
+  // PRIVATE_KEY_B58 (base64 of secret key bytes) takes precedence
   const b64 = process.env.PRIVATE_KEY_B58 || '';
   if (b64) {
     const secret = Uint8Array.from(Buffer.from(b64, 'base64'));
     return Keypair.fromSecretKey(secret);
   }
-  // Your helper expects 0 args — do NOT pass anything.
-  const kp = await safeParseKeypairFromFile();
+  // Repo helper (casted to 0-arg form)
+  const kp = await safeParseKeypairFromFileAny();
   return kp;
 }
 
 async function main() {
-  // No CLI helper here — everything is driven by env: RPC_URL, BASE_MINTS, LEFTOVER_RECEIVER, PRIVATE_KEY_B58
+  // Keep parity with your other scripts (accepts --config). Casted to allow 0/1 args signatures.
+  parseConfigFromCliAny(process.argv);
 
   const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
   const connection = new Connection(rpcUrl, { commitment: DEFAULT_COMMITMENT_LEVEL });
@@ -58,7 +64,7 @@ async function main() {
   const signer = await getSigner();
   const wallet = new AnchorWallet(signer);
 
-  // Use constructor; cast to any to smooth over SDK version differences
+  // Use constructor; cast to any to avoid SDK type drift issues
   const client: any = new (DynamicBondingCurveClient as any)(connection, wallet);
 
   // Required inputs
