@@ -1,4 +1,3 @@
-/* eslint no-empty: "off" */
 /**
  * Claim DBC bonding-curve leftovers across (BASE_MINTS × DBC_CONFIG_KEYS × optional DBC_PROGRAM_IDS).
  *
@@ -42,9 +41,7 @@ async function loadDbcSdk(): Promise<Record<string, unknown> | null> {
     const sdk = await import(mod);
     return sdk as Record<string, unknown>;
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error('[FATAL] Failed to load @meteora-ag/dbc-sdk. Is it installed in the studio package?');
-    // eslint-disable-next-line no-console
     console.error(String(e));
     return null;
   }
@@ -55,10 +52,7 @@ async function loadDbcSdk(): Promise<Record<string, unknown> | null> {
 function csvEnv(name: string, required = true): string[] {
   const raw = process.env[name]?.trim() ?? '';
   if (!raw) {
-    if (required) {
-      // eslint-disable-next-line no-console
-      console.error(`[ERROR] Missing required env: ${name}`);
-    }
+    if (required) console.error(`[ERROR] Missing required env: ${name}`);
     return [];
   }
   return raw.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
@@ -67,7 +61,6 @@ function csvEnv(name: string, required = true): string[] {
 function expectEnv(name: string): string {
   const v = process.env[name]?.trim();
   if (!v) {
-    // eslint-disable-next-line no-console
     console.error(`[ERROR] Missing required env: ${name}`);
     return '';
   }
@@ -78,7 +71,6 @@ function safePubkey(s: string, label: string): PublicKey | null {
   try {
     return new PublicKey(s);
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error(`[ERROR] Invalid pubkey for ${label}: ${s}`);
     return null;
   }
@@ -96,12 +88,10 @@ async function withBackoff<T>(fn: () => Promise<T>, label: string, attempts = 3)
     } catch (e) {
       lastErr = e;
       const ms = 500 * Math.pow(2, i);
-      // eslint-disable-next-line no-console
       console.warn(`[WARN] ${label} failed (attempt ${i + 1}/${attempts}): ${String(e)}; retrying in ${ms}ms…`);
       await new Promise((r) => setTimeout(r, ms));
     }
   }
-  // eslint-disable-next-line no-console
   console.error(`[ERROR] ${label} failed after ${attempts} attempts: ${String(lastErr)}`);
   return null;
 }
@@ -156,7 +146,6 @@ async function sendGeneric(
     await withBackoff(() => connection.confirmTransaction(sig, 'confirmed'), 'confirm built tx', 5);
     return sig;
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error('[ERROR] sendGeneric failed:', String(e));
     return null;
   }
@@ -183,7 +172,6 @@ function findCallable(root: Record<string, unknown> | null, names: string[]) {
 // ---- Main -------------------------------------------------------------------
 
 async function main() {
-  // eslint-disable-next-line no-console
   console.log(`[INFO] DBC leftover claim job start @ ${nowIso()}`);
 
   const RPC_URL = expectEnv('RPC_URL');
@@ -202,13 +190,11 @@ async function main() {
   if (!leftoverReceiver) ok = false;
 
   if (!PK_B58 && !PRIVATE_KEY_B58) {
-    // eslint-disable-next-line no-console
     console.error('[ERROR] Provide either PK_B58 (preferred) or PRIVATE_KEY_B58.');
     ok = false;
   }
 
   if (!ok) {
-    // eslint-disable-next-line no-console
     console.error('[FATAL] Missing/invalid required configuration. Exiting cleanly.');
     process.exit(0);
   }
@@ -220,12 +206,10 @@ async function main() {
       const secret = bs58.decode(PRIVATE_KEY_B58);
       signer = Keypair.fromSecretKey(secret);
     } else {
-      // eslint-disable-next-line no-console
       console.error('[WARN] PK_B58 provided without PRIVATE_KEY_B58. A signer is required to submit transactions.');
       process.exit(0);
     }
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error('[ERROR] Unable to construct signer from PRIVATE_KEY_B58:', String(e));
     process.exit(0);
   }
@@ -264,26 +248,24 @@ async function main() {
         try {
           sdkClient = new Ctor(connection, signer);
         } catch (e1) {
-          void e1; // keep block non-empty
+          void e1; // non-empty
           try {
             sdkClient = new Ctor({ connection, wallet: signer });
           } catch (e2) {
-            void e2; // keep block non-empty
+            void e2; // non-empty
           }
         }
       }
       if (sdkClient) break;
     } catch (e3) {
-      void e3; // keep block non-empty
+      void e3; // non-empty
     }
   }
 
   const programs = DBC_PROGRAM_IDS.length > 0 ? DBC_PROGRAM_IDS : [undefined];
   const results: AttemptResult[] = [];
 
-  // eslint-disable-next-line no-console
   console.log('[INFO] Starting claims:');
-  // eslint-disable-next-line no-console
   console.log(
     `       base mints = ${BASE_MINTS.length}, configs = ${DBC_CONFIG_KEYS.length}, programs = ${programs.length}`
   );
@@ -354,13 +336,10 @@ async function main() {
         const tag =
           `${baseMint.slice(0, 6)}… ${configKey.slice(0, 6)}…` + (programId ? ` ${programId.slice(0, 6)}…` : '');
         if (res.status === 'claimed') {
-          // eslint-disable-next-line no-console
           console.log(`[OK]   Claimed leftovers for ${tag}  -> ${res.txSig}`);
         } else if (res.status === 'noop') {
-          // eslint-disable-next-line no-console
           console.log(`[SKIP] No leftovers for ${tag} (${res.reason || 'none'})`);
         } else {
-          // eslint-disable-next-line no-console
           console.log(`[ERR]  Failed for ${tag} (${res.reason || 'unknown'})`);
         }
         results.push(res);
@@ -368,10 +347,8 @@ async function main() {
     }
   }
 
-  // eslint-disable-next-line no-console
   console.log('\nbaseMint,configKey,programId,status,txSig,reason');
   for (const r of results) {
-    // eslint-disable-next-line no-console
     console.log(
       [
         r.baseMint,
@@ -386,16 +363,13 @@ async function main() {
 
   const anyClaimed = results.some((r) => r.status === 'claimed');
   if (anyClaimed) {
-    // eslint-disable-next-line no-console
     console.log(`[INFO] Done. ${results.filter((r) => r.status === 'claimed').length} claim(s) sent.`);
   } else {
-    // eslint-disable-next-line no-console
     console.log('[INFO] Done. Nothing to claim (or no claim path available).');
   }
 }
 
 main().catch((e) => {
-  // eslint-disable-next-line no-console
   console.error('[FATAL] Unhandled error:', String(e));
   process.exit(0); // keep CI green for non-critical failure
 });
