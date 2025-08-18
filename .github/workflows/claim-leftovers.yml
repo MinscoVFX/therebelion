@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       BASE_MINTS:
-        description: 'Comma-separated base mints to check/claim'
-        required: true
+        description: 'Comma-separated base mints to check/claim (leave blank to use secret)'
+        required: false
+        default: ''
       LEFTOVER_RECEIVER:
         description: 'Override leftover receiver (optional; defaults to signer)'
         required: false
@@ -16,36 +17,82 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
+      # PRE: ensure pnpm exists so setup-node cache:pnpm doesn't fail
+      - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'pnpm'
 
-      - name: Install deps
+      # POST: re-add pnpm to PATH in case setup-node tweaked it
+      - name: Setup pnpm (post PATH restore)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
+
+      # 🔐 Decode Phantom/Backpack base58 key to a proper 64-byte keypair.json.
+      #    Handles BOTH 32-byte seed and 64-byte secret keys.
+      - name: Decode PK_B58 -> keypair.json (handles 32/64 bytes)
+        run: |
+          npx -y -p @solana/web3.js@1.98.2 -p bs58@4 -p tweetnacl@1 node -e "
+            const fs = require('fs');
+            const bs58 = require('bs58');
+            const nacl = require('tweetnacl');
+            const { Keypair } = require('@solana/web3.js');
+
+            const s = (process.env.PK_B58 || process.env.PRIVATE_KEY_B58 || '').trim();
+            if (!s) throw new Error('Missing PK_B58 or PRIVATE_KEY_B58 secret');
+
+            const secret = bs58.decode(s);
+            let secret64;
+            if (secret.length === 64) {
+              secret64 = secret;
+            } else if (secret.length === 32) {
+              // expand seed -> full secretKey
+              secret64 = nacl.sign.keyPair.fromSeed(secret).secretKey;
+            } else {
+              throw new Error('Decoded key length is ' + secret.length + ' bytes; expected 32 or 64');
+            }
+
+            const kp = Keypair.fromSecretKey(secret64);
+            fs.writeFileSync('keypair.json', JSON.stringify(Array.from(kp.secretKey)));
+            console.log('Public key:', kp.publicKey.toBase58());
+          "
+        env:
+          PK_B58: ${{ secrets.PK_B58 }}
+          PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
 
       - name: Build (optional)
         run: pnpm -w build || echo "Skip build"
 
       - name: Run leftover claim
         env:
+          # REQUIRED
           RPC_URL: ${{ secrets.RPC_URL }}
-          # Provide ONE of the following (base64 is safest):
-          PRIVATE_KEY_BASE64: ${{ secrets.PRIVATE_KEY_BASE64 }}
-          PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
-          PRIVATE_KEY_JSON: ${{ secrets.PRIVATE_KEY_JSON }}
-          # Inputs
-          BASE_MINTS: ${{ github.event.inputs.BASE_MINTS }}
+
+          # Where the script will read the keypair
+          KEYPAIR_PATH: ./keypair.json
+
+          # BASE_MINTS: prefer the workflow input; if empty, fall back to the secret
+          BASE_MINTS: ${{ github.event.inputs.BASE_MINTS != '' && github.event.inputs.BASE_MINTS || secrets.BASE_MINTS }}
+
+          # OPTIONAL receiver; defaults to signer if blank
           LEFTOVER_RECEIVER: ${{ github.event.inputs.LEFTOVER_RECEIVER }}
         run: |
           echo "Running leftover claim..."
-          npx -y tsx studio/src/scripts/dbc/claim_leftovers.ts
+          npx -y tsx studio/src/scripts/dbc/claim_leftovers.ts --config ./studio/config/dbc_config.jsonc
+
+      - name: Clean up keypair.json
+        if: always()
+        run: rm -f keypair.json
