@@ -31,20 +31,27 @@ type AttemptResult = {
   reason?: string;
 };
 
-// Lazy dynamic import of the Meteora DBC SDK in a way that avoids `import/no-unresolved`
+// Lazy dynamic import of the Meteora DBC SDK. Try official name first, then legacy alias.
 async function loadDbcSdk(): Promise<Record<string, unknown> | null> {
-  try {
-    // Construct the module name in pieces to avoid static analysis false positives.
-    const mod = '@meteora-ag/' + 'dbc-sdk';
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore  — TS can’t type this without installed types; we handle at runtime.
-    const sdk = await import(mod);
-    return sdk as Record<string, unknown>;
-  } catch (e) {
-    console.error('[FATAL] Failed to load @meteora-ag/dbc-sdk. Is it installed in the studio package?');
-    console.error(String(e));
-    return null;
+  const candidates = [
+    '@meteora-ag/dynamic-bonding-curve-sdk', // correct npm package
+    '@meteora-ag/dbc-sdk',                   // fallback alias if you ever add it
+  ];
+
+  for (const mod of candidates) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore — typed at runtime
+      const sdk = await import(mod);
+      console.log(`[INFO] Loaded Meteora DBC SDK: ${mod}`);
+      return sdk as Record<string, unknown>;
+    } catch (e) {
+      console.warn(`[WARN] Could not load ${mod}: ${String(e)}`);
+    }
   }
+
+  console.error('[FATAL] Failed to load a Meteora DBC SDK. Install @meteora-ag/dynamic-bonding-curve-sdk in the studio package.');
+  return null;
 }
 
 // ---- Small helpers ----------------------------------------------------------
@@ -52,7 +59,9 @@ async function loadDbcSdk(): Promise<Record<string, unknown> | null> {
 function csvEnv(name: string, required = true): string[] {
   const raw = process.env[name]?.trim() ?? '';
   if (!raw) {
-    if (required) console.error(`[ERROR] Missing required env: ${name}`);
+    if (required) {
+      console.error(`[ERROR] Missing required env: ${name}`);
+    }
     return [];
   }
   return raw.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
@@ -248,17 +257,17 @@ async function main() {
         try {
           sdkClient = new Ctor(connection, signer);
         } catch (e1) {
-          void e1; // non-empty
+          void e1;
           try {
             sdkClient = new Ctor({ connection, wallet: signer });
           } catch (e2) {
-            void e2; // non-empty
+            void e2;
           }
         }
       }
       if (sdkClient) break;
     } catch (e3) {
-      void e3; // non-empty
+      void e3;
     }
   }
 
