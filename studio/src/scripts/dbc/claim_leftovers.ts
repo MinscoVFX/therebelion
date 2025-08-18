@@ -10,10 +10,12 @@ import {
   LAMPORTS_PER_SOL,
   type Commitment,
 } from '@solana/web3.js';
+import * as fs from 'fs';
+import * as path from 'path';
 import * as nacl from 'tweetnacl';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 
-// env() always returns a string (never undefined), satisfying strict null checks.
+// env() always returns a string (never undefined)
 const env = (k: string): string => {
   const v = process.env[k];
   return (typeof v === 'string' ? v : '').trim();
@@ -30,7 +32,7 @@ type LeftoverReport = {
   error?: string;
 };
 
-// Minimal base58 decoder without any index-based string access (avoids undefined reads)
+// Minimal base58 decoder (no index-based reads)
 function base58Decode(inputRaw: string): Uint8Array {
   const input = inputRaw || '';
   const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -42,11 +44,8 @@ function base58Decode(inputRaw: string): Uint8Array {
   for (const ch of input) {
     const val = ALPHABET.indexOf(ch);
     if (val < 0) throw new Error('Invalid base58 character');
-    // multiply by 58
     for (let i = 0; i < bytes.length; i++) bytes[i] *= BASE;
-    // add digit
     bytes[0] += val;
-    // carry
     let carry = 0;
     for (let i = 0; i < bytes.length; i++) {
       bytes[i] += carry;
@@ -59,7 +58,6 @@ function base58Decode(inputRaw: string): Uint8Array {
     }
   }
 
-  // Count leading zeros
   let leadingZeros = 0;
   for (const ch of input) {
     if (ch === '1') leadingZeros++;
@@ -78,14 +76,13 @@ function parseBaseMintsFromEnv(): PublicKey[] {
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
   if (list.length === 0) {
-    throw new Error(
-      'BASE_MINTS is empty. Provide a comma-separated list via workflow input or secret.'
-    );
+    throw new Error('BASE_MINTS is empty. Provide a comma-separated list via workflow input or secret.');
   }
   return list.map((m) => new PublicKey(m));
 }
 
-// Safe JSON array -> Uint8Array guard
+// -------- Key loading helpers --------
+
 function jsonArrayToBytes(jsonStr: string): Uint8Array {
   let parsed: unknown;
   try {
@@ -108,7 +105,18 @@ function jsonArrayToBytes(jsonStr: string): Uint8Array {
   return Uint8Array.from(arr);
 }
 
-function decodeSignerSecret(): Uint8Array {
+function readKeypairJsonFile(p: string): Uint8Array {
+  const fp = path.resolve(p);
+  if (!fs.existsSync(fp)) throw new Error(`KEYPAIR_PATH not found: ${fp}`);
+  const raw = fs.readFileSync(fp, 'utf8').trim();
+  const bytes = jsonArrayToBytes(raw);
+  if (bytes.length === 64) return bytes;
+  if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
+  throw new Error(`keypair.json length ${bytes.length} unsupported (need 32 or 64).`);
+}
+
+function decodeSignerSecretFromEnv(): Uint8Array {
+  // 1) JSON array secrets
   const jsonStr = env('PRIVATE_KEY_JSON');
   if (jsonStr.length > 0) {
     const bytes = jsonArrayToBytes(jsonStr);
@@ -117,15 +125,17 @@ function decodeSignerSecret(): Uint8Array {
     throw new Error(`PRIVATE_KEY_JSON length ${bytes.length} unsupported (need 32 or 64).`);
   }
 
+  // 2) base64 secret
   const rawB64 = env('PRIVATE_KEY_BASE64');
   if (rawB64.length > 0) {
-    const buf = Buffer.from(rawB64, 'base64'); // always a Buffer
+    const buf = Buffer.from(rawB64, 'base64');
     const bytes = new Uint8Array(buf);
     if (bytes.length === 64) return bytes;
     if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
     throw new Error(`PRIVATE_KEY_BASE64 length ${bytes.length} unsupported (need 32 or 64).`);
   }
 
+  // 3) base58 secret
   const rawB58 = env('PRIVATE_KEY_B58');
   if (rawB58.length > 0) {
     const bytes = base58Decode(rawB58);
@@ -134,47 +144,53 @@ function decodeSignerSecret(): Uint8Array {
     throw new Error(`PRIVATE_KEY_B58 length ${bytes.length} unsupported (need 32 or 64).`);
   }
 
+  // 4) generic PRIVATE_KEY (JSON/base64/base58 auto-detect)
   const rawAny = env('PRIVATE_KEY');
   if (rawAny.length > 0) {
-    // Try JSON array first
+    // JSON
     try {
       const bytes = jsonArrayToBytes(rawAny);
       if (bytes.length === 64) return bytes;
       if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
     } catch {
-      // not JSON array
+      /* not JSON */
     }
-    // Try base64
+    // base64
     try {
       const b = Buffer.from(rawAny, 'base64');
       const bytes = new Uint8Array(b);
       if (bytes.length === 64) return bytes;
       if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
     } catch {
-      // not base64
+      /* not base64 */
     }
-    // Try base58
+    // base58
     try {
       const bytes = base58Decode(rawAny);
       if (bytes.length === 64) return bytes;
       if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
     } catch {
-      // not base58
+      /* not base58 */
     }
-    throw new Error(
-      'PRIVATE_KEY provided, but format not recognized (JSON array, base64, or base58).'
-    );
+    throw new Error('PRIVATE_KEY provided, but format not recognized (JSON array, base64, or base58).');
   }
 
   throw new Error(
-    'Missing signer secret. Set one of: PRIVATE_KEY_BASE64, PRIVATE_KEY_B58, PRIVATE_KEY_JSON, or PRIVATE_KEY.'
+    'Missing signer secret. Use KEYPAIR_PATH (preferred), or set one of: PRIVATE_KEY_BASE64, PRIVATE_KEY_B58, PRIVATE_KEY_JSON, PRIVATE_KEY.'
   );
 }
 
 function getSigner(): Keypair {
-  const secret = decodeSignerSecret();
+  const keypairPath = env('KEYPAIR_PATH');
+  if (keypairPath.length > 0) {
+    const secret = readKeypairJsonFile(keypairPath);
+    return Keypair.fromSecretKey(secret);
+  }
+  const secret = decodeSignerSecretFromEnv();
   return Keypair.fromSecretKey(secret);
 }
+
+// -------- Main --------
 
 type MinimalWallet = {
   publicKey: PublicKey;
@@ -201,7 +217,7 @@ async function main() {
     },
   };
 
-  // Keep it dynamic to avoid SDK type drift issues
+  // Keep dynamic to sidestep SDK type drift
   const client: any = new (DynamicBondingCurveClient as any)(connection, wallet);
 
   const baseMints = parseBaseMintsFromEnv();
@@ -295,9 +311,7 @@ async function main() {
           payer: signer.publicKey,
         });
       } else {
-        throw new Error(
-          'SDK missing leftover-claim builder on this version. Update @meteora-ag/dynamic-bonding-curve-sdk.'
-        );
+        throw new Error('SDK missing leftover-claim builder on this version. Update @meteora-ag/dynamic-bonding-curve-sdk.');
       }
 
       const tx = new Transaction().add(ix);
