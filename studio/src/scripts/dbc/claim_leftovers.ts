@@ -15,14 +15,16 @@ import * as path from 'path';
 import * as nacl from 'tweetnacl';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 
-// env() always returns a string (never undefined)
+// ---------- Env helper (always returns a string) ----------
 const env = (k: string): string => {
   const v = process.env[k];
   return (typeof v === 'string' ? v : '').trim();
 };
 
-const COMMITMENT: Commitment = ((env('COMMITMENT_LEVEL') as Commitment) || 'confirmed') as Commitment;
+const COMMITMENT: Commitment =
+  ((env('COMMITMENT_LEVEL') as Commitment) || 'confirmed') as Commitment;
 
+// ---------- Types ----------
 type LeftoverReport = {
   baseMint: string;
   pool?: string;
@@ -32,43 +34,7 @@ type LeftoverReport = {
   error?: string;
 };
 
-// Minimal base58 decoder (no index-based reads)
-function base58Decode(inputRaw: string): Uint8Array {
-  const input = inputRaw || '';
-  const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-  const BASE = 58;
-
-  if (input.length === 0) return new Uint8Array();
-
-  const bytes: number[] = [0];
-  for (const ch of input) {
-    const val = ALPHABET.indexOf(ch);
-    if (val < 0) throw new Error('Invalid base58 character');
-    for (let i = 0; i < bytes.length; i++) bytes[i] *= BASE;
-    bytes[0] += val;
-    let carry = 0;
-    for (let i = 0; i < bytes.length; i++) {
-      bytes[i] += carry;
-      carry = bytes[i] >> 8;
-      bytes[i] &= 0xff;
-    }
-    while (carry > 0) {
-      bytes.push(carry & 0xff);
-      carry >>= 8;
-    }
-  }
-
-  let leadingZeros = 0;
-  for (const ch of input) {
-    if (ch === '1') leadingZeros++;
-    else break;
-  }
-  for (let i = 0; i < leadingZeros; i++) bytes.push(0);
-
-  bytes.reverse();
-  return new Uint8Array(bytes);
-}
-
+// ---------- Inputs ----------
 function parseBaseMintsFromEnv(): PublicKey[] {
   const raw = env('BASE_MINTS');
   const list = raw
@@ -81,24 +47,23 @@ function parseBaseMintsFromEnv(): PublicKey[] {
   return list.map((m) => new PublicKey(m));
 }
 
-// -------- Key loading helpers --------
-
+// ---------- Key loading (from keypair.json only) ----------
 function jsonArrayToBytes(jsonStr: string): Uint8Array {
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonStr);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`Failed to parse JSON: ${msg}`);
+    throw new Error(`Failed to parse keypair JSON: ${msg}`);
   }
   if (!Array.isArray(parsed)) {
-    throw new Error('Expected a JSON array of numbers.');
+    throw new Error('keypair.json must be a JSON array of numbers.');
   }
   const arr: number[] = [];
   for (const v of parsed) {
     const n = typeof v === 'number' ? v : Number(v);
     if (!Number.isFinite(n) || n < 0 || n > 255) {
-      throw new Error('JSON array must contain byte values (0..255).');
+      throw new Error('keypair.json must contain byte values (0..255).');
     }
     arr.push(n);
   }
@@ -115,83 +80,18 @@ function readKeypairJsonFile(p: string): Uint8Array {
   throw new Error(`keypair.json length ${bytes.length} unsupported (need 32 or 64).`);
 }
 
-function decodeSignerSecretFromEnv(): Uint8Array {
-  // 1) JSON array secrets
-  const jsonStr = env('PRIVATE_KEY_JSON');
-  if (jsonStr.length > 0) {
-    const bytes = jsonArrayToBytes(jsonStr);
-    if (bytes.length === 64) return bytes;
-    if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
-    throw new Error(`PRIVATE_KEY_JSON length ${bytes.length} unsupported (need 32 or 64).`);
-  }
-
-  // 2) base64 secret
-  const rawB64 = env('PRIVATE_KEY_BASE64');
-  if (rawB64.length > 0) {
-    const buf = Buffer.from(rawB64, 'base64');
-    const bytes = new Uint8Array(buf);
-    if (bytes.length === 64) return bytes;
-    if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
-    throw new Error(`PRIVATE_KEY_BASE64 length ${bytes.length} unsupported (need 32 or 64).`);
-  }
-
-  // 3) base58 secret
-  const rawB58 = env('PRIVATE_KEY_B58');
-  if (rawB58.length > 0) {
-    const bytes = base58Decode(rawB58);
-    if (bytes.length === 64) return bytes;
-    if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
-    throw new Error(`PRIVATE_KEY_B58 length ${bytes.length} unsupported (need 32 or 64).`);
-  }
-
-  // 4) generic PRIVATE_KEY (JSON/base64/base58 auto-detect)
-  const rawAny = env('PRIVATE_KEY');
-  if (rawAny.length > 0) {
-    // JSON
-    try {
-      const bytes = jsonArrayToBytes(rawAny);
-      if (bytes.length === 64) return bytes;
-      if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
-    } catch {
-      /* not JSON */
-    }
-    // base64
-    try {
-      const b = Buffer.from(rawAny, 'base64');
-      const bytes = new Uint8Array(b);
-      if (bytes.length === 64) return bytes;
-      if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
-    } catch {
-      /* not base64 */
-    }
-    // base58
-    try {
-      const bytes = base58Decode(rawAny);
-      if (bytes.length === 64) return bytes;
-      if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
-    } catch {
-      /* not base58 */
-    }
-    throw new Error('PRIVATE_KEY provided, but format not recognized (JSON array, base64, or base58).');
-  }
-
-  throw new Error(
-    'Missing signer secret. Use KEYPAIR_PATH (preferred), or set one of: PRIVATE_KEY_BASE64, PRIVATE_KEY_B58, PRIVATE_KEY_JSON, PRIVATE_KEY.'
-  );
-}
-
 function getSigner(): Keypair {
   const keypairPath = env('KEYPAIR_PATH');
-  if (keypairPath.length > 0) {
-    const secret = readKeypairJsonFile(keypairPath);
-    return Keypair.fromSecretKey(secret);
+  if (keypairPath.length === 0) {
+    throw new Error(
+      'KEYPAIR_PATH is required. Your workflow should create keypair.json from base58 and set KEYPAIR_PATH=./keypair.json.'
+    );
   }
-  const secret = decodeSignerSecretFromEnv();
+  const secret = readKeypairJsonFile(keypairPath);
   return Keypair.fromSecretKey(secret);
 }
 
-// -------- Main --------
-
+// ---------- Wallet shim ----------
 type MinimalWallet = {
   publicKey: PublicKey;
   payer?: Keypair;
@@ -199,6 +99,7 @@ type MinimalWallet = {
   signAllTransactions: (txs: Transaction[]) => Promise<Transaction[]>;
 };
 
+// ---------- Main ----------
 async function main() {
   const rpcUrl = env('RPC_URL') || 'https://api.mainnet-beta.solana.com';
   const connection = new Connection(rpcUrl, { commitment: COMMITMENT });
@@ -217,11 +118,10 @@ async function main() {
     },
   };
 
-  // Keep dynamic to sidestep SDK type drift
+  // Use dynamic any to avoid SDK type drift
   const client: any = new (DynamicBondingCurveClient as any)(connection, wallet);
 
   const baseMints = parseBaseMintsFromEnv();
-
   const lr = env('LEFTOVER_RECEIVER');
   const leftoverReceiver = lr.length > 0 ? new PublicKey(lr) : signer.publicKey;
 
