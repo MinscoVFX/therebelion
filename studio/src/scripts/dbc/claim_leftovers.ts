@@ -31,27 +31,19 @@ type AttemptResult = {
   reason?: string;
 };
 
-// Lazy dynamic import of the Meteora DBC SDK. Try official name first, then legacy alias.
+// Load the correct DBC SDK (Dynamic Bonding Curve)
 async function loadDbcSdk(): Promise<Record<string, unknown> | null> {
-  const candidates = [
-    '@meteora-ag/dynamic-bonding-curve-sdk', // correct npm package
-    '@meteora-ag/dbc-sdk',                   // fallback alias if ever present
-  ];
-
-  for (const mod of candidates) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore — typed at runtime
-      const sdk = await import(mod);
-      console.log(`[INFO] Loaded Meteora DBC SDK: ${mod}`);
-      return sdk as Record<string, unknown>;
-    } catch (e) {
-      console.warn(`[WARN] Could not load ${mod}: ${String(e)}`);
-    }
+  try {
+    // IMPORTANT: correct package name
+    const sdk = await import('@meteora-ag/dynamic-bonding-curve-sdk');
+    return sdk as unknown as Record<string, unknown>;
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[FATAL] Failed to load @meteora-ag/dynamic-bonding-curve-sdk. Is it installed in the studio package?');
+    // eslint-disable-next-line no-console
+    console.error(String(e));
+    return null;
   }
-
-  console.error('[FATAL] Failed to load a Meteora DBC SDK. Install @meteora-ag/dynamic-bonding-curve-sdk in the studio package.');
-  return null;
 }
 
 // ---- Small helpers ----------------------------------------------------------
@@ -60,6 +52,7 @@ function csvEnv(name: string, required = true): string[] {
   const raw = process.env[name]?.trim() ?? '';
   if (!raw) {
     if (required) {
+      // eslint-disable-next-line no-console
       console.error(`[ERROR] Missing required env: ${name}`);
     }
     return [];
@@ -70,6 +63,7 @@ function csvEnv(name: string, required = true): string[] {
 function expectEnv(name: string): string {
   const v = process.env[name]?.trim();
   if (!v) {
+    // eslint-disable-next-line no-console
     console.error(`[ERROR] Missing required env: ${name}`);
     return '';
   }
@@ -79,7 +73,8 @@ function expectEnv(name: string): string {
 function safePubkey(s: string, label: string): PublicKey | null {
   try {
     return new PublicKey(s);
-  } catch (err) {
+  } catch {
+    // eslint-disable-next-line no-console
     console.error(`[ERROR] Invalid pubkey for ${label}: ${s}`);
     return null;
   }
@@ -97,10 +92,14 @@ async function withBackoff<T>(fn: () => Promise<T>, label: string, attempts = 3)
     } catch (e) {
       lastErr = e;
       const ms = 500 * Math.pow(2, i);
-      console.warn(`[WARN] ${label} failed (attempt ${i + 1}/${attempts}): ${String(e)}; retrying in ${ms}ms…`);
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[WARN] ${label} failed (attempt ${i + 1}/${attempts}): ${String(e)}; retrying in ${ms}ms…`
+      );
       await new Promise((r) => setTimeout(r, ms));
     }
   }
+  // eslint-disable-next-line no-console
   console.error(`[ERROR] ${label} failed after ${attempts} attempts: ${String(lastErr)}`);
   return null;
 }
@@ -155,32 +154,20 @@ async function sendGeneric(
     await withBackoff(() => connection.confirmTransaction(sig, 'confirmed'), 'confirm built tx', 5);
     return sig;
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.error('[ERROR] sendGeneric failed:', String(e));
     return null;
   }
 }
 
-// Find a function by name among common containers
-function findCallable(root: Record<string, unknown> | null, names: string[]) {
-  if (!root) return null as { obj: any; fnName: string } | null;
-  for (const n of names) {
-    const fn = (root as any)[n];
-    if (typeof fn === 'function') return { obj: root, fnName: n };
-  }
-  for (const container of ['DBC', 'Dbc', 'client', 'Client', 'Meteora', 'meteora']) {
-    const o = (root as any)[container];
-    if (!o) continue;
-    for (const n of names) {
-      const fn = o?.[n];
-      if (typeof fn === 'function') return { obj: o, fnName: n };
-    }
-  }
-  return null as { obj: any; fnName: string } | null;
+function hasFn(o: unknown, k: string): o is Record<string, any> {
+  return !!o && typeof (o as any)[k] === 'function';
 }
 
 // ---- Main -------------------------------------------------------------------
 
 async function main() {
+  // eslint-disable-next-line no-console
   console.log(`[INFO] DBC leftover claim job start @ ${nowIso()}`);
 
   const RPC_URL = expectEnv('RPC_URL');
@@ -199,11 +186,13 @@ async function main() {
   if (!leftoverReceiver) ok = false;
 
   if (!PK_B58 && !PRIVATE_KEY_B58) {
+    // eslint-disable-next-line no-console
     console.error('[ERROR] Provide either PK_B58 (preferred) or PRIVATE_KEY_B58.');
     ok = false;
   }
 
   if (!ok) {
+    // eslint-disable-next-line no-console
     console.error('[FATAL] Missing/invalid required configuration. Exiting cleanly.');
     process.exit(0);
   }
@@ -215,10 +204,12 @@ async function main() {
       const secret = bs58.decode(PRIVATE_KEY_B58);
       signer = Keypair.fromSecretKey(secret);
     } else {
+      // eslint-disable-next-line no-console
       console.error('[WARN] PK_B58 provided without PRIVATE_KEY_B58. A signer is required to submit transactions.');
       process.exit(0);
     }
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.error('[ERROR] Unable to construct signer from PRIVATE_KEY_B58:', String(e));
     process.exit(0);
   }
@@ -230,51 +221,50 @@ async function main() {
     process.exit(0);
   }
 
-  // Entrypoint discovery
-  const claimCandidates = [
-    'claimLeftovers',
-    'claim_leftovers',
-    'claimLeftover',
-    'claimBondingCurveLeftovers',
-    'claimBondingCurveLeftover',
-    'claim_leftover',
-  ];
-  const builderCandidates = [
-    'buildClaimLeftoversTx',
-    'build_claim_leftovers_tx',
-    'leftoversClaimTx',
-    'makeClaimLeftoversIx',
-    'make_claim_leftovers_ix',
-  ];
-  const callable = findCallable(sdk, claimCandidates) || findCallable(sdk, builderCandidates);
+  // Build a canonical DBC client if available
+  let dbcClient: any = null;
+  const clientCtorName =
+    ['DynamicBondingCurveClient', 'Client', 'DBC', 'Dbc', 'MeteoraClient'].find(
+      (n) => typeof (sdk as any)[n] === 'function'
+    ) || null;
 
-  // Optional client
-  let sdkClient: any = null;
-  for (const ctorName of ['Client', 'DBC', 'Dbc', 'MeteoraClient']) {
+  if (clientCtorName) {
     try {
-      const Ctor = (sdk as any)[ctorName];
-      if (typeof Ctor === 'function') {
-        try {
-          sdkClient = new Ctor(connection, signer);
-        } catch (e1) {
-          void e1;
-          try {
-            sdkClient = new Ctor({ connection, wallet: signer });
-          } catch (e2) {
-            void e2;
-          }
-        }
+      const Ctor = (sdk as any)[clientCtorName];
+      try {
+        dbcClient = new Ctor(connection, 'confirmed');
+      } catch (e1) {
+        void e1;
+        dbcClient = new Ctor({ connection, wallet: signer });
       }
-      if (sdkClient) break;
-    } catch (e3) {
-      void e3;
+    } catch (e2) {
+      void e2;
+      dbcClient = null;
     }
   }
+
+  // Claim entrypoint candidates under the "partner" namespace (most likely)
+  // plus a few direct fallbacks.
+  const partnerObj = dbcClient?.partner || (sdk as any)?.partner || null;
+  const claimNames = [
+    'claimLeftover',
+    'claimLeftovers',
+    'claimLeftoverBase',
+  ];
+  const builderNames = [
+    'buildClaimLeftoverTx',
+    'buildClaimLeftoversTx',
+    'leftoversClaimTx',
+    'makeClaimLeftoverIx',
+    'makeClaimLeftoversIx',
+  ];
 
   const programs = DBC_PROGRAM_IDS.length > 0 ? DBC_PROGRAM_IDS : [undefined];
   const results: AttemptResult[] = [];
 
+  // eslint-disable-next-line no-console
   console.log('[INFO] Starting claims:');
+  // eslint-disable-next-line no-console
   console.log(
     `       base mints = ${BASE_MINTS.length}, configs = ${DBC_CONFIG_KEYS.length}, programs = ${programs.length}`
   );
@@ -289,66 +279,122 @@ async function main() {
     const programId = programIdStr ? safePubkey(programIdStr, 'programId') : undefined;
 
     if (!baseMint || !configKey || (programIdStr && !programId)) {
-      return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'error', reason: 'Invalid pubkey in inputs' };
+      return {
+        baseMint: baseMintStr,
+        configKey: configKeyStr,
+        programId: programIdStr,
+        status: 'error',
+        reason: 'Invalid pubkey in inputs',
+      };
     }
 
-    if (!callable) {
-      return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'error', reason: 'Claim entrypoint not found in SDK' };
-    }
-
-    const argShapes = [
-      { args: [{ baseMint, configKey, programId, receiver: leftoverReceiver, payer: (signer as Keypair).publicKey }], label: 'obj-full' },
-      { args: [{ baseMint, configKey, programId, receiver: leftoverReceiver }], label: 'obj-nopayer' },
-      { args: [connection, signer, baseMint, configKey, leftoverReceiver, programId].filter(Boolean), label: 'pos-full' },
-      { args: [sdkClient, baseMint, configKey, leftoverReceiver, programId].filter(Boolean), label: 'pos-client' },
-      { args: [baseMint, configKey, leftoverReceiver, programId].filter(Boolean), label: 'pos-min' },
-    ];
-
-    for (const shape of argShapes) {
-      try {
-        const targetObj = (callable as any).obj || sdk;
-        const fn = (targetObj as any)[(callable as any).fnName].bind(targetObj);
-        const maybe = await fn(...shape.args);
-
-        if (typeof maybe === 'string' && maybe.length > 40) {
-          return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'claimed', txSig: maybe };
+    // First try partner.* methods on the instantiated client
+    if (partnerObj) {
+      for (const name of claimNames) {
+        if (hasFn(partnerObj, name)) {
+          try {
+            const txOrIx = await (partnerObj as any)[name]({
+              baseMint,
+              config: configKey,
+              receiver: leftoverReceiver,
+              payer: (signer as Keypair).publicKey,
+              programId, // harmless if unused by SDK version
+            });
+            const txSig = await sendGeneric(connection, signer as Keypair, txOrIx);
+            if (txSig) {
+              return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'claimed', txSig };
+            }
+          } catch (e) {
+            const msg = String((e as any)?.message || e);
+            if (/no claimable|nothing to claim|not claimable|pool not found|no pool/i.test(msg)) {
+              return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'noop', reason: msg };
+            }
+            // continue to next candidate
+          }
         }
-
-        const txLike =
-          (maybe && (maybe.tx ?? (maybe as any).transaction ?? (maybe as any).ixs ?? (maybe as any).ix ?? (maybe as any).instructions ?? (maybe as any).instruction)) ??
-          maybe;
-
-        const sig = await sendGeneric(connection, signer as Keypair, txLike);
-        if (sig) {
-          return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'claimed', txSig: sig };
+      }
+      for (const name of builderNames) {
+        if (hasFn(partnerObj, name)) {
+          try {
+            const built = await (partnerObj as any)[name]({
+              baseMint,
+              config: configKey,
+              receiver: leftoverReceiver,
+              payer: (signer as Keypair).publicKey,
+              programId,
+            });
+            const txLike =
+              built?.tx ??
+              built?.transaction ??
+              built?.ixs ??
+              built?.ix ??
+              built?.instructions ??
+              built?.instruction ??
+              built;
+            const txSig = await sendGeneric(connection, signer as Keypair, txLike);
+            if (txSig) {
+              return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'claimed', txSig };
+            }
+          } catch (e) {
+            const msg = String((e as any)?.message || e);
+            if (/no claimable|nothing to claim|not claimable|pool not found|no pool/i.test(msg)) {
+              return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'noop', reason: msg };
+            }
+          }
         }
-
-        if (maybe === null || maybe === undefined) {
-          return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'noop', reason: 'No claimable leftovers (empty result)' };
-        }
-      } catch (e: unknown) {
-        const msg = String((e as any)?.message || e);
-        if (/no claimable|nothing to claim|not claimable|pool not found|no pool/i.test(msg)) {
-          return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'noop', reason: msg };
-        }
-        // try next arg shape
       }
     }
 
-    return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'error', reason: 'All known calling patterns failed' };
+    // Fallback: try root-level functions (older or alternate builds)
+    const root = sdk as any;
+    for (const name of [...claimNames, ...builderNames]) {
+      if (hasFn(root, name)) {
+        try {
+          const maybe = await root[name]({
+            baseMint,
+            config: configKey,
+            receiver: leftoverReceiver,
+            payer: (signer as Keypair).publicKey,
+            programId,
+          });
+          const txLike =
+            (maybe && (maybe.tx ?? maybe.transaction ?? maybe.ixs ?? maybe.ix ?? maybe.instructions ?? maybe.instruction)) ??
+            maybe;
+          const txSig = await sendGeneric(connection, signer as Keypair, txLike);
+          if (txSig) {
+            return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'claimed', txSig };
+          }
+        } catch (e) {
+          const msg = String((e as any)?.message || e);
+          if (/no claimable|nothing to claim|not claimable|pool not found|no pool/i.test(msg)) {
+            return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'noop', reason: msg };
+          }
+        }
+      }
+    }
+
+    return {
+      baseMint: baseMintStr,
+      configKey: configKeyStr,
+      programId: programIdStr,
+      status: 'error',
+      reason: 'Claim entrypoint not found in SDK',
+    };
   }
 
   for (const baseMint of BASE_MINTS) {
     for (const configKey of DBC_CONFIG_KEYS) {
       for (const programId of programs) {
         const res = await attemptClaimOne(baseMint, configKey, programId);
-        const tag =
-          `${baseMint.slice(0, 6)}… ${configKey.slice(0, 6)}…` + (programId ? ` ${programId.slice(0, 6)}…` : '');
+        const tag = `${baseMint.slice(0, 6)}… ${configKey.slice(0, 6)}…` + (programId ? ` ${programId.slice(0, 6)}…` : '');
         if (res.status === 'claimed') {
+          // eslint-disable-next-line no-console
           console.log(`[OK]   Claimed leftovers for ${tag}  -> ${res.txSig}`);
         } else if (res.status === 'noop') {
+          // eslint-disable-next-line no-console
           console.log(`[SKIP] No leftovers for ${tag} (${res.reason || 'none'})`);
         } else {
+          // eslint-disable-next-line no-console
           console.log(`[ERR]  Failed for ${tag} (${res.reason || 'unknown'})`);
         }
         results.push(res);
@@ -356,8 +402,10 @@ async function main() {
     }
   }
 
+  // eslint-disable-next-line no-console
   console.log('\nbaseMint,configKey,programId,status,txSig,reason');
   for (const r of results) {
+    // eslint-disable-next-line no-console
     console.log(
       [
         r.baseMint,
@@ -372,13 +420,16 @@ async function main() {
 
   const anyClaimed = results.some((r) => r.status === 'claimed');
   if (anyClaimed) {
+    // eslint-disable-next-line no-console
     console.log(`[INFO] Done. ${results.filter((r) => r.status === 'claimed').length} claim(s) sent.`);
   } else {
+    // eslint-disable-next-line no-console
     console.log('[INFO] Done. Nothing to claim (or no claim path available).');
   }
 }
 
 main().catch((e) => {
+  // eslint-disable-next-line no-console
   console.error('[FATAL] Unhandled error:', String(e));
   process.exit(0); // keep CI green for non-critical failure
 });
