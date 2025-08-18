@@ -37,47 +37,66 @@ type LeftoverReport = {
 // ---------- Inputs ----------
 function parseBaseMintsFromEnv(): PublicKey[] {
   const raw = env('BASE_MINTS');
-  const list = raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  const parts = raw.length > 0 ? raw.split(',') : [];
+  const list: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const s = parts[i].trim();
+    if (s.length > 0) list.push(s);
+  }
   if (list.length === 0) {
     throw new Error('BASE_MINTS is empty. Provide a comma-separated list via workflow input or secret.');
   }
-  return list.map((m) => new PublicKey(m));
+  const mints: PublicKey[] = [];
+  for (let i = 0; i < list.length; i++) {
+    mints.push(new PublicKey(list[i]));
+  }
+  return mints;
 }
 
 // ---------- Key loading (from keypair.json only) ----------
+// (Keep this super explicit so TS never thinks something might be undefined.)
 function jsonArrayToBytes(jsonStr: string): Uint8Array {
-  let parsed: unknown;
+  let parsedUnknown: unknown;
   try {
-    parsed = JSON.parse(jsonStr);
+    parsedUnknown = JSON.parse(jsonStr);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new Error(`Failed to parse keypair JSON: ${msg}`);
   }
-  if (!Array.isArray(parsed)) {
+
+  if (!Array.isArray(parsedUnknown)) {
     throw new Error('keypair.json must be a JSON array of numbers.');
   }
-  const arr: number[] = [];
-  for (const v of parsed) {
+  const parsedArr: unknown[] = parsedUnknown as unknown[];
+
+  const out: number[] = [];
+  for (let i = 0; i < parsedArr.length; i++) {
+    const v = parsedArr[i];
     const n = typeof v === 'number' ? v : Number(v);
     if (!Number.isFinite(n) || n < 0 || n > 255) {
       throw new Error('keypair.json must contain byte values (0..255).');
     }
-    arr.push(n);
+    out.push(n);
   }
-  return Uint8Array.from(arr);
+  return Uint8Array.from(out);
 }
 
 function readKeypairJsonFile(p: string): Uint8Array {
   const fp = path.resolve(p);
-  if (!fs.existsSync(fp)) throw new Error(`KEYPAIR_PATH not found: ${fp}`);
-  const raw = fs.readFileSync(fp, 'utf8').trim();
-  const bytes = jsonArrayToBytes(raw);
-  if (bytes.length === 64) return bytes;
-  if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
-  throw new Error(`keypair.json length ${bytes.length} unsupported (need 32 or 64).`);
+  const exists = fs.existsSync(fp);
+  if (!exists) throw new Error(`KEYPAIR_PATH not found: ${fp}`);
+
+  const raw = fs.readFileSync(fp, 'utf8');
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  if (trimmed.length === 0) {
+    throw new Error(`keypair.json is empty at ${fp}`);
+  }
+
+  const bytes = jsonArrayToBytes(trimmed);
+  const len = bytes.length;
+  if (len === 64) return bytes;
+  if (len === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
+  throw new Error(`keypair.json length ${len} unsupported (need 32 or 64).`);
 }
 
 function getSigner(): Keypair {
@@ -101,7 +120,9 @@ type MinimalWallet = {
 
 // ---------- Main ----------
 async function main() {
-  const rpcUrl = env('RPC_URL') || 'https://api.mainnet-beta.solana.com';
+  const rpcUrlRaw = env('RPC_URL');
+  const rpcUrl = rpcUrlRaw.length > 0 ? rpcUrlRaw : 'https://api.mainnet-beta.solana.com';
+
   const connection = new Connection(rpcUrl, { commitment: COMMITMENT });
 
   const signer = getSigner();
@@ -113,7 +134,9 @@ async function main() {
       return tx;
     },
     signAllTransactions: async (txs) => {
-      txs.forEach((t) => t.partialSign(signer));
+      for (let i = 0; i < txs.length; i++) {
+        txs[i].partialSign(signer);
+      }
       return txs;
     },
   };
@@ -133,7 +156,8 @@ async function main() {
 
   const results: LeftoverReport[] = [];
 
-  for (const baseMint of baseMints) {
+  for (let i = 0; i < baseMints.length; i++) {
+    const baseMint = baseMints[i];
     console.log(`\n— Checking baseMint ${baseMint.toBase58()} ...`);
     const report: LeftoverReport = { baseMint: baseMint.toBase58(), status: 'skipped' };
 
@@ -141,9 +165,11 @@ async function main() {
       // Try common helper names across SDK versions
       let pool: any | undefined;
       const candFns = ['getPoolByBaseMint', 'fetchPoolByBaseMint', 'getPool'];
-      for (const fn of candFns) {
+      for (let j = 0; j < candFns.length; j++) {
+        const fn = candFns[j];
         const maybeFn = (client as any)[fn];
         if (typeof maybeFn === 'function') {
+          // eslint-disable-next-line @typescript-eslint/await-thenable
           const p = await maybeFn.call(client, baseMint);
           if (p) {
             pool = p;
@@ -153,20 +179,32 @@ async function main() {
       }
       if (!pool) throw new Error('DBC pool not found for this base mint.');
 
-      report.pool = pool?.pubkey?.toBase58?.() ?? pool?.address?.toBase58?.() ?? '(unknown)';
-      report.poolConfig = pool?.config?.toBase58?.() ?? '(unknown)';
+      // Defensive access on pool fields
+      const poolPub =
+        (pool && pool.pubkey && typeof pool.pubkey.toBase58 === 'function' && pool.pubkey.toBase58()) ||
+        (pool && pool.address && typeof pool.address.toBase58 === 'function' && pool.address.toBase58()) ||
+        '(unknown)';
+      const poolCfg =
+        (pool && pool.config && typeof pool.config.toBase58 === 'function' && pool.config.toBase58()) ||
+        '(unknown)';
+      report.pool = typeof poolPub === 'string' ? poolPub : '(unknown)';
+      report.poolConfig = typeof poolCfg === 'string' ? poolCfg : '(unknown)';
 
-      const statusVal = (pool?.state?.status ?? pool?.status ?? '') as string;
+      const statusVal: string =
+        (pool && pool.state && typeof pool.state.status === 'string' && pool.state.status) ||
+        (typeof pool?.status === 'string' ? (pool.status as string) : '') ||
+        '';
+
       const isCompleted =
         statusVal === 'completed' ||
         statusVal === 'finished' ||
-        (pool?.state?.isFinished === true) ||
-        (pool?.isFinished === true);
+        (pool && pool.state && pool.state.isFinished === true) ||
+        (pool && pool.isFinished === true);
 
       const qvCandidate =
-        (pool as any)?.vaultQuote ??
-        (pool as any)?.quoteVault ??
-        (pool as any)?.state?.vaultQuote ??
+        (pool && (pool as any).vaultQuote) ||
+        (pool && (pool as any).quoteVault) ||
+        (pool && (pool as any).state && (pool as any).state.vaultQuote) ||
         null;
 
       if (!qvCandidate) {
@@ -192,20 +230,20 @@ async function main() {
       }
 
       let ix: any;
-      if (typeof client.buildClaimLeftoverInstruction === 'function') {
-        ix = await client.buildClaimLeftoverInstruction({
+      if (typeof (client as any).buildClaimLeftoverInstruction === 'function') {
+        ix = await (client as any).buildClaimLeftoverInstruction({
           pool,
           leftoverReceiver,
           payer: signer.publicKey,
         });
-      } else if (typeof client.claimLeftoverInstruction === 'function') {
-        ix = await client.claimLeftoverInstruction({
+      } else if (typeof (client as any).claimLeftoverInstruction === 'function') {
+        ix = await (client as any).claimLeftoverInstruction({
           pool,
           leftoverReceiver,
           payer: signer.publicKey,
         });
-      } else if (typeof client.claimLeftoverBase === 'function') {
-        ix = await client.claimLeftoverBase({
+      } else if (typeof (client as any).claimLeftoverBase === 'function') {
+        ix = await (client as any).claimLeftoverBase({
           poolPublicKey: new PublicKey(report.pool!),
           leftoverReceiver,
           payer: signer.publicKey,
@@ -216,7 +254,8 @@ async function main() {
 
       const tx = new Transaction().add(ix);
       tx.feePayer = signer.publicKey;
-      tx.recentBlockhash = (await connection.getLatestBlockhash('finalized')).blockhash;
+      const blockhash = await connection.getLatestBlockhash('finalized');
+      tx.recentBlockhash = blockhash.blockhash;
 
       const sig = await sendAndConfirmTransaction(connection, tx, [signer], {
         commitment: 'confirmed',
@@ -229,25 +268,19 @@ async function main() {
       results.push(report);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.log(`  > ✖ Claim failed: ${msg.slice(0, 240)}`);
+      const short = msg.length > 240 ? msg.slice(0, 240) : msg;
+      console.log(`  > ✖ Claim failed: ${short}`);
       report.status = 'error';
-      report.error = msg.slice(0, 240);
+      report.error = short;
       results.push(report);
     }
   }
 
   console.log('\nbaseMint,pool,poolConfig,status,signature,error');
-  for (const r of results) {
-    console.log(
-      [
-        r.baseMint,
-        r.pool || '',
-        r.poolConfig || '',
-        r.status,
-        r.signature || '',
-        (r.error || '').replace(/[\r\n,]+/g, ' '),
-      ].join(',')
-    );
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const err = (r.error || '').replace(/[\r\n,]+/g, ' ');
+    console.log([r.baseMint, r.pool || '', r.poolConfig || '', r.status, r.signature || '', err].join(','));
   }
 }
 
