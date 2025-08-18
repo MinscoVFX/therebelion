@@ -113,6 +113,47 @@ type MinimalWallet = {
   signAllTransactions: (txs: Transaction[]) => Promise<Transaction[]>;
 };
 
+// ---------- Safe helpers ----------
+function safeToBase58Field(obj: any, primaryField: string, fallbackField: string): string {
+  const p = obj && obj[primaryField];
+  if (p && typeof p.toBase58 === 'function') {
+    const v = p.toBase58();
+    return typeof v === 'string' && v.length > 0 ? v : '(unknown)';
+  }
+  const f = obj && obj[fallbackField];
+  if (f && typeof f.toBase58 === 'function') {
+    const v = f.toBase58();
+    return typeof v === 'string' && v.length > 0 ? v : '(unknown)';
+  }
+  return '(unknown)';
+}
+
+function safePoolStatus(pool: any): { status: string; completed: boolean } {
+  const state = pool && pool.state ? pool.state : undefined;
+  const status = state && typeof state.status === 'string' ? state.status : (typeof pool?.status === 'string' ? (pool.status as string) : '');
+  const completed =
+    status === 'completed' ||
+    status === 'finished' ||
+    (state && state.isFinished === true) ||
+    (pool && pool.isFinished === true);
+  return { status, completed };
+}
+
+function safeQuoteVault(pool: any): PublicKey | null {
+  const qv =
+    (pool && (pool as any).vaultQuote) ||
+    (pool && (pool as any).quoteVault) ||
+    (pool && (pool as any).state && (pool as any).state.vaultQuote) ||
+    null;
+  if (!qv) return null;
+  // Guard against invalid input to PublicKey
+  try {
+    return new PublicKey(qv);
+  } catch {
+    return null;
+  }
+}
+
 // ---------- Main ----------
 async function main() {
   const rpcUrl = env('RPC_URL') || 'https://api.mainnet-beta.solana.com';
@@ -127,9 +168,7 @@ async function main() {
       return tx;
     },
     signAllTransactions: async (txs) => {
-      for (let i = 0; i < txs.length; i++) {
-        txs[i].partialSign(signer);
-      }
+      for (const t of txs) t.partialSign(signer);
       return txs;
     },
   };
@@ -156,7 +195,7 @@ async function main() {
 
     try {
       // Try common helper names across SDK versions
-      let pool: any | undefined;
+      let pool: any | undefined = undefined;
       const candFns = ['getPoolByBaseMint', 'fetchPoolByBaseMint', 'getPool'];
       for (const fn of candFns) {
         const maybeFn = (client as any)[fn];
@@ -171,45 +210,25 @@ async function main() {
       if (!pool) throw new Error('DBC pool not found for this base mint.');
 
       // Defensive access
-      const poolPub =
-        (pool && pool.pubkey && typeof pool.pubkey.toBase58 === 'function' && pool.pubkey.toBase58()) ||
-        (pool && pool.address && typeof pool.address.toBase58 === 'function' && pool.address.toBase58()) ||
-        '(unknown)';
-      const poolCfg =
-        (pool && pool.config && typeof pool.config.toBase58 === 'function' && pool.config.toBase58()) ||
-        '(unknown)';
-      report.pool = typeof poolPub === 'string' ? poolPub : '(unknown)';
-      report.poolConfig = typeof poolCfg === 'string' ? poolCfg : '(unknown)';
+      const poolPub = safeToBase58Field(pool, 'pubkey', 'address');
+      const poolCfg = safeToBase58Field(pool, 'config', 'config');
+      report.pool = poolPub;
+      report.poolConfig = poolCfg;
 
-      const statusVal: string =
-        (pool && pool.state && typeof pool.state.status === 'string' && pool.state.status) ||
-        (typeof pool?.status === 'string' ? (pool.status as string) : '') ||
-        '';
+      const { status, completed } = safePoolStatus(pool);
 
-      const isCompleted =
-        statusVal === 'completed' ||
-        statusVal === 'finished' ||
-        (pool && pool.state && pool.state.isFinished === true) ||
-        (pool && pool.isFinished === true);
-
-      const qvCandidate =
-        (pool && (pool as any).vaultQuote) ||
-        (pool && (pool as any).quoteVault) ||
-        (pool && (pool as any).state && (pool as any).state.vaultQuote) ||
-        null;
-
-      if (!qvCandidate) {
+      const quoteVaultPk = safeQuoteVault(pool);
+      if (quoteVaultPk === null) {
         console.log('  > No quote vault on pool; skipping.');
         results.push(report);
         continue;
       }
 
-      const quoteVaultPk = new PublicKey(qvCandidate);
       const vaultBal = await connection.getBalance(quoteVaultPk);
       console.log(`  > Vault SOL: ${(vaultBal / LAMPORTS_PER_SOL).toFixed(6)} SOL`);
-      console.log(`  > Status: ${statusVal || '(unknown)'} | Completed: ${isCompleted}`);
+      console.log(`  > Status: ${status || '(unknown)'} | Completed: ${completed}`);
 
-      if (!isCompleted) {
+      if (!completed) {
         console.log('  > Curve not completed; skipping.');
         results.push(report);
         continue;
@@ -220,22 +239,28 @@ async function main() {
         continue;
       }
 
-      let ix: any;
-      if (typeof (client as any).buildClaimLeftoverInstruction === 'function') {
+      let ix: any = null;
+      const hasBuild = typeof (client as any).buildClaimLeftoverInstruction === 'function';
+      const hasLegacy = typeof (client as any).claimLeftoverInstruction === 'function';
+      const hasBase = typeof (client as any).claimLeftoverBase === 'function';
+
+      if (hasBuild) {
         ix = await (client as any).buildClaimLeftoverInstruction({
           pool,
           leftoverReceiver,
           payer: signer.publicKey,
         });
-      } else if (typeof (client as any).claimLeftoverInstruction === 'function') {
+      } else if (hasLegacy) {
         ix = await (client as any).claimLeftoverInstruction({
           pool,
           leftoverReceiver,
           payer: signer.publicKey,
         });
-      } else if (typeof (client as any).claimLeftoverBase === 'function') {
+      } else if (hasBase) {
+        // report.pool is ensured to be a string
+        const poolPk = new PublicKey(report.pool as string);
         ix = await (client as any).claimLeftoverBase({
-          poolPublicKey: new PublicKey(report.pool || leftoverReceiver.toBase58()), // safe fallback
+          poolPublicKey: poolPk,
           leftoverReceiver,
           payer: signer.publicKey,
         });
@@ -245,8 +270,8 @@ async function main() {
 
       const tx = new Transaction().add(ix);
       tx.feePayer = signer.publicKey;
-      const blockhash = await connection.getLatestBlockhash('finalized');
-      tx.recentBlockhash = blockhash.blockhash;
+      const bh = await connection.getLatestBlockhash('finalized');
+      tx.recentBlockhash = bh.blockhash;
 
       const sig = await sendAndConfirmTransaction(connection, tx, [signer], {
         commitment: 'confirmed',
@@ -270,7 +295,15 @@ async function main() {
   console.log('\nbaseMint,pool,poolConfig,status,signature,error');
   for (const r of results) {
     const err = (r.error || '').replace(/[\r\n,]+/g, ' ');
-    console.log([r.baseMint, r.pool || '', r.poolConfig || '', r.status, r.signature || '', err].join(','));
+    const line = [
+      r.baseMint,
+      r.pool || '',
+      r.poolConfig || '',
+      r.status,
+      r.signature || '',
+      err,
+    ].join(',');
+    console.log(line);
   }
 }
 
