@@ -43,13 +43,14 @@ async function getSigner(): Promise<Keypair> {
     const secret = Uint8Array.from(Buffer.from(b64, 'base64'));
     return Keypair.fromSecretKey(secret);
   }
+  // helper expects 0 args in your repo
   const kp = await safeParseKeypairFromFile();
   return kp;
 }
 
 async function main() {
-  // Mirror other scripts: parse CLI args (e.g. --config ./studio/config/dbc_config.jsonc)
-  // We don’t rely on the returned object to avoid type drift.
+  // Keep CLI parity (e.g., --config ./studio/config/dbc_config.jsonc).
+  // Your helper expects 1 arg (argv), so pass it.
   parseConfigFromCli(process.argv);
 
   const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
@@ -58,7 +59,7 @@ async function main() {
   const signer = await getSigner();
   const wallet = new AnchorWallet(signer);
 
-  // Avoid `.load()`; use constructor and cast to any to smooth over SDK version differences.
+  // Use constructor; cast to any to avoid SDK type drift issues
   const client: any = new (DynamicBondingCurveClient as any)(connection, wallet);
 
   // Required inputs
@@ -105,8 +106,10 @@ async function main() {
         pool?.isFinished === true;
 
       // Locate the quote (SOL) vault
-      const quoteVaultPk: PublicKey | undefined =
-        pool?.vaultQuote ?? pool?.quoteVault ?? pool?.state?.vaultQuote;
+      const quoteVaultPk =
+        (pool as any)?.vaultQuote ??
+        (pool as any)?.quoteVault ??
+        (pool as any)?.state?.vaultQuote;
 
       if (!quoteVaultPk) {
         console.log('  > No quote vault field on pool; skipping.');
