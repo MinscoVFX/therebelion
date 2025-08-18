@@ -1,3 +1,4 @@
+/* eslint no-empty: "off" */
 /**
  * Claim DBC bonding-curve leftovers across (BASE_MINTS × DBC_CONFIG_KEYS × optional DBC_PROGRAM_IDS).
  *
@@ -263,20 +264,17 @@ async function main() {
         try {
           sdkClient = new Ctor(connection, signer);
         } catch (e1) {
-          // put a real statement so eslint(no-empty) is satisfied
-          void e1;
+          void e1; // keep block non-empty
           try {
             sdkClient = new Ctor({ connection, wallet: signer });
           } catch (e2) {
-            // also real statement; intentionally ignore instantiation failure
-            void e2;
+            void e2; // keep block non-empty
           }
         }
       }
       if (sdkClient) break;
     } catch (e3) {
-      // swallow lookup failure for non-existent ctor on this SDK variant
-      void e3;
+      void e3; // keep block non-empty
     }
   }
 
