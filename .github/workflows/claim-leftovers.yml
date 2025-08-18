@@ -23,7 +23,7 @@ jobs:
     #   - LEFTOVER_RECEIVER      (Solana pubkey to receive leftovers)
     #   - one of PK_B58 or PRIVATE_KEY_B58 (wallet)
     # OPTIONAL:
-    #   - DBC_PROGRAM_IDS        (comma-separated program IDs)  ← you said this is not set; that's fine
+    #   - DBC_PROGRAM_IDS        (comma-separated program IDs)
     env:
       RPC_URL: ${{ secrets.RPC_URL }}
       BASE_MINTS: ${{ secrets.BASE_MINTS }}
@@ -37,10 +37,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
+      - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.14.0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -79,15 +79,13 @@ jobs:
           fi
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # Safer in forks where lockfile may drift
+        run: pnpm install --no-frozen-lockfile
 
-      # Optional typecheck — won’t fail the workflow if types complain
+      # Non-blocking typecheck (to keep execution even if types from SDK aren't perfect)
       - name: Typecheck (non-blocking)
         continue-on-error: true
         run: pnpm exec tsc --noEmit
 
-      # Run the script directly via ts-node (transpile-only to avoid type issues)
       - name: Claim leftovers
-        env:
-          TS_NODE_TRANSPILE_ONLY: "1"
-        run: pnpm dlx ts-node studio/src/scripts/dbc/claim_leftovers.ts
+        run: pnpm tsx studio/src/scripts/dbc/claim_leftovers.ts
