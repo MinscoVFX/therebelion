@@ -1,17 +1,8 @@
 /**
  * Claim DBC bonding-curve leftovers across (BASE_MINTS × DBC_CONFIG_KEYS × optional DBC_PROGRAM_IDS).
- *
- * Env (via repo/org Secrets):
- *   RPC_URL
- *   BASE_MINTS            # comma-separated base mint addresses
- *   DBC_CONFIG_KEYS       # comma-separated config keys
- *   LEFTOVER_RECEIVER     # pubkey to receive leftovers
- *   (PK_B58 or PRIVATE_KEY_B58)
- *
- * Optional:
- *   DBC_PROGRAM_IDS       # comma-separated program IDs
+ * Secrets: RPC_URL, BASE_MINTS, DBC_CONFIG_KEYS, LEFTOVER_RECEIVER, (PK_B58 or PRIVATE_KEY_B58)
+ * Optional: DBC_PROGRAM_IDS
  */
-
 import 'dotenv/config';
 import bs58 from 'bs58';
 import {
@@ -31,29 +22,22 @@ type AttemptResult = {
   reason?: string;
 };
 
-// Try both package names commonly used by Meteora
 async function loadDbcSdk(): Promise<Record<string, unknown> | null> {
-  const candidates = [
-    '@meteora-ag/dbc-sdk',
-    '@meteora-ag/dynamic-bonding-curve-sdk',
-  ];
+  const candidates = ['@meteora-ag/dbc-sdk', '@meteora-ag/dynamic-bonding-curve-sdk'];
   for (const mod of candidates) {
     try {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore  — TS can’t type this without installed types; we handle at runtime.
+      // @ts-ignore
       const sdk = await import(mod);
       console.log(`[INFO] Loaded Meteora SDK: ${mod}`);
       return sdk as Record<string, unknown>;
-    } catch (e) {
-      // keep trying the next module
-    }
+    } catch (_) {}
   }
-  console.error('[FATAL] Failed to load Meteora DBC SDK (tried @meteora-ag/dbc-sdk and @meteora-ag/dynamic-bonding-curve-sdk).');
+  console.error('[FATAL] Failed to load Meteora DBC SDK (tried dbc-sdk and dynamic-bonding-curve-sdk).');
   return null;
 }
 
-// ---- Small helpers ----------------------------------------------------------
-
+// ---------- helpers ----------
 function csvEnv(name: string, required = true): string[] {
   const raw = process.env[name]?.trim() ?? '';
   if (!raw) {
@@ -62,7 +46,6 @@ function csvEnv(name: string, required = true): string[] {
   }
   return raw.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
 }
-
 function expectEnv(name: string): string {
   const v = process.env[name]?.trim();
   if (!v) {
@@ -71,29 +54,20 @@ function expectEnv(name: string): string {
   }
   return v;
 }
-
 function safePubkey(s: string, label: string): PublicKey | null {
-  try {
-    return new PublicKey(s);
-  } catch {
-    console.error(`[ERROR] Invalid pubkey for ${label}: ${s}`);
-    return null;
-  }
+  try { return new PublicKey(s); }
+  catch { console.error(`[ERROR] Invalid pubkey for ${label}: ${s}`); return null; }
 }
-
-function nowIso() {
-  return new Date().toISOString();
-}
+function nowIso() { return new Date().toISOString(); }
 
 async function withBackoff<T>(fn: () => Promise<T>, label: string, attempts = 3): Promise<T | null> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (e) {
+    try { return await fn(); }
+    catch (e) {
       lastErr = e;
       const ms = 500 * Math.pow(2, i);
-      console.warn(`[WARN] ${label} failed (attempt ${i + 1}/${attempts}): ${String(e)}; retrying in ${ms}ms…`);
+      console.warn(`[WARN] ${label} failed (${i + 1}/${attempts}): ${String(e)}; retrying in ${ms}ms…`);
       await new Promise((r) => setTimeout(r, ms));
     }
   }
@@ -112,10 +86,7 @@ async function sendGeneric(
 
     if (txOrIxs instanceof VersionedTransaction) {
       txOrIxs.sign([payer, ...extraSigners]);
-      const sig = await withBackoff(
-        () => connection.sendTransaction(txOrIxs, { skipPreflight: false }),
-        'send v0 tx'
-      );
+      const sig = await withBackoff(() => connection.sendTransaction(txOrIxs, { skipPreflight: false }), 'send v0 tx');
       if (!sig) return null;
       await withBackoff(() => connection.confirmTransaction(sig, 'confirmed'), 'confirm v0 tx', 5);
       return sig;
@@ -125,16 +96,12 @@ async function sendGeneric(
       txOrIxs.feePayer = payer.publicKey;
       txOrIxs.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
       txOrIxs.sign(payer, ...extraSigners);
-      const sig = await withBackoff(
-        () => connection.sendRawTransaction(txOrIxs.serialize(), { skipPreflight: false }),
-        'send legacy tx'
-      );
+      const sig = await withBackoff(() => connection.sendRawTransaction(txOrIxs.serialize(), { skipPreflight: false }), 'send legacy tx');
       if (!sig) return null;
       await withBackoff(() => connection.confirmTransaction(sig, 'confirmed'), 'confirm legacy tx', 5);
       return sig;
     }
 
-    // Assume array of Ixs or single Ix-like
     const ixs = Array.isArray(txOrIxs) ? txOrIxs : [txOrIxs];
     if (ixs.length === 0) return null;
 
@@ -143,10 +110,7 @@ async function sendGeneric(
     legacy.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
     legacy.sign(payer, ...extraSigners);
 
-    const sig = await withBackoff(
-      () => connection.sendRawTransaction(legacy.serialize(), { skipPreflight: false }),
-      'send built tx'
-    );
+    const sig = await withBackoff(() => connection.sendRawTransaction(legacy.serialize(), { skipPreflight: false }), 'send built tx');
     if (!sig) return null;
     await withBackoff(() => connection.confirmTransaction(sig, 'confirmed'), 'confirm built tx', 5);
     return sig;
@@ -156,26 +120,48 @@ async function sendGeneric(
   }
 }
 
-// Find a function by name among common containers
-function findCallable(root: Record<string, unknown> | null, names: string[]) {
+// brute-force search of callable names in root or nested containers
+function findCallableDeep(root: Record<string, unknown> | null) {
   if (!root) return null as { obj: any; fnName: string } | null;
-  for (const n of names) {
-    const fn = (root as any)[n];
-    if (typeof fn === 'function') return { obj: root, fnName: n };
+  const nameMatches = (n: string) => /(left.*over|claim.*left|withdraw.*left)/i.test(n);
+
+  const tryObj = (obj: any): { obj: any; fnName: string } | null => {
+    if (!obj) return null;
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (typeof val === 'function' && nameMatches(key)) return { obj, fnName: key };
+    }
+    return null;
+  };
+
+  // first pass: root exports
+  const direct = tryObj(root);
+  if (direct) return direct;
+
+  // second pass: common containers
+  const containers = [
+    'DBC', 'Dbc', 'client', 'Client', 'Meteora', 'meteora',
+    'DynamicBondingCurveClient', 'DynamicBondingCurve', 'Sdk', 'SDK'
+  ];
+  for (const c of containers) {
+    const o = (root as any)[c];
+    const hit = tryObj(o);
+    if (hit) return hit;
   }
-  for (const container of ['DBC', 'Dbc', 'client', 'Client', 'Meteora', 'meteora', 'DynamicBondingCurveClient']) {
-    const o = (root as any)[container];
-    if (!o) continue;
-    for (const n of names) {
-      const fn = o?.[n];
-      if (typeof fn === 'function') return { obj: o, fnName: n };
+
+  // third pass: scan nested plain objects one level deep
+  for (const key of Object.keys(root)) {
+    const v = (root as any)[key];
+    if (v && typeof v === 'object') {
+      const hit = tryObj(v);
+      if (hit) return hit;
     }
   }
+
   return null as { obj: any; fnName: string } | null;
 }
 
-// ---- Main -------------------------------------------------------------------
-
+// ---------- main ----------
 async function main() {
   console.log(`[INFO] DBC leftover claim job start @ ${nowIso()}`);
 
@@ -204,7 +190,7 @@ async function main() {
     process.exit(0);
   }
 
-  // Signer
+  // signer
   let signer: Keypair | null = null;
   try {
     if (PRIVATE_KEY_B58) {
@@ -222,81 +208,36 @@ async function main() {
   const connection = new Connection(RPC_URL, 'confirmed');
   const sdk = await loadDbcSdk();
   if (!sdk) {
-    // Keep CI green, but explain.
     process.exit(0);
   }
 
-  // Entrypoint discovery
-  const claimCandidates = [
-    'claimLeftovers',
-    'claim_leftovers',
-    'claimLeftover',
-    'claimBondingCurveLeftovers',
-    'claimBondingCurveLeftover',
-    'claim_leftover',
-  ];
-  const builderCandidates = [
-    'buildClaimLeftoversTx',
-    'build_claim_leftovers_tx',
-    'leftoversClaimTx',
-    'makeClaimLeftoversIx',
-    'make_claim_leftovers_ix',
-  ];
-  const callable = findCallable(sdk, claimCandidates) || findCallable(sdk, builderCandidates);
-
-  // Optional client
-  let sdkClient: any = null;
-  for (const ctorName of ['Client', 'DBC', 'Dbc', 'MeteoraClient', 'DynamicBondingCurveClient']) {
-    try {
-      const Ctor = (sdk as any)[ctorName];
-      if (typeof Ctor === 'function') {
-        try {
-          sdkClient = new Ctor(connection, signer);
-        } catch {
-          try {
-            sdkClient = new Ctor({ connection, wallet: signer });
-          } catch {
-            // ignore
-          }
-        }
-      }
-      if (sdkClient) break;
-    } catch {
-      // ignore
-    }
-  }
+  // find a callable leftover entrypoint
+  const callable =
+    findCallableDeep(sdk); // regex scan across export names
 
   const programs = DBC_PROGRAM_IDS.length > 0 ? DBC_PROGRAM_IDS : [undefined];
   const results: AttemptResult[] = [];
 
   console.log('[INFO] Starting claims:');
-  console.log(
-    `       base mints = ${BASE_MINTS.length}, configs = ${DBC_CONFIG_KEYS.length}, programs = ${programs.length}`
-  );
+  console.log(`       base mints = ${BASE_MINTS.length}, configs = ${DBC_CONFIG_KEYS.length}, programs = ${programs.length}`);
 
-  async function attemptClaimOne(
-    baseMintStr: string,
-    configKeyStr: string,
-    programIdStr?: string
-  ): Promise<AttemptResult> {
+  async function attemptClaimOne(baseMintStr: string, configKeyStr: string, programIdStr?: string): Promise<AttemptResult> {
     const baseMint = safePubkey(baseMintStr, 'baseMint');
     const configKey = safePubkey(configKeyStr, 'configKey');
     const programId = programIdStr ? safePubkey(programIdStr, 'programId') : undefined;
-
     if (!baseMint || !configKey || (programIdStr && !programId)) {
       return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'error', reason: 'Invalid pubkey in inputs' };
     }
 
+    // No callable? fail fast with a clear reason.
     if (!callable) {
       return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'error', reason: 'Claim entrypoint not found in SDK' };
     }
 
+    // argument shapes commonly seen
     const argShapes = [
-      { args: [{ baseMint, configKey, programId, receiver: leftoverReceiver, payer: (signer as Keypair).publicKey }], label: 'obj-full' },
-      { args: [{ baseMint, configKey, programId, receiver: leftoverReceiver }], label: 'obj-nopayer' },
-      { args: [connection, signer, baseMint, configKey, leftoverReceiver, programId].filter(Boolean), label: 'pos-full' },
-      { args: [sdkClient, baseMint, configKey, leftoverReceiver, programId].filter(Boolean), label: 'pos-client' },
-      { args: [baseMint, configKey, leftoverReceiver, programId].filter(Boolean), label: 'pos-min' },
+      { args: [{ baseMint, configKey, programId, receiver: (leftoverReceiver as PublicKey) }], label: 'obj' },
+      { args: [baseMint, configKey, (leftoverReceiver as PublicKey), programId].filter(Boolean), label: 'pos-min' },
     ];
 
     for (const shape of argShapes) {
@@ -305,12 +246,10 @@ async function main() {
         const fn = (targetObj as any)[(callable as any).fnName].bind(targetObj);
         const maybe = await fn(...shape.args);
 
-        // If SDK returns signature directly
         if (typeof maybe === 'string' && maybe.length > 40) {
           return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'claimed', txSig: maybe };
         }
 
-        // If SDK returns tx/ix container
         const txLike =
           (maybe && (maybe.tx ?? (maybe as any).transaction ?? (maybe as any).ixs ?? (maybe as any).ix ?? (maybe as any).instructions ?? (maybe as any).instruction)) ??
           maybe;
@@ -328,7 +267,6 @@ async function main() {
         if (/no claimable|nothing to claim|not claimable|pool not found|no pool|not found/i.test(msg)) {
           return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'noop', reason: msg };
         }
-        // try next arg shape
       }
     }
 
@@ -339,8 +277,7 @@ async function main() {
     for (const configKey of DBC_CONFIG_KEYS) {
       for (const programId of programs) {
         const res = await attemptClaimOne(baseMint, configKey, programId);
-        const tag =
-          `${baseMint.slice(0, 6)}… ${configKey.slice(0, 6)}…` + (programId ? ` ${programId.slice(0, 6)}…` : '');
+        const tag = `${baseMint.slice(0, 6)}… ${configKey.slice(0, 6)}…` + (programId ? ` ${programId.slice(0, 6)}…` : '');
         if (res.status === 'claimed') {
           console.log(`[OK]   Claimed leftovers for ${tag}  -> ${res.txSig}`);
         } else if (res.status === 'noop') {
@@ -355,16 +292,7 @@ async function main() {
 
   console.log('\nbaseMint,configKey,programId,status,txSig,reason');
   for (const r of results) {
-    console.log(
-      [
-        r.baseMint,
-        r.configKey,
-        r.programId ?? '',
-        r.status,
-        r.txSig ?? '',
-        (r.reason ?? '').replace(/[\r\n,]+/g, ' ').slice(0, 300),
-      ].join(',')
-    );
+    console.log([r.baseMint, r.configKey, r.programId ?? '', r.status, r.txSig ?? '', (r.reason ?? '').replace(/[\r\n,]+/g, ' ').slice(0, 300)].join(','));
   }
 
   const anyClaimed = results.some((r) => r.status === 'claimed');
@@ -377,5 +305,5 @@ async function main() {
 
 main().catch((e) => {
   console.error('[FATAL] Unhandled error:', String(e));
-  process.exit(0); // keep CI green for non-critical failure
+  process.exit(0);
 });
