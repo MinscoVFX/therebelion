@@ -26,32 +26,63 @@ type LeftoverReport = {
   status: 'claimed' | 'skipped' | 'error';
   signature?: string;
   error?: string;
+  usedConfig?: string;
+  usedProgram?: string;
 };
 
 // ---------- Inputs ----------
 function parseBaseMintsFromEnv(): PublicKey[] {
   const raw = env('BASE_MINTS');
   if (!raw) throw new Error('BASE_MINTS is empty.');
-  return raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
-    .map((s) => new PublicKey(s));
+  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!parts.length) throw new Error('No valid base mints found in BASE_MINTS.');
+  return parts.map((s) => new PublicKey(s));
+}
+
+function parseConfigKeys(): string[] {
+  const raw = env('DBC_CONFIG_KEYS');
+  if (!raw) return ['(default)'];
+  const list = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  return list.length ? list : ['(default)'];
+}
+
+function parseProgramIds(): (PublicKey | null)[] {
+  const raw = env('DBC_PROGRAM_IDS');
+  if (!raw) return [null];
+  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!parts.length) return [null];
+  const out: (PublicKey | null)[] = [];
+  for (const p of parts) {
+    try {
+      out.push(new PublicKey(p));
+    } catch {
+      // skip invalid one
+    }
+  }
+  return out.length ? out : [null];
 }
 
 // ---------- Keypair ----------
 function jsonArrayToBytes(raw: string): Uint8Array {
   const parsed = JSON.parse(raw);
   if (!Array.isArray(parsed)) throw new Error('Invalid keypair.json format');
-  return Uint8Array.from(parsed.map((n: any) => Number(n)));
+  const out: number[] = [];
+  for (const v of parsed) {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0 || n > 255) throw new Error('keypair.json must be an array of bytes (0..255)');
+    out.push(n);
+  }
+  return Uint8Array.from(out);
 }
+
 function readKeypairJsonFile(p: string): Uint8Array {
   const raw = fs.readFileSync(path.resolve(p), 'utf8');
   const bytes = jsonArrayToBytes(raw);
   if (bytes.length === 64) return bytes;
   if (bytes.length === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
-  throw new Error(`Unsupported key length ${bytes.length}`);
+  throw new Error(`Unsupported key length ${bytes.length} (need 32 or 64).`);
 }
+
 function getSigner(): Keypair {
   const keypairPath = env('KEYPAIR_PATH');
   if (!keypairPath) throw new Error('KEYPAIR_PATH required');
@@ -72,11 +103,17 @@ function safeToBase58Field(obj: any, primary: string, fallback: string): string 
   if (field && typeof field.toBase58 === 'function') return field.toBase58();
   return '';
 }
+
 function safePoolStatus(pool: any) {
   const status = pool?.state?.status || pool?.status || '';
-  const completed = status === 'completed' || status === 'finished' || pool?.state?.isFinished === true;
+  const completed =
+    status === 'completed' ||
+    status === 'finished' ||
+    pool?.state?.isFinished === true ||
+    pool?.isFinished === true;
   return { status, completed };
 }
+
 function safeQuoteVault(pool: any): PublicKey | null {
   const qv = pool?.vaultQuote || pool?.quoteVault || pool?.state?.vaultQuote;
   try {
@@ -86,83 +123,27 @@ function safeQuoteVault(pool: any): PublicKey | null {
   }
 }
 
-// ---------- Main ----------
-async function main() {
-  const rpcUrl = env('RPC_URL') || 'https://api.mainnet-beta.solana.com';
-  const connection = new Connection(rpcUrl, { commitment: COMMITMENT });
-
-  const signer = getSigner();
-  const wallet: MinimalWallet = {
-    publicKey: signer.publicKey,
-    payer: signer,
-    signTransaction: async (tx) => (tx.partialSign(signer), tx),
-    signAllTransactions: async (txs) => (txs.forEach((t) => t.partialSign(signer)), txs),
-  };
-
-  const client: any = new (DynamicBondingCurveClient as any)(connection, wallet);
-  const baseMints = parseBaseMintsFromEnv();
-
-  const lr = env('LEFTOVER_RECEIVER');
-  const leftoverReceiver = lr ? new PublicKey(lr) : signer.publicKey;
-
-  console.log(`Wallet: ${signer.publicKey.toBase58()}`);
-  console.log(`RPC: ${rpcUrl}`);
-  console.log(`Commitment: ${COMMITMENT}`);
-  console.log(`Receiver: ${leftoverReceiver.toBase58()}`);
-  console.log(`Base mints: ${baseMints.length}`);
-
-  const results: LeftoverReport[] = [];
-
-  for (const baseMint of baseMints) {
-    const report: LeftoverReport = { baseMint: baseMint.toBase58(), status: 'skipped' };
-    try {
-      let pool: any;
-      for (const fn of ['getPoolByBaseMint', 'fetchPoolByBaseMint', 'getPool']) {
-        if (typeof client[fn] === 'function') {
-          pool = await client[fn](baseMint);
-          if (pool) break;
+/**
+ * Build candidate clients for every (configKey × programId) combo.
+ * We keep ctor calls very permissive to avoid SDK changes blowing up types.
+ */
+function buildClientCombos(
+  connection: Connection,
+  wallet: MinimalWallet,
+  configKeys: string[],
+  programIds: (PublicKey | null)[]
+): Array<{ label: string; client: any; programId: PublicKey | null; configKey: string }> {
+  const combos: Array<{ label: string; client: any; programId: PublicKey | null; configKey: string }> = [];
+  for (const configKey of configKeys) {
+    for (const programId of programIds) {
+      let client: any;
+      try {
+        // common constructor signatures we’ve seen:
+        // new Client(conn, wallet)
+        // new Client(conn, wallet, configKey)
+        // new Client(conn, wallet, { programId, ... })
+        if (configKey === '(default)') {
+          client = new (DynamicBondingCurveClient as any)(connection, wallet);
+        } else {
+          client = new (DynamicBondingCurveClient as any)(connection, wallet, configKey);
         }
-      }
-      if (!pool) throw new Error('DBC pool not found for this base mint.');
-
-      report.pool = safeToBase58Field(pool, 'pubkey', 'address');
-      report.poolConfig = safeToBase58Field(pool, 'config', 'config');
-      const { status, completed } = safePoolStatus(pool);
-
-      const vault = safeQuoteVault(pool);
-      if (!vault) throw new Error('No quote vault found');
-      const bal = await connection.getBalance(vault);
-
-      if (!completed || bal === 0) throw new Error('Nothing claimable');
-
-      let ix: any;
-      if (client.buildClaimLeftoverInstruction) {
-        ix = await client.buildClaimLeftoverInstruction({ pool, leftoverReceiver, payer: signer.publicKey });
-      } else if (client.claimLeftoverInstruction) {
-        ix = await client.claimLeftoverInstruction({ pool, leftoverReceiver, payer: signer.publicKey });
-      } else if (client.claimLeftoverBase) {
-        ix = await client.claimLeftoverBase({ poolPublicKey: new PublicKey(report.pool), leftoverReceiver, payer: signer.publicKey });
-      } else throw new Error('No leftover claim fn in SDK');
-
-      const tx = new Transaction().add(ix);
-      tx.feePayer = signer.publicKey;
-      tx.recentBlockhash = (await connection.getLatestBlockhash('finalized')).blockhash;
-
-      const sig = await sendAndConfirmTransaction(connection, tx, [signer], { commitment: 'confirmed' });
-      report.status = 'claimed';
-      report.signature = sig;
-      console.log(`Claimed ${bal / LAMPORTS_PER_SOL} SOL -> ${sig}`);
-    } catch (e: any) {
-      report.status = 'error';
-      report.error = e.message || String(e);
-      console.log(`Error: ${report.error}`);
-    }
-    results.push(report);
-  }
-
-  console.log('\nbaseMint,pool,poolConfig,status,signature,error');
-  for (const r of results) {
-    console.log([r.baseMint, r.pool || '', r.poolConfig || '', r.status, r.signature || '', (r.error || '').replace(/[\r\n,]+/g, ' ')].join(','));
-  }
-}
-main().catch((e) => (console.error(e), process.exit(1)));
