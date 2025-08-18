@@ -11,6 +11,10 @@ on:
         description: 'Override leftover receiver (optional; defaults to signer)'
         required: false
         default: ''
+      COMMITMENT_LEVEL:
+        description: 'Solana commitment level (processed|confirmed|finalized)'
+        required: false
+        default: 'confirmed'
 
 jobs:
   claim-leftovers:
@@ -20,7 +24,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # PRE: ensure pnpm exists so setup-node cache:pnpm doesn't fail
+      # Ensure pnpm is available (also helps setup-node cache=pnpm)
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
         with:
@@ -32,7 +36,7 @@ jobs:
           node-version: 20
           cache: 'pnpm'
 
-      # POST: re-add pnpm to PATH in case setup-node tweaked it
+      # Re-add pnpm to PATH (defensive)
       - name: Setup pnpm (post PATH restore)
         uses: pnpm/action-setup@v4
         with:
@@ -41,8 +45,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      # 🔐 Decode Phantom/Backpack base58 key to a proper 64-byte keypair.json.
-      #    Handles BOTH 32-byte seed and 64-byte secret keys.
+      # 🔐 Decode Phantom/Backpack base58 to a proper 64-byte keypair.json.
+      #    Handles both 32-byte seeds and 64-byte secret keys.
       - name: Decode PK_B58 -> keypair.json (handles 32/64 bytes)
         run: |
           npx -y -p @solana/web3.js@1.98.2 -p bs58@4 -p tweetnacl@1 node -e "
@@ -83,13 +87,16 @@ jobs:
           # REQUIRED
           RPC_URL: ${{ secrets.RPC_URL }}
 
-          # Where the script will read the keypair
+          # Script will read this path
           KEYPAIR_PATH: ./keypair.json
 
-          # BASE_MINTS: prefer the workflow input; if empty, fall back to the secret
+          # COMMITMENT for the script (processed|confirmed|finalized)
+          COMMITMENT_LEVEL: ${{ github.event.inputs.COMMITMENT_LEVEL }}
+
+          # Prefer the workflow input; if blank, fall back to secret
           BASE_MINTS: ${{ github.event.inputs.BASE_MINTS != '' && github.event.inputs.BASE_MINTS || secrets.BASE_MINTS }}
 
-          # OPTIONAL receiver; defaults to signer if blank
+          # Optional; defaults to signer if blank
           LEFTOVER_RECEIVER: ${{ github.event.inputs.LEFTOVER_RECEIVER }}
         run: |
           echo "Running leftover claim..."
