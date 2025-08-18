@@ -4,61 +4,83 @@ on:
   workflow_dispatch:
     inputs:
       BASE_MINTS:
-        description: 'Comma-separated base mints'
+        description: 'Comma-separated base mints to check/claim (leave blank to use secret)'
         required: false
         default: ''
       LEFTOVER_RECEIVER:
-        description: 'Receiver (optional)'
+        description: 'Override leftover receiver (optional; defaults to signer)'
         required: false
         default: ''
       COMMITMENT_LEVEL:
-        description: 'processed|confirmed|finalized'
+        description: 'Solana commitment level (processed|confirmed|finalized)'
         required: false
         default: 'confirmed'
 
 jobs:
   claim-leftovers:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with: { version: 10.14.0 }
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'pnpm'
 
-      - run: pnpm install --no-frozen-lockfile
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
 
-      - name: Decode PK_B58 -> keypair.json
+      # Robust CJS/ESM bs58 handling (works with 4/5)
+      - name: Decode PK_B58 -> keypair.json (handles 32/64 bytes)
         run: |
-          npx -y -p @solana/web3.js@1.98.2 -p bs58@5 -p tweetnacl@1 node - <<'EOF'
-          const fs = require('fs');
-          const bs58mod = require('bs58');
-          const nacl = require('tweetnacl');
-          const { Keypair } = require('@solana/web3.js');
+          npx -y -p @solana/web3.js@1.98.2 -p bs58@5 -p tweetnacl@1 node -e "
+            const fs = require('fs');
+            const bs58mod = require('bs58');
+            const nacl = require('tweetnacl');
+            const { Keypair } = require('@solana/web3.js');
 
-          const s = (process.env.PK_B58 || process.env.PRIVATE_KEY_B58 || '').trim();
-          if (!s) throw new Error('Missing PK_B58');
-          const decode = (bs58mod.decode || (bs58mod.default && bs58mod.default.decode));
-          if (typeof decode !== 'function') throw new Error('bs58.decode not available');
-          const secret = decode(s);
-          const secret64 = secret.length === 64 ? secret :
-                          secret.length === 32 ? nacl.sign.keyPair.fromSeed(secret).secretKey :
-                          (()=>{throw new Error('Bad key length '+secret.length)})();
-          const kp = Keypair.fromSecretKey(secret64);
-          fs.writeFileSync('keypair.json', JSON.stringify([...kp.secretKey]));
-          console.log('Public key:', kp.publicKey.toBase58());
-          EOF
+            const s = (process.env.PK_B58 || process.env.PRIVATE_KEY_B58 || '').trim();
+            if (!s) throw new Error('Missing PK_B58 or PRIVATE_KEY_B58 secret');
+
+            const decode =
+              (bs58mod && typeof bs58mod.decode === 'function' && bs58mod.decode) ||
+              (bs58mod && bs58mod.default && typeof bs58mod.default.decode === 'function' && bs58mod.default.decode);
+
+            if (typeof decode !== 'function') {
+              throw new Error('bs58.decode not available (bs58 module shape unexpected)');
+            }
+
+            const secret = decode(s);
+            let secret64;
+            if (secret.length === 64) {
+              secret64 = secret;
+            } else if (secret.length === 32) {
+              secret64 = nacl.sign.keyPair.fromSeed(secret).secretKey;
+            } else {
+              throw new Error('Decoded key length is ' + secret.length + ' bytes; expected 32 or 64');
+            }
+
+            const kp = Keypair.fromSecretKey(secret64);
+            fs.writeFileSync('keypair.json', JSON.stringify(Array.from(kp.secretKey)));
+            console.log('Public key:', kp.publicKey.toBase58());
+          "
         env:
           PK_B58: ${{ secrets.PK_B58 }}
           PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
 
-      - run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
+      - name: Type check
+        run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
 
-      - run: pnpm -w build || echo "Skip build"
+      - name: Build (optional)
+        run: pnpm -w build || echo "Skip build"
 
       - name: Run leftover claim
         env:
@@ -67,7 +89,13 @@ jobs:
           COMMITMENT_LEVEL: ${{ github.event.inputs.COMMITMENT_LEVEL }}
           BASE_MINTS: ${{ github.event.inputs.BASE_MINTS != '' && github.event.inputs.BASE_MINTS || secrets.BASE_MINTS }}
           LEFTOVER_RECEIVER: ${{ github.event.inputs.LEFTOVER_RECEIVER }}
-        run: npx -y tsx studio/src/scripts/dbc/claim_leftovers.ts
+          # NEW: try every config/program combo (comma-separated)
+          DBC_CONFIG_KEYS: ${{ secrets.DBC_CONFIG_KEYS }}
+          DBC_PROGRAM_IDS: ${{ secrets.DBC_PROGRAM_IDS }}
+        run: |
+          echo "Running leftover claim..."
+          npx -y tsx studio/src/scripts/dbc/claim_leftovers.ts
 
-      - if: always()
+      - name: Clean up keypair.json
+        if: always()
         run: rm -f keypair.json
