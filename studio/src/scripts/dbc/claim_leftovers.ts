@@ -37,24 +37,23 @@ type LeftoverReport = {
 // ---------- Inputs ----------
 function parseBaseMintsFromEnv(): PublicKey[] {
   const raw = env('BASE_MINTS');
-  const parts = raw.length > 0 ? raw.split(',') : [];
-  const list: string[] = [];
-  for (let i = 0; i < parts.length; i++) {
-    const s = parts[i].trim();
-    if (s.length > 0) list.push(s);
-  }
-  if (list.length === 0) {
+  if (raw.length === 0) {
     throw new Error('BASE_MINTS is empty. Provide a comma-separated list via workflow input or secret.');
   }
   const mints: PublicKey[] = [];
-  for (let i = 0; i < list.length; i++) {
-    mints.push(new PublicKey(list[i]));
+  const parts = raw.split(',');
+  for (const part of parts) {
+    const s = part.trim();
+    if (s.length === 0) continue;
+    mints.push(new PublicKey(s));
+  }
+  if (mints.length === 0) {
+    throw new Error('No valid base mints found in BASE_MINTS.');
   }
   return mints;
 }
 
 // ---------- Key loading (from keypair.json only) ----------
-// (Keep this super explicit so TS never thinks something might be undefined.)
 function jsonArrayToBytes(jsonStr: string): Uint8Array {
   let parsedUnknown: unknown;
   try {
@@ -67,11 +66,9 @@ function jsonArrayToBytes(jsonStr: string): Uint8Array {
   if (!Array.isArray(parsedUnknown)) {
     throw new Error('keypair.json must be a JSON array of numbers.');
   }
-  const parsedArr: unknown[] = parsedUnknown as unknown[];
 
   const out: number[] = [];
-  for (let i = 0; i < parsedArr.length; i++) {
-    const v = parsedArr[i];
+  for (const v of parsedUnknown) {
     const n = typeof v === 'number' ? v : Number(v);
     if (!Number.isFinite(n) || n < 0 || n > 255) {
       throw new Error('keypair.json must contain byte values (0..255).');
@@ -83,16 +80,14 @@ function jsonArrayToBytes(jsonStr: string): Uint8Array {
 
 function readKeypairJsonFile(p: string): Uint8Array {
   const fp = path.resolve(p);
-  const exists = fs.existsSync(fp);
-  if (!exists) throw new Error(`KEYPAIR_PATH not found: ${fp}`);
+  if (!fs.existsSync(fp)) throw new Error(`KEYPAIR_PATH not found: ${fp}`);
 
-  const raw = fs.readFileSync(fp, 'utf8');
-  const trimmed = typeof raw === 'string' ? raw.trim() : '';
-  if (trimmed.length === 0) {
+  const raw = fs.readFileSync(fp, 'utf8').trim();
+  if (raw.length === 0) {
     throw new Error(`keypair.json is empty at ${fp}`);
   }
 
-  const bytes = jsonArrayToBytes(trimmed);
+  const bytes = jsonArrayToBytes(raw);
   const len = bytes.length;
   if (len === 64) return bytes;
   if (len === 32) return nacl.sign.keyPair.fromSeed(bytes).secretKey;
@@ -120,9 +115,7 @@ type MinimalWallet = {
 
 // ---------- Main ----------
 async function main() {
-  const rpcUrlRaw = env('RPC_URL');
-  const rpcUrl = rpcUrlRaw.length > 0 ? rpcUrlRaw : 'https://api.mainnet-beta.solana.com';
-
+  const rpcUrl = env('RPC_URL') || 'https://api.mainnet-beta.solana.com';
   const connection = new Connection(rpcUrl, { commitment: COMMITMENT });
 
   const signer = getSigner();
@@ -141,10 +134,11 @@ async function main() {
     },
   };
 
-  // Use dynamic any to avoid SDK type drift
+  // Keep dynamic to sidestep SDK type drift
   const client: any = new (DynamicBondingCurveClient as any)(connection, wallet);
 
   const baseMints = parseBaseMintsFromEnv();
+
   const lr = env('LEFTOVER_RECEIVER');
   const leftoverReceiver = lr.length > 0 ? new PublicKey(lr) : signer.publicKey;
 
@@ -156,8 +150,7 @@ async function main() {
 
   const results: LeftoverReport[] = [];
 
-  for (let i = 0; i < baseMints.length; i++) {
-    const baseMint = baseMints[i];
+  for (const baseMint of baseMints) {
     console.log(`\n— Checking baseMint ${baseMint.toBase58()} ...`);
     const report: LeftoverReport = { baseMint: baseMint.toBase58(), status: 'skipped' };
 
@@ -165,11 +158,9 @@ async function main() {
       // Try common helper names across SDK versions
       let pool: any | undefined;
       const candFns = ['getPoolByBaseMint', 'fetchPoolByBaseMint', 'getPool'];
-      for (let j = 0; j < candFns.length; j++) {
-        const fn = candFns[j];
+      for (const fn of candFns) {
         const maybeFn = (client as any)[fn];
         if (typeof maybeFn === 'function') {
-          // eslint-disable-next-line @typescript-eslint/await-thenable
           const p = await maybeFn.call(client, baseMint);
           if (p) {
             pool = p;
@@ -179,7 +170,7 @@ async function main() {
       }
       if (!pool) throw new Error('DBC pool not found for this base mint.');
 
-      // Defensive access on pool fields
+      // Defensive access
       const poolPub =
         (pool && pool.pubkey && typeof pool.pubkey.toBase58 === 'function' && pool.pubkey.toBase58()) ||
         (pool && pool.address && typeof pool.address.toBase58 === 'function' && pool.address.toBase58()) ||
@@ -244,7 +235,7 @@ async function main() {
         });
       } else if (typeof (client as any).claimLeftoverBase === 'function') {
         ix = await (client as any).claimLeftoverBase({
-          poolPublicKey: new PublicKey(report.pool!),
+          poolPublicKey: new PublicKey(report.pool || leftoverReceiver.toBase58()), // safe fallback
           leftoverReceiver,
           payer: signer.publicKey,
         });
@@ -277,8 +268,7 @@ async function main() {
   }
 
   console.log('\nbaseMint,pool,poolConfig,status,signature,error');
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
+  for (const r of results) {
     const err = (r.error || '').replace(/[\r\n,]+/g, ' ');
     console.log([r.baseMint, r.pool || '', r.poolConfig || '', r.status, r.signature || '', err].join(','));
   }
