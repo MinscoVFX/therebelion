@@ -31,21 +31,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const tx = Transaction.from(Buffer.from(signedTransaction, 'base64'));
 
     // --- Fee validation allowing leading ComputeBudget instructions ---
-    if (!tx.instructions || tx.instructions.length === 0) {
+    const ixs = tx.instructions ?? [];
+    if (ixs.length === 0) {
       return res.status(400).json({ error: 'Transaction has no instructions' });
     }
 
-    // Skip any leading ComputeBudgetProgram instructions
+    // Skip any leading ComputeBudgetProgram instructions (narrow safely)
     let idx = 0;
-    while (
-      idx < tx.instructions.length &&
-      tx.instructions[idx].programId.equals(ComputeBudgetProgram.programId)
-    ) {
+    while (idx < ixs.length) {
+      const ix = ixs[idx];
+      if (!ix) break;
+      if (!ix.programId.equals(ComputeBudgetProgram.programId)) break;
       idx++;
     }
 
     // The next instruction (after any compute budget Ixs) must be the 0.025 SOL transfer
-    const feeIx = tx.instructions[idx];
+    const feeIx = ixs[idx];
     if (!feeIx) {
       return res.status(400).json({ error: 'Missing creation fee instruction' });
     }
