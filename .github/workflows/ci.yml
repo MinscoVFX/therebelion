@@ -32,7 +32,7 @@ jobs:
         with:
           version: 10.14.0
 
-      # ✅ Ensure pnpm is present even if pnpm/action-setup flaked
+      # ✅ Ensure pnpm present even if pnpm/action-setup flaked
       - name: Ensure pnpm present (Corepack fallback)
         shell: bash
         run: |
@@ -49,15 +49,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Force default registry
           echo "registry=https://registry.npmjs.org/" > ~/.npmrc
           pnpm config set registry https://registry.npmjs.org/
           npm config set registry https://registry.npmjs.org/
-          # Remove/override @jsr scope if present (JSR mirror can 403 tarballs)
           pnpm config delete @jsr:registry || true
           npm config delete @jsr:registry || true
           echo "@jsr:registry=https://registry.npmjs.org/" >> ~/.npmrc
-          # Harden network a bit
           pnpm config set fetch-retries 4
           pnpm config set network-timeout 600000
 
