@@ -17,6 +17,7 @@ jobs:
       # Ensure pnpm exists before using setup-node cache
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
+        continue-on-error: true
         with:
           version: 10.14.0
 
@@ -29,6 +30,7 @@ jobs:
       # Re-add pnpm to PATH in case setup-node tweaked it
       - name: Setup pnpm (post PATH restore)
         uses: pnpm/action-setup@v4
+        continue-on-error: true
         with:
           version: 10.14.0
 
@@ -93,6 +95,7 @@ jobs:
 
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
+        continue-on-error: true
         with:
           version: 10.14.0
 
@@ -104,6 +107,7 @@ jobs:
 
       - name: Setup pnpm (post PATH restore)
         uses: pnpm/action-setup@v4
+        continue-on-error: true
         with:
           version: 10.14.0
 
@@ -146,6 +150,7 @@ jobs:
 
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
+        continue-on-error: true
         with:
           version: 10.14.0
 
@@ -157,6 +162,7 @@ jobs:
 
       - name: Setup pnpm (post PATH restore)
         uses: pnpm/action-setup@v4
+        continue-on-error: true
         with:
           version: 10.14.0
 
