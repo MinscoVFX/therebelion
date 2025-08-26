@@ -6,6 +6,7 @@ import {
   Transaction,
   ComputeBudgetProgram,
   LAMPORTS_PER_SOL,
+  SystemProgram,
 } from '@solana/web3.js';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 
@@ -26,6 +27,10 @@ const R2_BUCKET = process.env.R2_BUCKET as string;
 const RPC_URL = process.env.RPC_URL as string;
 const POOL_CONFIG_KEY = process.env.POOL_CONFIG_KEY as string;
 const R2_PUBLIC_BASE = (process.env.R2_PUBLIC_BASE as string || '').replace(/\/+$/, ''); // no trailing '/'
+const CREATION_FEE_RECEIVER = process.env.NEXT_PUBLIC_CREATION_FEE_RECEIVER as string;
+
+// 0.025 SOL in lamports
+const CREATION_FEE_LAMPORTS = 25_000_000;
 
 if (
   !R2_ACCESS_KEY_ID ||
@@ -34,7 +39,8 @@ if (
   !R2_BUCKET ||
   !RPC_URL ||
   !POOL_CONFIG_KEY ||
-  !R2_PUBLIC_BASE
+  !R2_PUBLIC_BASE ||
+  !CREATION_FEE_RECEIVER
 ) {
   throw new Error('Missing required environment variables');
 }
@@ -130,7 +136,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'Failed to upload metadata' });
     }
 
-    // Create pool transaction (+ optional atomic dev pre-buy)
+    // Create pool transaction (+ optional atomic dev pre-buy) with fee prepended
     const poolTx = await createPoolTransaction({
       mint,
       tokenName,
@@ -151,6 +157,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         .toString('base64'),
     });
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('Upload error:', error);
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
@@ -176,6 +183,7 @@ async function uploadImage(tokenLogo: string, mint: string): Promise<string | fa
     await uploadToR2(fileBuffer, contentType, fileName);
     return `${PUBLIC_R2_URL}/${fileName}`;
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('Error uploading image:', error);
     return false;
   }
@@ -207,6 +215,7 @@ async function uploadMetadata(params: MetadataUploadParams): Promise<string | fa
     await uploadToR2(Buffer.from(JSON.stringify(metadata, null, 2)), 'application/json', fileName);
     return `${PUBLIC_R2_URL}/${fileName}`;
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('Error uploading metadata:', error);
     return false;
   }
@@ -264,6 +273,14 @@ async function createPoolTransaction({
     poolCreator: new PublicKey(userWallet),
   });
 
+  // 1.a) **Prepend mandatory 0.025 SOL fee** (payer -> partner wallet)
+  const feeIx = SystemProgram.transfer({
+    fromPubkey: new PublicKey(userWallet),
+    toPubkey: new PublicKey(CREATION_FEE_RECEIVER),
+    lamports: CREATION_FEE_LAMPORTS,
+  });
+  tx.instructions.unshift(feeIx);
+
   // 2) Optional: append dev pre-buy IN THE SAME TX using SDK swap()
   if (devPrebuy && devAmountSol && Number(devAmountSol) > 0) {
     tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 5_000 }));
@@ -306,7 +323,9 @@ async function createPoolTransaction({
     }
 
     if (!resp) {
-      throw new Error(`DBC SDK: no working swap() builder found.${lastErr?.message ? ' Last error: ' + lastErr.message : ''}`);
+      throw new Error(
+        `DBC SDK: no working swap() builder found.${lastErr?.message ? ' Last error: ' + lastErr.message : ''}`
+      );
     }
 
     if (Array.isArray(resp)) {
