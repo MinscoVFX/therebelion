@@ -65,6 +65,45 @@ export default function CreatePool() {
   const [isLoading, setIsLoading] = useState(false);
   const [poolCreated, setPoolCreated] = useState(false);
 
+  // ---- NEW: fee payment via server-built tx, then standard /api/send-transaction
+  const payCreationFeeClient = async () => {
+    if (!publicKey || !signTransaction) {
+      toast.error('Wallet not connected');
+      throw new Error('Wallet not connected');
+    }
+    // 1) ask the server to build the fee transfer tx for this payer
+    const feeRes = await fetch('/api/creation-fee', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ payer: publicKey.toBase58() }),
+    });
+    if (!feeRes.ok) {
+      const e = await feeRes.json().catch(() => ({}));
+      throw new Error(e?.error || 'Failed to build fee transaction');
+    }
+    const { tx: feeTxBase64 } = (await feeRes.json()) as { tx: string };
+
+    // 2) sign tx with user wallet
+    const feeTx = Transaction.from(Buffer.from(feeTxBase64, 'base64'));
+    const signed = await signTransaction(feeTx);
+
+    // 3) send to chain using your existing endpoint
+    const sendRes = await fetch('/api/send-transaction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        signedTransaction: signed.serialize().toString('base64'),
+      }),
+    });
+    if (!sendRes.ok) {
+      const e = await sendRes.json().catch(() => ({}));
+      throw new Error(e?.error || 'Failed to send fee transaction');
+    }
+    const { success } = (await sendRes.json()) as { success: boolean };
+    if (!success) throw new Error('Fee transaction not confirmed');
+  };
+  // ---- END NEW
+
   const form = useForm({
     defaultValues: {
       tokenName: '',
@@ -89,6 +128,10 @@ export default function CreatePool() {
           toast.error('Wallet not connected');
           return;
         }
+
+        // ---- NEW: collect 0.025 SOL fee first
+        await payCreationFeeClient();
+        // ---- END NEW
 
         const reader = new FileReader();
 
@@ -144,11 +187,11 @@ export default function CreatePool() {
         });
 
         if (!uploadResponse.ok) {
-          const error = await uploadResponse.json();
-          throw new Error(error.error);
+          const error = await uploadResponse.json().catch(() => ({}));
+          throw new Error(error?.error || 'Upload API failed');
         }
 
-        const { poolTx } = await uploadResponse.json();
+        const { poolTx } = (await uploadResponse.json()) as { poolTx: string };
         const transaction = Transaction.from(Buffer.from(poolTx, 'base64'));
 
         // Step 2: Sign with keypair first (mint authority)
@@ -169,16 +212,19 @@ export default function CreatePool() {
         });
 
         if (!sendResponse.ok) {
-          const error = await sendResponse.json();
-          throw new Error(error.error);
+          const error = await sendResponse.json().catch(() => ({}));
+          throw new Error(error?.error || 'Failed to send create transaction');
         }
 
-        const { success } = await sendResponse.json();
+        const { success } = (await sendResponse.json()) as { success: boolean };
         if (success) {
           toast.success('Pool created successfully');
           setPoolCreated(true);
+        } else {
+          throw new Error('Create transaction not confirmed');
         }
       } catch (error) {
+        // eslint-disable-next-line no-console
         console.error('Error creating pool:', error);
         toast.error(error instanceof Error ? error.message : 'Failed to create pool');
       } finally {
