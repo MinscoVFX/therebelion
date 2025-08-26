@@ -32,6 +32,35 @@ jobs:
         with:
           version: 10.14.0
 
+      # ✅ Ensure pnpm is present even if pnpm/action-setup flaked
+      - name: Ensure pnpm present (Corepack fallback)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v pnpm >/dev/null 2>&1; then
+            echo "pnpm not found from action, enabling via Corepack fallback..."
+            corepack enable
+            corepack prepare pnpm@10.14.0 --activate
+          fi
+          pnpm -v
+
+      # ✅ Force registry to npmjs + clean bad scope overrides (fixes 403)
+      - name: Sanitize npm registries for CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Force default registry
+          echo "registry=https://registry.npmjs.org/" > ~/.npmrc
+          pnpm config set registry https://registry.npmjs.org/
+          npm config set registry https://registry.npmjs.org/
+          # Remove/override @jsr scope if present (JSR mirror can 403 tarballs)
+          pnpm config delete @jsr:registry || true
+          npm config delete @jsr:registry || true
+          echo "@jsr:registry=https://registry.npmjs.org/" >> ~/.npmrc
+          # Harden network a bit
+          pnpm config set fetch-retries 4
+          pnpm config set network-timeout 600000
+
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
@@ -41,9 +70,7 @@ jobs:
         run: |
           set -euo pipefail
           cd studio
-          # Ensure .eslintignore exists
           touch .eslintignore
-          # Add the path if it's not already present
           grep -qxF "src/scripts/dbc/claim_leftovers.ts" .eslintignore || echo "src/scripts/dbc/claim_leftovers.ts" >> .eslintignore
           echo "CI-only ignore added: studio/src/scripts/dbc/claim_leftovers.ts"
 
@@ -83,6 +110,30 @@ jobs:
         with:
           version: 10.14.0
 
+      - name: Ensure pnpm present (Corepack fallback)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v pnpm >/dev/null 2>&1; then
+            echo "pnpm not found from action, enabling via Corepack fallback..."
+            corepack enable
+            corepack prepare pnpm@10.14.0 --activate
+          fi
+          pnpm -v
+
+      - name: Sanitize npm registries for CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "registry=https://registry.npmjs.org/" > ~/.npmrc
+          pnpm config set registry https://registry.npmjs.org/
+          npm config set registry https://registry.npmjs.org/
+          pnpm config delete @jsr:registry || true
+          npm config delete @jsr:registry || true
+          echo "@jsr:registry=https://registry.npmjs.org/" >> ~/.npmrc
+          pnpm config set fetch-retries 4
+          pnpm config set network-timeout 600000
+
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
@@ -111,6 +162,30 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
+
+      - name: Ensure pnpm present (Corepack fallback)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v pnpm >/dev/null 2>&1; then
+            echo "pnpm not found from action, enabling via Corepack fallback..."
+            corepack enable
+            corepack prepare pnpm@10.14.0 --activate
+          fi
+          pnpm -v
+
+      - name: Sanitize npm registries for CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "registry=https://registry.npmjs.org/" > ~/.npmrc
+          pnpm config set registry https://registry.npmjs.org/
+          npm config set registry https://registry.npmjs.org/
+          pnpm config delete @jsr:registry || true
+          npm config delete @jsr:registry || true
+          echo "@jsr:registry=https://registry.npmjs.org/" >> ~/.npmrc
+          pnpm config set fetch-retries 4
+          pnpm config set network-timeout 600000
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
