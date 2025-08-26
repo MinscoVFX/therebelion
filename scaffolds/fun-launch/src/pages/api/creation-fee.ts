@@ -3,7 +3,7 @@ import { Connection, PublicKey, SystemProgram, Transaction } from '@solana/web3.
 
 /**
  * Builds a 0.025 SOL transfer from the payer (user) to your partner wallet.
- * Returns base64-encoded transaction for client to sign and send.
+ * Returns base64-encoded transaction for the client to sign & submit via /api/send-transaction.
  *
  * Env required:
  * - RPC_URL (server-side)
@@ -22,9 +22,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!rpc) return res.status(500).json({ error: 'RPC_URL is not configured on the server' });
 
     const receiver = process.env.NEXT_PUBLIC_CREATION_FEE_RECEIVER;
-    if (!receiver) {
-      return res.status(500).json({ error: 'NEXT_PUBLIC_CREATION_FEE_RECEIVER is not set' });
-    }
+    if (!receiver) return res.status(500).json({ error: 'NEXT_PUBLIC_CREATION_FEE_RECEIVER is not set' });
 
     const connection = new Connection(rpc, 'confirmed');
     const fromPubkey = new PublicKey(payer);
@@ -37,7 +35,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         lamports: LAMPORTS_0_025,
       })
     );
-
     tx.feePayer = fromPubkey;
     const { blockhash } = await connection.getLatestBlockhash('finalized');
     tx.recentBlockhash = blockhash;
