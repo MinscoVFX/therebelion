@@ -6,6 +6,7 @@ import {
   SystemProgram,
   SystemInstruction,
   sendAndConfirmRawTransaction,
+  ComputeBudgetProgram,
 } from '@solana/web3.js';
 
 const RPC_URL = process.env.RPC_URL as string;
@@ -29,19 +30,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const tx = Transaction.from(Buffer.from(signedTransaction, 'base64'));
 
-    // --- Hard check: first instruction must be the 0.025 SOL fee transfer to your partner wallet
-    const ix0 = tx.instructions?.[0];
-    if (!ix0) return res.status(400).json({ error: 'Transaction has no instructions' });
-
-    if (!ix0.programId.equals(SystemProgram.programId)) {
-      return res.status(400).json({ error: 'First instruction is not SystemProgram' });
+    // --- Fee validation allowing leading ComputeBudget instructions ---
+    if (!tx.instructions || tx.instructions.length === 0) {
+      return res.status(400).json({ error: 'Transaction has no instructions' });
     }
 
-    let decoded: ReturnType<typeof SystemInstruction.decodeTransfer>;
+    // Skip any leading ComputeBudgetProgram instructions
+    let idx = 0;
+    while (
+      idx < tx.instructions.length &&
+      tx.instructions[idx].programId.equals(ComputeBudgetProgram.programId)
+    ) {
+      idx++;
+    }
+
+    // The next instruction (after any compute budget Ixs) must be the 0.025 SOL transfer
+    const feeIx = tx.instructions[idx];
+    if (!feeIx) {
+      return res.status(400).json({ error: 'Missing creation fee instruction' });
+    }
+    if (!feeIx.programId.equals(SystemProgram.programId)) {
+      return res.status(400).json({ error: 'Creation fee ix is not SystemProgram.transfer' });
+    }
+
+    let decoded;
     try {
-      decoded = SystemInstruction.decodeTransfer(ix0);
+      decoded = SystemInstruction.decodeTransfer(feeIx);
     } catch {
-      return res.status(400).json({ error: 'First instruction is not a SystemProgram.transfer' });
+      return res.status(400).json({ error: 'Creation fee ix is not a valid SystemProgram.transfer' });
     }
 
     const toOk = (decoded.toPubkey as PublicKey).equals(new PublicKey(CREATION_FEE_RECEIVER));
@@ -54,7 +70,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!(toOk && lamportsOk && fromOk)) {
       return res.status(400).json({ error: 'Creation fee check failed' });
     }
-    // --- End fee check
+    // --- End fee validation ---
 
     const connection = new Connection(RPC_URL, 'confirmed');
 
@@ -65,7 +81,4 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({ success: true, signature });
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error('Transaction error:', error);
-    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-  }
-}
+    console.error('Transactio
