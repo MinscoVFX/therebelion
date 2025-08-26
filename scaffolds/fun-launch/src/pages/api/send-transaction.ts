@@ -81,4 +81,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({ success: true, signature });
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error('Transactio
+    console.error('Transaction error:', error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+}
