@@ -14,25 +14,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Ensure pnpm exists before using setup-node cache
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      # ✅ Robust pnpm via Corepack (auto-detect from package.json; fallback to 10.14.0)
-      - name: Enable pnpm via Corepack
-        run: |
-          set -euo pipefail
-          corepack enable
-          PNPM_VER=$(node -p "try{(require('./package.json').packageManager||'').split('@')[1]}catch(e){''}" || true)
-          if [ -z "${PNPM_VER:-}" ]; then PNPM_VER="10.14.0"; fi
-          echo "Using pnpm@${PNPM_VER}"
-          corepack prepare "pnpm@${PNPM_VER}" --activate
-          pnpm -v
-
-      - name: Configure pnpm store (improves cache hit rate)
-        run: pnpm config set store-dir .pnpm-store
+      # Re-add pnpm to PATH in case setup-node tweaked it
+      - name: Setup pnpm (post PATH restore)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
@@ -43,7 +41,9 @@ jobs:
         run: |
           set -euo pipefail
           cd studio
+          # Ensure .eslintignore exists
           touch .eslintignore
+          # Add the path if it's not already present
           grep -qxF "src/scripts/dbc/claim_leftovers.ts" .eslintignore || echo "src/scripts/dbc/claim_leftovers.ts" >> .eslintignore
           echo "CI-only ignore added: studio/src/scripts/dbc/claim_leftovers.ts"
 
@@ -67,24 +67,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Enable pnpm via Corepack
-        run: |
-          set -euo pipefail
-          corepack enable
-          PNPM_VER=$(node -p "try{(require('./package.json').packageManager||'').split('@')[1]}catch(e){''}" || true)
-          if [ -z "${PNPM_VER:-}" ]; then PNPM_VER="10.14.0"; fi
-          echo "Using pnpm@${PNPM_VER}"
-          corepack prepare "pnpm@${PNPM_VER}" --activate
-          pnpm -v
-
-      - name: Configure pnpm store (improves cache hit rate)
-        run: pnpm config set store-dir .pnpm-store
+      - name: Setup pnpm (post PATH restore)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
@@ -99,24 +96,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Enable pnpm via Corepack
-        run: |
-          set -euo pipefail
-          corepack enable
-          PNPM_VER=$(node -p "try{(require('./package.json').packageManager||'').split('@')[1]}catch(e){''}" || true)
-          if [ -z "${PNPM_VER:-}" ]; then PNPM_VER="10.14.0"; fi
-          echo "Using pnpm@${PNPM_VER}"
-          corepack prepare "pnpm@${PNPM_VER}" --activate
-          pnpm -v
-
-      - name: Configure pnpm store (improves cache hit rate)
-        run: pnpm config set store-dir .pnpm-store
+      - name: Setup pnpm (post PATH restore)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
