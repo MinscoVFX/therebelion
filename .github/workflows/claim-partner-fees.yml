@@ -1,17 +1,31 @@
-name: Claim Partner Fees
+name: Claim Partner Fees (profit-aware)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 jobs:
   claim-partner-fees:
     runs-on: ubuntu-latest
+
+    env:
+      # Required secrets (set these in your repo):
+      RPC_URL: ${{ secrets.RPC_URL }}
+      PK_B58: ${{ secrets.PK_B58 }}
+      PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
+      # Optional (your existing inputs)
+      BASE_MINTS: ${{ secrets.BASE_MINTS }}
+      DBC_PROGRAM_ID: ${{ secrets.DBC_PROGRAM_ID }}
+
+      # Profit gate knobs (set in Repository → Settings → Variables)
+      MIN_PROFIT_SOL: ${{ vars.MIN_PROFIT_SOL }}            # e.g. "0.001" (default handled by script = 0)
+      CU_LIMIT: ${{ vars.CU_LIMIT }}                        # e.g. "300000"
+      CU_PRICE_MICROLAMPORTS: ${{ vars.CU_PRICE_MICROLAMPORTS }}  # e.g. "2000"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # PRE: ensure pnpm exists so setup-node cache:pnpm doesn't fail
-      - name: Setup pnpm (pre-cache guard)
+      - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
@@ -20,51 +34,64 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
-
-      # POST: re-add pnpm to PATH in case setup-node tweaked it
-      - name: Setup pnpm (post PATH restore)
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      # ⬇ Decode Phantom base58 (32/64) to full 64-byte keypair.json
-      - name: Decode PK_B58 to full keypair.json
+      # Decode Phantom base58 to keypair.json (for simulation signing)
+      - name: Decode PK_B58 to keypair.json
         run: |
           npx -y -p @solana/web3.js@1.98.2 -p bs58@4 node -e "
             const fs = require('fs');
-            const b = require('bs58');
+            const bs58 = require('bs58');
             const { Keypair } = require('@solana/web3.js');
-
             const s = (process.env.PK_B58 || process.env.PRIVATE_KEY_B58 || '').trim();
             if (!s) throw new Error('Missing PK_B58 or PRIVATE_KEY_B58');
-
-            const decode = (b && b.decode) ? b.decode : (b.default && b.default.decode);
-            if (typeof decode !== 'function') throw new Error('bs58.decode not available');
-
-            const secret = decode(s);
-            if (secret.length !== 32 && secret.length !== 64) {
-              throw new Error('Decoded key length is ' + secret.length + ' bytes; expected 32 or 64');
-            }
-
-            const kp = Keypair.fromSecretKey(secret);
+            const dec = bs58.decode(s);
+            const kp = Keypair.fromSecretKey(dec.length === 32 ? dec : dec.slice(0,64));
             fs.writeFileSync('keypair.json', JSON.stringify(Array.from(kp.secretKey)));
             console.log('Public key:', kp.publicKey.toBase58());
           "
-        env:
-          PK_B58: ${{ secrets.PK_B58 }}
-          PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
 
-      # ⬇ Recommended SDK claim script from Meteora docs
-      - name: Run claim trading fee script (SDK)
-        run: npx -y -p tsx tsx studio/src/scripts/dbc/claim_trading_fee_sdk.ts --config ./studio/config/dbc_config.jsonc
+      # 🔎 Profit check (simulate + estimate fees). Produces profit.json with {netSol, shouldClaim, ...}
+      - name: Dry-run & compute profit
+        id: check
+        run: |
+          pnpm -s tsx studio/src/scripts/dbc/claim_trading_fee_profit_gate.ts check \
+            --rpc "$RPC_URL" \
+            ${BASE_MINTS:+--base-mints "$BASE_MINTS"} \
+            ${DBC_PROGRAM_ID:+--program-id "$DBC_PROGRAM_ID"} \
+            ${CU_LIMIT:+--cu-limit "$CU_LIMIT"} \
+            ${CU_PRICE_MICROLAMPORTS:+--cu-price "$CU_PRICE_MICROLAMPORTS"} \
+            ${MIN_PROFIT_SOL:+--min-profit-sol "$MIN_PROFIT_SOL"} \
+            --json > profit.json
+
+          echo "==== profit.json ===="
+          cat profit.json
+
+          NET_SOL=$(jq -r '.netSol' profit.json)
+          SHOULD=$(jq -r '.shouldClaim' profit.json)
+          MIN_SOL=$(jq -r '.minProfitSol' profit.json)
+
+          echo "net_sol=$NET_SOL" >> "$GITHUB_OUTPUT"
+          echo "should_claim=$SHOULD" >> "$GITHUB_OUTPUT"
+          echo "min_profit_sol=$MIN_SOL" >> "$GITHUB_OUTPUT"
+
+      - name: Skip (not profitable)
+        if: steps.check.outputs.should_claim != 'true'
+        run: echo "Not profitable. Net SOL: ${{ steps.check.outputs.net_sol }} (min: ${{ steps.check.outputs.min_profit_sol }}) — skipping."
+
+      # ✅ Only runs if profitable
+      - name: Claim trading fees (SDK)
+        if: steps.check.outputs.should_claim == 'true'
+        run: |
+          npx -y -p tsx tsx studio/src/scripts/dbc/claim_trading_fee_sdk.ts --config ./studio/config/dbc_config.jsonc
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
           BASE_MINTS: ${{ secrets.BASE_MINTS }}
-          # DBC_PROGRAM_ID: ${{ secrets.DBC_PROGRAM_ID }} # optional, only if overriding SDK's ID
+          DBC_PROGRAM_ID: ${{ secrets.DBC_PROGRAM_ID }}
 
       - name: Clean up keypair.json
-        run: rm -f keypair.json
+        if: always()
+        run: rm -f keypair.json profit.json
