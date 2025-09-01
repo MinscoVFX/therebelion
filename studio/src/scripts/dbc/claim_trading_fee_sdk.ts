@@ -1,213 +1,166 @@
 // studio/src/scripts/dbc/claim_trading_fee_sdk.ts
+import "dotenv/config";
+import { Connection, PublicKey, SendTransactionError } from "@solana/web3.js";
+import { Wallet } from "@coral-xyz/anchor";
+import { safeParseKeypairFromFile, parseConfigFromCli } from "../../helpers";
+import { DbcConfig } from "../../utils/types";
+import { DEFAULT_COMMITMENT_LEVEL } from "../../utils/constants";
+import { claimTradingFee } from "../../lib/dbc";
 import {
-  Connection,
-  PublicKey,
-  Transaction,
-  sendAndConfirmTransaction,
-  ComputeBudgetProgram,
-} from '@solana/web3.js';
-import { Wallet as AnchorWallet } from '@coral-xyz/anchor';
-import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
-import { parseConfigFromCli, safeParseKeypairFromFile } from '../../helpers';
-import { DEFAULT_COMMITMENT_LEVEL } from '../../utils/constants';
-import type { DbcConfig } from '../../utils/types';
-import { claimTradingFee as claimFromLib } from '../../lib/dbc';
+  getAssociatedTokenAddress,
+  getOrCreateAssociatedTokenAccount,
+  NATIVE_MINT,
+} from "@solana/spl-token";
 
-function parseMints(): PublicKey[] {
-  const list = (process.env.BASE_MINTS || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (!list.length) throw new Error('BASE_MINTS is empty. Set a comma-separated list of base mints in Actions secrets.');
-  return list.map((m) => {
-    try {
-      return new PublicKey(m);
-    } catch {
-      throw new Error(`Invalid base58 mint address in BASE_MINTS: ${m}`);
-    }
-  });
-}
-
-function resolveSdkClaim(client: unknown) {
-  const candidates = [
-    'partner.claimTradingFee',
-    'partner.claimPartnerTradingFee',
-    'partner.claimFee',
-    'claimPartnerTradingFee',
-    'claimTradingFee',
-  ];
-  for (const path of candidates) {
-    const fn = path.split('.').reduce<any>(
-      (o, k) => (o && (o as Record<string, unknown>)[k] !== undefined ? (o as Record<string, unknown>)[k] : undefined),
-      client,
+/** Parse comma-separated base mints from env */
+function parseBaseMintsFromEnv(): string[] {
+  const raw = (process.env.BASE_MINTS || "").trim();
+  if (!raw)
+    throw new Error(
+      "Missing BASE_MINTS. Provide a comma-separated list of base mint addresses."
     );
-    if (typeof fn === 'function') {
-      return async (args: {
-        baseMint: PublicKey;
-        payer: PublicKey;
-        feeClaimer: PublicKey;
-        computeUnitPriceMicroLamports?: number;
-      }): Promise<{ tx?: Transaction; sig?: string }> => {
-        const res = await fn.call((client as any).partner ?? client, {
-          baseMint: args.baseMint,
-          payer: args.payer,
-          feeClaimer: args.feeClaimer,
-          computeUnitPriceMicroLamports: args.computeUnitPriceMicroLamports,
-        });
-        if (res instanceof Transaction) return { tx: res };
-        if (typeof res === 'string') return { sig: res };
-        if (res?.transaction instanceof Transaction) return { tx: res.transaction };
-        if (typeof res?.signature === 'string') return { sig: res.signature };
-        throw new Error('Unsupported SDK response');
-      };
-    }
-  }
-  return undefined;
+  return Array.from(new Set(raw.split(",").map((s) => s.trim()).filter(Boolean)));
 }
 
-async function getPartnerFeesSafe(client: any, baseMint: PublicKey, partner: PublicKey): Promise<number | null> {
+/** Ensure the receiver has an ATA for a given mint (so the claim tx doesn't pay rent) */
+async function ensureAta(
+  connection: Connection,
+  payerWallet: Wallet,
+  mint: PublicKey,
+  owner: PublicKey
+) {
+  const ata = await getAssociatedTokenAddress(mint, owner, false);
   try {
-    if (typeof client.partner?.getPartnerFees === 'function') {
-      const fees = await client.partner.getPartnerFees({ baseMint, partner });
-      const lamports = fees?.toNumber ? fees.toNumber() : Number(fees || 0);
-      return lamports / 1e9;
+    // Anchor Wallet exposes the signer under `.payer`
+    // If your Wallet type differs, swap to the raw Keypair you load from file.
+    // @ts-expect-error Anchor Wallet has `.payer`
+    await getOrCreateAssociatedTokenAccount(connection, payerWallet.payer, mint, owner);
+    console.log(`> ATA ready for ${mint.toBase58()} → ${ata.toBase58()}`);
+  } catch (e: any) {
+    const msg = e?.message || String(e);
+    if (/already.*initialized|exists/i.test(msg)) {
+      console.log(`> ATA already exists for ${mint.toBase58()} → ${ata.toBase58()}`);
+    } else {
+      console.log(`> ATA check/create non-fatal for ${mint.toBase58()}: ${msg}`);
     }
-  } catch (err) {
-    console.warn(`⚠️  Could not fetch fees for ${baseMint.toBase58()}: ${err}`);
   }
-  return null;
+}
+
+/** Pre-create ATAs for receiver for wSOL + all base mints */
+async function prepReceiverAtas(
+  connection: Connection,
+  payerWallet: Wallet,
+  receiver: PublicKey,
+  baseMints: string[]
+) {
+  // wSOL first
+  await ensureAta(connection, payerWallet, NATIVE_MINT, receiver);
+  // then all the base mints
+  for (const m of baseMints) {
+    await ensureAta(connection, payerWallet, new PublicKey(m), receiver);
+  }
 }
 
 async function main() {
-  const cfg = (await parseConfigFromCli()) as DbcConfig;
-  const keypair = await safeParseKeypairFromFile(cfg.keypairFilePath);
-  const me = keypair.publicKey;
+  const config = (await parseConfigFromCli()) as DbcConfig;
 
-  const rpc = process.env.RPC_URL?.trim() || cfg.rpcUrl;
-  const conn = new Connection(rpc, DEFAULT_COMMITMENT_LEVEL);
-  const wallet = new AnchorWallet(keypair);
+  console.log(`> Using keypair file path ${config.keypairFilePath}`);
+  const keypair = await safeParseKeypairFromFile(config.keypairFilePath);
 
-  const mints = parseMints();
-  const MIN_SOL_THRESHOLD = parseFloat(process.env.MIN_SOL_THRESHOLD || '0.001');
+  console.log("\n> Initializing with general configuration...");
+  console.log(`- Using RPC URL ${config.rpcUrl}`);
+  console.log(`- Dry run = ${config.dryRun}`);
+  console.log(`- Using wallet ${keypair.publicKey} to claim trading fees`);
 
-  console.log(`> Claiming partner trading fees with wallet ${me.toBase58()}`);
-  console.log(`> RPC: ${rpc}`);
-  console.log(`> Pools: ${mints.length}`);
-  console.log(`> Minimum claim threshold: ${MIN_SOL_THRESHOLD} SOL`);
+  const connection = new Connection(config.rpcUrl, DEFAULT_COMMITMENT_LEVEL);
+  const wallet = new Wallet(keypair);
 
-  const client = new DynamicBondingCurveClient(conn, DEFAULT_COMMITMENT_LEVEL) as any;
-  const sdkClaim = resolveSdkClaim(client);
+  // Helpful: fee payer balance (common root cause for your error)
+  const lamports = await connection.getBalance(wallet.publicKey);
+  console.log(`- Fee payer balance: ${(lamports / 1e9).toFixed(9)} SOL`);
 
-  let ok = 0;
-  let fail = 0;
+  const baseMints = parseBaseMintsFromEnv();
+  console.log(`\n> Found ${baseMints.length} base mint(s) to process`);
 
-  // Step 1 — Get fee amounts
-  const mintFeeList: { baseMint: PublicKey; solAmount: number }[] = [];
-  for (const baseMint of mints) {
-    const amount = await getPartnerFeesSafe(client, baseMint, me);
-    mintFeeList.push({
-      baseMint,
-      solAmount: amount === null ? Number.MAX_SAFE_INTEGER : amount,
-    });
+  // Determine the final fee receiver (where partner fees land)
+  const receiverStr =
+    (config as any)?.partnerFee?.receiver ||
+    (config as any)?.partnerFeeReceiver ||
+    "";
+  if (!receiverStr) {
+    console.warn(
+      "⚠ No partner fee receiver found in config.partnerFee.receiver — will default to wallet public key."
+    );
+  }
+  const receiver = receiverStr ? new PublicKey(receiverStr) : wallet.publicKey;
+
+  // Pre-create receiver ATAs to avoid rent during claim (skip in dry run)
+  if (!config.dryRun) {
+    console.log("\n> Prepping receiver ATAs (wSOL + all base mints)...");
+    await prepReceiverAtas(connection, wallet, receiver, baseMints);
+  } else {
+    console.log("\n> Dry run enabled — skipping ATA prep.");
   }
 
-  // Step 2 — Sort by highest first
-  mintFeeList.sort((a, b) => b.solAmount - a.solAmount);
+  const results: { mint: string; ok: boolean; error?: string }[] = [];
 
-  // Step 3 — Claim
-  for (const { baseMint, solAmount } of mintFeeList) {
-    const mintStr = baseMint.toBase58();
-
-    if (solAmount !== Number.MAX_SAFE_INTEGER) {
-      if (solAmount <= 0) {
-        console.log(`ℹ️  No fees for ${mintStr}, skipping`);
-        continue;
-      }
-      if (solAmount < MIN_SOL_THRESHOLD) {
-        console.log(`⚠️  ${mintStr} has ${solAmount} SOL (< ${MIN_SOL_THRESHOLD}), skipping`);
-        continue;
-      }
-    }
-
-    console.log(`— Claiming for baseMint ${mintStr} (${solAmount === Number.MAX_SAFE_INTEGER ? 'unknown fees' : `${solAmount} SOL`})`);
-
+  for (const mint of baseMints) {
+    const runCfg: DbcConfig = { ...config, baseMint: mint };
+    console.log(`\n=== Claiming trading fee for baseMint ${mint} ===`);
     try {
-      // Try lib first
-      try {
-        const runCfg: DbcConfig = { ...cfg, baseMint: mintStr };
-        await claimFromLib(runCfg, conn, wallet);
-        console.log('✔ Claimed via lib/dbc');
-        ok++;
-        continue;
-      } catch (e: any) {
-        const msg = String(e?.message || e);
-        if (/DBC Pool not found|not claimable|invalid pool|not authorized/i.test(msg)) {
-          throw e;
-        }
-      }
-
-      // SDK fallback
-      if (!sdkClaim) throw new Error('SDK claim function not found');
-      const res = await sdkClaim({
-        baseMint,
-        payer: me,
-        feeClaimer: me,
-        computeUnitPriceMicroLamports: cfg.computeUnitPriceMicroLamports ?? 100_000,
-      });
-
-      if (res.sig) {
-        console.log(`✔ Claimed via SDK (internal submit). Tx: ${res.sig}`);
-        ok++;
-        continue;
-      }
-      if (res.tx) {
-        res.tx.feePayer = me;
-        res.tx.add(
-          ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }),
-          ComputeBudgetProgram.setComputeUnitPrice({ microLamports: cfg.computeUnitPriceMicroLamports ?? 100_000 })
-        );
-
-        let attempt = 0;
-        let sent = false;
-        let sig: string | undefined;
-        let lastErr: any;
-
-        while (attempt < 3 && !sent) {
-          attempt++;
-          try {
-            const latest = await conn.getLatestBlockhash(DEFAULT_COMMITMENT_LEVEL);
-            res.tx.recentBlockhash = latest.blockhash;
-
-            sig = await sendAndConfirmTransaction(conn, res.tx, [keypair], {
-              commitment: DEFAULT_COMMITMENT_LEVEL,
-              skipPreflight: false,
-              maxRetries: 3,
-            });
-            sent = true;
-          } catch (err: any) {
-            lastErr = err;
-            if (!/block height exceeded|blockhash not found/i.test(String(err?.message))) {
-              break; // not retryable
-            }
-            console.warn(`Retrying ${mintStr} due to expired blockhash (attempt ${attempt})`);
-          }
-        }
-
-        if (!sent) throw lastErr;
-        console.log(`✔ Claimed via SDK (signed locally). Tx: ${sig}`);
-        ok++;
-        continue;
-      }
-
-      throw new Error('SDK did not return a transaction or signature');
+      await claimTradingFee(runCfg, connection, wallet);
+      results.push({ mint, ok: true });
+      console.log(`✔ Success for ${mint}`);
     } catch (e: any) {
-      console.error(`✖ Claim failed for ${mintStr}: ${e?.message || String(e)}`);
-      fail++;
+      let msg = e?.message || String(e);
+
+      // Surface simulation logs if available
+      if (e instanceof SendTransactionError && typeof e.getLogs === "function") {
+        try {
+          const logs = await e.getLogs(connection);
+          if (logs?.length) {
+            console.error("— Simulation logs —");
+            for (const line of logs) console.error(line);
+          } else {
+            console.error("— No program logs returned by simulation —");
+          }
+        } catch (logErr: any) {
+          console.error(
+            "— Could not fetch simulation logs —",
+            logErr?.message || logErr
+          );
+        }
+      }
+
+      // Common Solana preflight failure cause:
+      if (
+        /Attempt to debit an account but found no record of a prior credit/i.test(msg)
+      ) {
+        msg +=
+          " | Hint: fee payer likely lacks SOL or the tx tried to create an ATA (rent). Pre-create ATAs and fund the fee payer.";
+      }
+
+      results.push({ mint, ok: false, error: msg });
+      console.error(`✖ Failed for ${mint}: ${msg}`);
+      // continue loop on failure
+      continue;
     }
   }
 
-  console.log(`Summary — Success: ${ok}  Failed: ${fail}`);
-  if (fail) process.exit(1);
+  const okCount = results.filter((r) => r.ok).length;
+  const failCount = results.length - okCount;
+
+  console.log("\n> Summary:");
+  console.log(`- Success: ${okCount}`);
+  console.log(`- Failed:  ${failCount}`);
+  if (failCount) {
+    for (const r of results.filter((r) => !r.ok)) {
+      console.log(`  * ${r.mint}: ${r.error}`);
+    }
+  }
+
+  // Exit nonzero if any failed (so CI flags it)
+  if (failCount) process.exit(1);
 }
 
 main().catch((e) => {
