@@ -32,6 +32,21 @@ const R2_PUBLIC_BASE = ((process.env.R2_PUBLIC_BASE as string) || '').replace(/\
 // Memo program
 const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 
+// ---------- helpers ----------
+function sanitize(s: string | undefined | null): string {
+  // trim + strip zero-width spaces that often sneak in from copy/paste
+  return (s ?? '').trim().replace(/\u200B/g, '');
+}
+
+function parsePubkey(label: string, value: string): PublicKey {
+  const v = sanitize(value);
+  try {
+    return new PublicKey(v);
+  } catch {
+    throw new Error(`${label} is not a valid base58 pubkey: "${v}"`);
+  }
+}
+
 // Validate base envs at runtime (so errors return JSON, not HTML)
 function validateBaseEnv(): string[] {
   const missing: string[] = [];
@@ -52,25 +67,22 @@ function validateBaseEnv(): string[] {
 type FeeSplit = { receiver: PublicKey; lamports: number };
 
 function getFeeSplits(): FeeSplit[] {
-  const rawMulti = process.env.NEXT_PUBLIC_CREATION_FEE_RECEIVERS || '';
-  const rawSingle = process.env.NEXT_PUBLIC_CREATION_FEE_RECEIVER || '';
+  const rawMulti = sanitize(process.env.NEXT_PUBLIC_CREATION_FEE_RECEIVERS);
+  const rawSingle = sanitize(process.env.NEXT_PUBLIC_CREATION_FEE_RECEIVER);
 
-  if (rawMulti.trim()) {
+  if (rawMulti) {
     return rawMulti
       .split(',')
-      .map((entry) => entry.trim())
+      .map((entry) => sanitize(entry))
       .filter(Boolean)
       .map((pair) => {
-        const [addr, solStr] = pair.split(':');
+        const [addrRaw, solStrRaw] = pair.split(':');
+        const addr = sanitize(addrRaw);
+        const solStr = sanitize(solStrRaw);
         if (!addr || !solStr) {
           throw new Error(`Invalid fee split format: "${pair}". Use "Wallet:0.020"`);
         }
-        let receiver: PublicKey;
-        try {
-          receiver = new PublicKey(addr);
-        } catch {
-          throw new Error(`Invalid base58 fee receiver in split "${pair}": "${addr}"`);
-        }
+        const receiver = parsePubkey('Fee receiver', addr);
         const sol = parseFloat(solStr);
         if (!Number.isFinite(sol) || sol <= 0) {
           throw new Error(`Invalid SOL amount in split "${pair}" (got "${solStr}")`);
@@ -82,15 +94,8 @@ function getFeeSplits(): FeeSplit[] {
       });
   }
 
-  if (rawSingle.trim()) {
-    let receiver: PublicKey;
-    try {
-      receiver = new PublicKey(rawSingle);
-    } catch {
-      throw new Error(
-        `NEXT_PUBLIC_CREATION_FEE_RECEIVER is not a valid base58 pubkey: "${rawSingle}"`
-      );
-    }
+  if (rawSingle) {
+    const receiver = parsePubkey('NEXT_PUBLIC_CREATION_FEE_RECEIVER', rawSingle);
     // default 0.035 SOL if only single receiver is set
     return [{ receiver, lamports: 35_000_000 }];
   }
@@ -319,18 +324,23 @@ async function createPoolTransaction({
   devPrebuy: boolean;
   devAmountSol?: string;
 }) {
-  const connection = new Connection(RPC_URL as string, 'confirmed');
+  const connection = new Connection(sanitize(RPC_URL as string), 'confirmed');
   const client = new DynamicBondingCurveClient(connection, 'confirmed');
+
+  // Validate pubkeys with clear labels
+  const cfgKey = parsePubkey('POOL_CONFIG_KEY', POOL_CONFIG_KEY as string);
+  const baseMint = parsePubkey('mint', mint);
+  const payer = parsePubkey('userWallet', userWallet);
 
   // 1) Build pool create
   const tx = await client.pool.createPool({
-    config: new PublicKey(POOL_CONFIG_KEY as string),
-    baseMint: new PublicKey(mint),
+    config: cfgKey,
+    baseMint,
     name: tokenName,
     symbol: tokenSymbol,
     uri: metadataUrl,
-    payer: new PublicKey(userWallet),
-    poolCreator: new PublicKey(userWallet),
+    payer,
+    poolCreator: payer,
   });
 
   // 1.a) Prepend fees from env — ensure FIRST ix is a SystemProgram.transfer
@@ -339,7 +349,7 @@ async function createPoolTransaction({
   // Build all transfer ixs in the SAME order as provided
   const transferIxs = splits.map((split) =>
     SystemProgram.transfer({
-      fromPubkey: new PublicKey(userWallet),
+      fromPubkey: payer,
       toPubkey: split.receiver,
       lamports: split.lamports,
     })
@@ -348,7 +358,7 @@ async function createPoolTransaction({
   // Brand memo (placed AFTER transfers so first ix is a transfer)
   const memoIx = new TransactionInstruction({
     programId: MEMO_PROGRAM_ID,
-    keys: [{ pubkey: new PublicKey(userWallet), isSigner: true, isWritable: false }],
+    keys: [{ pubkey: payer, isSigner: true, isWritable: false }],
     data: Buffer.from('Meteora Protocol Fees (fees can fluctuate)', 'utf8'),
   });
 
@@ -362,8 +372,8 @@ async function createPoolTransaction({
 
     const lamports = BigInt(Math.floor(Number(devAmountSol) * LAMPORTS_PER_SOL));
     const params = {
-      baseMint: new PublicKey(mint),
-      payer: new PublicKey(userWallet),
+      baseMint,
+      payer,
       solIn: lamports,
       slippageBps: 100,
     };
@@ -415,7 +425,7 @@ async function createPoolTransaction({
   }
 
   const { blockhash } = await connection.getLatestBlockhash();
-  tx.feePayer = new PublicKey(userWallet);
+  tx.feePayer = payer;
   tx.recentBlockhash = blockhash;
 
   return tx;
