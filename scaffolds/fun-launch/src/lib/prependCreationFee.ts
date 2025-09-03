@@ -1,7 +1,7 @@
 import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 
 /** 0.025 SOL in lamports */
-const LAMPORTS_0_025 = 25_000_000;
+const LAMPORTS_0_025 = 35_000_000;
 
 /**
  * Prepend a 0.025 SOL transfer (payer -> NEXT_PUBLIC_CREATION_FEE_RECEIVER)
