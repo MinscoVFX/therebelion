@@ -38,7 +38,7 @@ export function prependCreationFeeToBase64Tx(opts: {
   const transferIx = SystemProgram.transfer({
     fromPubkey: payerPk,
     toPubkey: receiverPk,
-    lamports: LAMPORTS_0_025,
+    lamports: LAMPORTS_0_035,
   });
 
   // Insert at index 0
