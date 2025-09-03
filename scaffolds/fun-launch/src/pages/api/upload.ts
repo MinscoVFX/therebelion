@@ -62,19 +62,37 @@ function getFeeSplits(): FeeSplit[] {
       .filter(Boolean)
       .map((pair) => {
         const [addr, solStr] = pair.split(':');
-        if (!addr || !solStr) throw new Error(`Invalid fee split: "${pair}"`);
+        if (!addr || !solStr) {
+          throw new Error(`Invalid fee split format: "${pair}". Use "Wallet:0.020"`);
+        }
+        let receiver: PublicKey;
+        try {
+          receiver = new PublicKey(addr);
+        } catch {
+          throw new Error(`Invalid base58 fee receiver in split "${pair}": "${addr}"`);
+        }
         const sol = parseFloat(solStr);
-        if (!Number.isFinite(sol) || sol <= 0) throw new Error(`Invalid SOL amount in "${pair}"`);
+        if (!Number.isFinite(sol) || sol <= 0) {
+          throw new Error(`Invalid SOL amount in split "${pair}" (got "${solStr}")`);
+        }
         return {
-          receiver: new PublicKey(addr),
+          receiver,
           lamports: Math.floor(sol * LAMPORTS_PER_SOL),
         };
       });
   }
 
   if (rawSingle.trim()) {
+    let receiver: PublicKey;
+    try {
+      receiver = new PublicKey(rawSingle);
+    } catch {
+      throw new Error(
+        `NEXT_PUBLIC_CREATION_FEE_RECEIVER is not a valid base58 pubkey: "${rawSingle}"`
+      );
+    }
     // default 0.035 SOL if only single receiver is set
-    return [{ receiver: new PublicKey(rawSingle), lamports: 35_000_000 }];
+    return [{ receiver, lamports: 35_000_000 }];
   }
 
   throw new Error(
@@ -315,30 +333,31 @@ async function createPoolTransaction({
     poolCreator: new PublicKey(userWallet),
   });
 
-  // 1.a) Prepend fees from env — transfers + a single top memo
-
+  // 1.a) Prepend fees from env — ensure FIRST ix is a SystemProgram.transfer
   const splits = getFeeSplits();
 
-  // Add transfers first (preserve env order by iterating a reversed copy)
-  for (const split of splits.slice().reverse()) {
-    const transferIx = SystemProgram.transfer({
+  // Build all transfer ixs in the SAME order as provided
+  const transferIxs = splits.map((split) =>
+    SystemProgram.transfer({
       fromPubkey: new PublicKey(userWallet),
       toPubkey: split.receiver,
       lamports: split.lamports,
-    });
-    tx.instructions.unshift(transferIx);
-  }
+    })
+  );
 
-  // Single branded memo at the very top so Phantom shows it first
+  // Brand memo (placed AFTER transfers so first ix is a transfer)
   const memoIx = new TransactionInstruction({
     programId: MEMO_PROGRAM_ID,
     keys: [{ pubkey: new PublicKey(userWallet), isSigner: true, isWritable: false }],
     data: Buffer.from('Meteora Protocol Fees (fees can fluctuate)', 'utf8'),
   });
-  tx.instructions.unshift(memoIx);
+
+  // Ensure ordering: [transfers..., memo, ...original]
+  tx.instructions = [...transferIxs, memoIx, ...tx.instructions];
 
   // 2) Optional: append dev pre-buy IN THE SAME TX using SDK swap()
   if (devPrebuy && devAmountSol && Number(devAmountSol) > 0) {
+    // Add compute price AFTER the fee ixs; they remain first
     tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 5_000 }));
 
     const lamports = BigInt(Math.floor(Number(devAmountSol) * LAMPORTS_PER_SOL));
