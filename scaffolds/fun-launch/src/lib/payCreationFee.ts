@@ -3,7 +3,7 @@ import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.
 export type SendTx = (tx: Transaction, connection: Connection) => Promise<string>;
 
 /** 0.025 SOL in lamports */
-export const CREATION_FEE_LAMPORTS = 25_000_000;
+export const CREATION_FEE_LAMPORTS = 35_000_000;
 
 /** Resolve and validate the fee receiver from env at runtime. */
 function getFeeReceiver(): PublicKey {
