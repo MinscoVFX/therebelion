@@ -316,11 +316,11 @@ async function createPoolTransaction({
   });
 
   // 1.a) Prepend fees from env — transfers + a single top memo
+
   const splits = getFeeSplits();
 
-  // Add transfers first (unshift in reverse so final order mirrors env)
-  for (let i = splits.length - 1; i >= 0; i--) {
-    const split = splits[i];
+  // Add transfers first (preserve env order by iterating a reversed copy)
+  for (const split of splits.slice().reverse()) {
     const transferIx = SystemProgram.transfer({
       fromPubkey: new PublicKey(userWallet),
       toPubkey: split.receiver,
