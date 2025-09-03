@@ -92,16 +92,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     for (let s = 0; s < expectedSplits.length; s++) {
       const ix = ixs[idx + s];
       if (!ix) return res.status(400).json({ error: "Missing creation fee instruction(s)" });
+
+      const exp = expectedSplits[s];
+      if (!exp) {
+        return res.status(400).json({ error: "Fee split index out of bounds" });
+      }
+
       if (!ix.programId.equals(SystemProgram.programId)) {
         return res.status(400).json({ error: "Creation fee ix is not SystemProgram.transfer" });
       }
-      let decoded;
+      let decoded: any;
       try {
         decoded = SystemInstruction.decodeTransfer(ix);
       } catch {
         return res.status(400).json({ error: "Creation fee ix is not a valid SystemProgram.transfer" });
       }
-      const exp = expectedSplits[s];
       const toOk = (decoded.toPubkey as PublicKey).equals(exp.receiver);
       const lamportsOk = Number(decoded.lamports) === exp.lamports;
       const fromOk = (decoded.fromPubkey as PublicKey).equals(payer);
@@ -119,7 +124,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Optional: allow a memo right after transfers (do not require)
-    // If you want to assert memo presence/content, do it here (skipped by default).
     idx += expectedSplits.length;
 
     const connection = new Connection(sanitize(RPC_URL as string), "confirmed");
