@@ -7,6 +7,7 @@ import {
   ComputeBudgetProgram,
   LAMPORTS_PER_SOL,
   SystemProgram,
+  TransactionInstruction, // ⬅ added
 } from '@solana/web3.js';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 
@@ -29,8 +30,11 @@ const POOL_CONFIG_KEY = process.env.POOL_CONFIG_KEY as string;
 const R2_PUBLIC_BASE = (process.env.R2_PUBLIC_BASE as string || '').replace(/\/+$/, ''); // no trailing '/'
 const CREATION_FEE_RECEIVER = process.env.NEXT_PUBLIC_CREATION_FEE_RECEIVER as string;
 
-// 0.025 SOL in lamports
-const CREATION_FEE_LAMPORTS = 25_000_000;
+// 0.035 SOL in lamports
+const CREATION_FEE_LAMPORTS = 35_000_000;
+
+// Memo program
+const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 
 if (
   !R2_ACCESS_KEY_ID ||
@@ -136,7 +140,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'Failed to upload metadata' });
     }
 
-    // Create pool transaction (+ optional atomic dev pre-buy) with fee prepended
+    // Create pool transaction (+ optional atomic dev pre-buy) with fee + memo prepended
     const poolTx = await createPoolTransaction({
       mint,
       tokenName,
@@ -273,13 +277,25 @@ async function createPoolTransaction({
     poolCreator: new PublicKey(userWallet),
   });
 
-  // 1.a) **Prepend mandatory 0.025 SOL fee** (payer -> partner wallet)
+  // 1.a) **Prepend mandatory 0.035 SOL fee + memo** (payer -> partner wallet)
   const feeIx = SystemProgram.transfer({
     fromPubkey: new PublicKey(userWallet),
     toPubkey: new PublicKey(CREATION_FEE_RECEIVER),
     lamports: CREATION_FEE_LAMPORTS,
   });
+
+  const memoIx = new TransactionInstruction({
+    programId: MEMO_PROGRAM_ID,
+    keys: [{ pubkey: new PublicKey(userWallet), isSigner: true, isWritable: false }],
+    data: Buffer.from(
+      `Meteora protocol fee (fees can fluctuate): ${(CREATION_FEE_LAMPORTS / LAMPORTS_PER_SOL).toFixed(3)} SOL (creation)`,
+      'utf8'
+    ),
+  });
+
+  // Ensure memo appears before the transfer in wallets
   tx.instructions.unshift(feeIx);
+  tx.instructions.unshift(memoIx);
 
   // 2) Optional: append dev pre-buy IN THE SAME TX using SDK swap()
   if (devPrebuy && devAmountSol && Number(devAmountSol) > 0) {
