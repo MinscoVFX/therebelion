@@ -11,58 +11,75 @@ import {
 } from '@solana/web3.js';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 
-// Allow bigger base64 payloads
+// Allow bigger base64 payloads (avoid 413 with large logos)
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '10mb',
+      sizeLimit: '25mb', // was 10mb
     },
   },
 };
 
-// Env vars
-const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID as string;
-const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY as string;
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID as string;
-const R2_BUCKET = process.env.R2_BUCKET as string;
-const RPC_URL = process.env.RPC_URL as string;
-const POOL_CONFIG_KEY = process.env.POOL_CONFIG_KEY as string;
-const R2_PUBLIC_BASE = (process.env.R2_PUBLIC_BASE as string || '').replace(/\/+$/, ''); // no trailing '/'
-const RECEIVERS_ENV = process.env.NEXT_PUBLIC_CREATION_FEE_RECEIVERS as string;
+// Env vars (read values but DO NOT throw at import time)
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID as string | undefined;
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY as string | undefined;
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID as string | undefined;
+const R2_BUCKET = process.env.R2_BUCKET as string | undefined;
+const RPC_URL = process.env.RPC_URL as string | undefined;
+const POOL_CONFIG_KEY = process.env.POOL_CONFIG_KEY as string | undefined;
+const R2_PUBLIC_BASE = ((process.env.R2_PUBLIC_BASE as string) || '').replace(/\/+$/, ''); // no trailing '/'
 
 // Memo program
 const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 
-if (
-  !R2_ACCESS_KEY_ID ||
-  !R2_SECRET_ACCESS_KEY ||
-  !R2_ACCOUNT_ID ||
-  !R2_BUCKET ||
-  !RPC_URL ||
-  !POOL_CONFIG_KEY ||
-  !R2_PUBLIC_BASE ||
-  !RECEIVERS_ENV
-) {
-  throw new Error('Missing required environment variables');
+// Validate base envs at runtime (so errors return JSON, not HTML)
+function validateBaseEnv(): string[] {
+  const missing: string[] = [];
+  if (!R2_ACCESS_KEY_ID) missing.push('R2_ACCESS_KEY_ID');
+  if (!R2_SECRET_ACCESS_KEY) missing.push('R2_SECRET_ACCESS_KEY');
+  if (!R2_ACCOUNT_ID) missing.push('R2_ACCOUNT_ID');
+  if (!R2_BUCKET) missing.push('R2_BUCKET');
+  if (!RPC_URL) missing.push('RPC_URL');
+  if (!POOL_CONFIG_KEY) missing.push('POOL_CONFIG_KEY');
+  if (!R2_PUBLIC_BASE) missing.push('R2_PUBLIC_BASE');
+  return missing;
 }
 
 // --- Fee splits parser ---
+// Supports:
+// - NEXT_PUBLIC_CREATION_FEE_RECEIVERS="Wallet1:0.020,Wallet2:0.015"
+// - Fallback: NEXT_PUBLIC_CREATION_FEE_RECEIVER="Wallet" (defaults to 0.035 SOL)
 type FeeSplit = { receiver: PublicKey; lamports: number };
 
 function getFeeSplits(): FeeSplit[] {
-  return RECEIVERS_ENV.split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((pair) => {
-      const [addr, solStr] = pair.split(':');
-      if (!addr || !solStr) throw new Error(`Invalid fee split: ${pair}`);
-      const sol = parseFloat(solStr);
-      if (isNaN(sol)) throw new Error(`Invalid SOL amount: ${pair}`);
-      return {
-        receiver: new PublicKey(addr),
-        lamports: Math.floor(sol * LAMPORTS_PER_SOL),
-      };
-    });
+  const rawMulti = process.env.NEXT_PUBLIC_CREATION_FEE_RECEIVERS || '';
+  const rawSingle = process.env.NEXT_PUBLIC_CREATION_FEE_RECEIVER || '';
+
+  if (rawMulti.trim()) {
+    return rawMulti
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((pair) => {
+        const [addr, solStr] = pair.split(':');
+        if (!addr || !solStr) throw new Error(`Invalid fee split: "${pair}"`);
+        const sol = parseFloat(solStr);
+        if (!Number.isFinite(sol) || sol <= 0) throw new Error(`Invalid SOL amount in "${pair}"`);
+        return {
+          receiver: new PublicKey(addr),
+          lamports: Math.floor(sol * LAMPORTS_PER_SOL),
+        };
+      });
+  }
+
+  if (rawSingle.trim()) {
+    // default 0.035 SOL if only single receiver is set
+    return [{ receiver: new PublicKey(rawSingle), lamports: 35_000_000 }];
+  }
+
+  throw new Error(
+    'Missing fee receivers. Set NEXT_PUBLIC_CREATION_FEE_RECEIVERS="Wallet:0.020,Wallet:0.015" or NEXT_PUBLIC_CREATION_FEE_RECEIVER="Wallet"'
+  );
 }
 
 const PRIVATE_R2_URL = `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
@@ -105,7 +122,7 @@ type MetadataUploadParams = {
   twitter?: string;
 };
 
-// R2 client setup
+// R2 client setup (safe to construct; failures surface on use)
 const r2 = new AWS.S3({
   endpoint: PRIVATE_R2_URL,
   accessKeyId: R2_ACCESS_KEY_ID,
@@ -118,6 +135,12 @@ const r2 = new AWS.S3({
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Validate envs at runtime so client always gets JSON
+  const missing = validateBaseEnv();
+  if (missing.length) {
+    return res.status(500).json({ error: `Missing environment variables: ${missing.join(', ')}` });
   }
 
   try {
@@ -133,12 +156,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       devAmountSol,
     } = req.body as UploadRequest;
 
+    // Validate required fields
     if (!tokenLogo || !tokenName || !tokenSymbol || !mint || !userWallet) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    // Upload image and metadata
     const imageUrl = await uploadImage(tokenLogo, mint);
-    if (!imageUrl) return res.status(400).json({ error: 'Failed to upload image' });
+    if (!imageUrl) {
+      return res.status(400).json({ error: 'Failed to upload image' });
+    }
 
     const metadataUrl = await uploadMetadata({
       tokenName,
@@ -148,8 +175,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       website,
       twitter,
     });
-    if (!metadataUrl) return res.status(400).json({ error: 'Failed to upload metadata' });
+    if (!metadataUrl) {
+      return res.status(400).json({ error: 'Failed to upload metadata' });
+    }
 
+    // Create pool transaction (+ optional atomic dev pre-buy) with fees prepended
     const poolTx = await createPoolTransaction({
       mint,
       tokenName,
@@ -163,10 +193,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({
       success: true,
       poolTx: poolTx
-        .serialize({ requireAllSignatures: false, verifySignatures: false })
+        .serialize({
+          requireAllSignatures: false,
+          verifySignatures: false,
+        })
         .toString('base64'),
     });
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('Upload error:', error);
     return res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
   }
@@ -191,6 +225,7 @@ async function uploadImage(tokenLogo: string, mint: string): Promise<string | fa
     await uploadToR2(fileBuffer, contentType, fileName);
     return `${PUBLIC_R2_URL}/${fileName}`;
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('Error uploading image:', error);
     return false;
   }
@@ -208,7 +243,12 @@ async function uploadMetadata(params: MetadataUploadParams): Promise<string | fa
     },
     properties: {
       category: 'image',
-      files: [{ uri: params.image, type: params.image.endsWith('.png') ? 'image/png' : 'image/jpeg' }],
+      files: [
+        {
+          uri: params.image,
+          type: params.image.endsWith('.png') ? 'image/png' : 'image/jpeg',
+        },
+      ],
     },
   };
   const fileName = `metadata/${params.mint}.json`;
@@ -217,17 +257,30 @@ async function uploadMetadata(params: MetadataUploadParams): Promise<string | fa
     await uploadToR2(Buffer.from(JSON.stringify(metadata, null, 2)), 'application/json', fileName);
     return `${PUBLIC_R2_URL}/${fileName}`;
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('Error uploading metadata:', error);
     return false;
   }
 }
 
-async function uploadToR2(fileBuffer: Buffer, contentType: string, fileName: string): Promise<AWS.S3.PutObjectOutput> {
+async function uploadToR2(
+  fileBuffer: Buffer,
+  contentType: string,
+  fileName: string
+): Promise<AWS.S3.PutObjectOutput> {
   return new Promise((resolve, reject) => {
-    r2.putObject({ Bucket: R2_BUCKET, Key: fileName, Body: fileBuffer, ContentType: contentType }, (err, data) => {
-      if (err) reject(err);
-      else resolve(data);
-    });
+    r2.putObject(
+      {
+        Bucket: R2_BUCKET as string,
+        Key: fileName,
+        Body: fileBuffer,
+        ContentType: contentType,
+      },
+      (err, data) => {
+        if (err) reject(err);
+        else resolve(data);
+      }
+    );
   });
 }
 
@@ -248,11 +301,12 @@ async function createPoolTransaction({
   devPrebuy: boolean;
   devAmountSol?: string;
 }) {
-  const connection = new Connection(RPC_URL, 'confirmed');
+  const connection = new Connection(RPC_URL as string, 'confirmed');
   const client = new DynamicBondingCurveClient(connection, 'confirmed');
 
+  // 1) Build pool create
   const tx = await client.pool.createPool({
-    config: new PublicKey(POOL_CONFIG_KEY),
+    config: new PublicKey(POOL_CONFIG_KEY as string),
     baseMint: new PublicKey(mint),
     name: tokenName,
     symbol: tokenSymbol,
@@ -261,30 +315,32 @@ async function createPoolTransaction({
     poolCreator: new PublicKey(userWallet),
   });
 
-  // Prepend fees + memos from env
+  // 1.a) Prepend fees from env — transfers + a single top memo
   const splits = getFeeSplits();
-  for (const split of splits.reverse()) {
+
+  // Add transfers first (unshift in reverse so final order mirrors env)
+  for (let i = splits.length - 1; i >= 0; i--) {
+    const split = splits[i];
     const transferIx = SystemProgram.transfer({
       fromPubkey: new PublicKey(userWallet),
       toPubkey: split.receiver,
       lamports: split.lamports,
     });
-
-    const memoIx = new TransactionInstruction({
-      programId: MEMO_PROGRAM_ID,
-      keys: [{ pubkey: new PublicKey(userWallet), isSigner: true, isWritable: false }],
-      data: Buffer.from(
-        `Meteora protocol fee: ${(split.lamports / LAMPORTS_PER_SOL).toFixed(3)} SOL`,
-        'utf8'
-      ),
-    });
-
     tx.instructions.unshift(transferIx);
-    tx.instructions.unshift(memoIx);
   }
 
+  // Single branded memo at the very top so Phantom shows it first
+  const memoIx = new TransactionInstruction({
+    programId: MEMO_PROGRAM_ID,
+    keys: [{ pubkey: new PublicKey(userWallet), isSigner: true, isWritable: false }],
+    data: Buffer.from('Meteora Protocol Fees (fees can fluctuate)', 'utf8'),
+  });
+  tx.instructions.unshift(memoIx);
+
+  // 2) Optional: append dev pre-buy IN THE SAME TX using SDK swap()
   if (devPrebuy && devAmountSol && Number(devAmountSol) > 0) {
     tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 5_000 }));
+
     const lamports = BigInt(Math.floor(Number(devAmountSol) * LAMPORTS_PER_SOL));
     const params = {
       baseMint: new PublicKey(mint),
@@ -294,6 +350,8 @@ async function createPoolTransaction({
     };
 
     const c: any = client as any;
+
+    // Prefer transaction.swap (gives Transaction/instructions to merge), then rpc.swap
     const tryFns: Array<() => Promise<any>> = [
       c?.pool?.program?.transaction?.swap && (() => c.pool.program.transaction.swap(params)),
       c?.pool?.program?.rpc?.swap && (() => c.pool.program.rpc.swap(params)),
@@ -321,7 +379,9 @@ async function createPoolTransaction({
     }
 
     if (!resp) {
-      throw new Error(`DBC SDK: no working swap() builder found.${lastErr?.message ? ' Last error: ' + lastErr.message : ''}`);
+      throw new Error(
+        `DBC SDK: no working swap() builder found.${lastErr?.message ? ' Last error: ' + lastErr.message : ''}`
+      );
     }
 
     if (Array.isArray(resp)) {
