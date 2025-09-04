@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { z } from 'zod';
@@ -63,7 +63,9 @@ export default function CreatePool() {
   const address = useMemo(() => publicKey?.toBase58(), [publicKey]);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [awaitingWallet, setAwaitingWallet] = useState(false); // lock while Phantom is open
   const [poolCreated, setPoolCreated] = useState(false);
+  const devAmountSnapRef = useRef<string>(''); // snapshot at click/submit
 
   const form = useForm({
     defaultValues: {
@@ -77,6 +79,9 @@ export default function CreatePool() {
       devAmountSol: '',
     } as FormValues,
     onSubmit: async ({ value }) => {
+      // snapshot the dev amount the moment we submit (prevents edits during wallet prompts)
+      devAmountSnapRef.current = value.devAmountSol || '';
+
       try {
         setIsLoading(true);
         const { tokenLogo } = value;
@@ -85,13 +90,12 @@ export default function CreatePool() {
           return;
         }
 
-        if (!signTransaction) {
+        if (!publicKey || !signTransaction) {
           toast.error('Wallet not connected');
           return;
         }
 
         const reader = new FileReader();
-
         // Convert file to base64
         const base64File = await new Promise<string>((resolve) => {
           reader.onload = (e) => resolve(e.target?.result as string);
@@ -124,12 +128,10 @@ export default function CreatePool() {
           keyPair = Keypair.generate();
         }
 
-        // Step 1: Upload to R2 and get transaction (atomic create + optional prebuy + fee prepended)
-        const uploadResponse = await fetch('/api/upload', {
+        // STEP 1: build create tx on backend (NO swap inside; we bundle separately)
+        const uploadRes = await fetch('/api/upload', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             tokenLogo: base64File,
             mint: keyPair.publicKey.toBase58(),
@@ -138,48 +140,91 @@ export default function CreatePool() {
             userWallet: address,
             website: value.website || '',
             twitter: value.twitter || '',
-            devPrebuy: !!value.devPrebuy,          // sent to backend
-            devAmountSol: value.devAmountSol || '' // sent to backend
+            // Important: let server build ONLY the create tx (we handle dev-buy separately)
+            devPrebuy: false,
+            devAmountSol: '',
           }),
         });
 
-        if (!uploadResponse.ok) {
-          const error = await uploadResponse.json();
-          throw new Error(error.error);
+        const uploadJson = await uploadRes.json();
+        if (!uploadRes.ok || !uploadJson?.poolTx) {
+          throw new Error(uploadJson?.error || 'Upload/build failed');
         }
 
-        const { poolTx } = await uploadResponse.json();
-        const transaction = Transaction.from(Buffer.from(poolTx, 'base64'));
+        const { poolTx, pool } = uploadJson as { poolTx: string; pool?: string };
 
-        // Step 2: Sign with keypair first (mint authority)
-        transaction.sign(keyPair);
+        // Decode tx
+        const createTx = Transaction.from(Buffer.from(poolTx, 'base64'));
+        // Sign with mint keypair (mint authority)
+        createTx.sign(keyPair);
+        // Then sign with user's wallet (payer)
+        setAwaitingWallet(true);
+        const signedCreate = await signTransaction(createTx);
+        setAwaitingWallet(false);
+        const signedCreateB64 = Buffer.from(signedCreate.serialize()).toString('base64');
 
-        // Step 3: Then sign with user's wallet (payer)
-        const signedTransaction = await signTransaction(transaction);
+        // If Dev Pre-Buy is requested, build a separate swap and sign it
+        let signedSwapB64: string | undefined = undefined;
+        const doDevBuy = !!value.devPrebuy && Number(devAmountSnapRef.current) > 0;
 
-        // Step 4: Send signed transaction
-        const sendResponse = await fetch('/api/send-transaction', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            signedTransaction: signedTransaction.serialize().toString('base64'),
-          }),
-        });
+        if (doDevBuy) {
+          const buildSwapRes = await fetch('/api/build-swap', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              baseMint: keyPair.publicKey.toBase58(),
+              payer: address,
+              amountSol: devAmountSnapRef.current, // snapshot
+              pool: pool || undefined,             // if upload returned pool, use it
+              slippageBps: 100,
+            }),
+          });
+          const buildSwapJson = await buildSwapRes.json();
+          if (!buildSwapRes.ok || !buildSwapJson?.swapTx) {
+            throw new Error(buildSwapJson?.error || 'Failed to build swap');
+          }
 
-        if (!sendResponse.ok) {
-          const error = await sendResponse.json();
-          throw new Error(error.error);
+          const swapTx = Transaction.from(Buffer.from(buildSwapJson.swapTx, 'base64'));
+          if (!swapTx.feePayer) swapTx.feePayer = publicKey;
+
+          setAwaitingWallet(true);
+          const signedSwap = await signTransaction(swapTx);
+          setAwaitingWallet(false);
+
+          signedSwapB64 = Buffer.from(signedSwap.serialize()).toString('base64');
         }
 
-        const { success } = await sendResponse.json();
-        if (success) {
-          toast.success('Pool created successfully');
-          setPoolCreated(true);
+        // STEP 2: submit
+        if (doDevBuy && signedSwapB64) {
+          // Submit both back-to-back (Pump-style)
+          const submitRes = await fetch('/api/submit-bundle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ txs: [signedCreateB64, signedSwapB64] }),
+          });
+          const submitJson = await submitRes.json();
+          if (!submitRes.ok || !submitJson?.success) {
+            throw new Error(submitJson?.error || 'Bundle submit failed');
+          }
+        } else {
+          // Single create tx path (preserves your fee validation)
+          const sendResponse = await fetch('/api/send-transaction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ signedTransaction: signedCreateB64 }),
+          });
+          const sendJson = await sendResponse.json();
+          if (!sendResponse.ok || !sendJson?.success) {
+            throw new Error(sendJson?.error || 'Send failed');
+          }
         }
+
+        toast.success('Pool created successfully');
+        setPoolCreated(true);
       } catch (error) {
         console.error('Error creating pool:', error);
+        // always clear wallet-await lock on errors/cancel
+        setAwaitingWallet(false);
         toast.error(error instanceof Error ? error.message : 'Failed to create pool');
       } finally {
         setIsLoading(false);
@@ -195,6 +240,9 @@ export default function CreatePool() {
       },
     },
   });
+
+  // lock inputs while busy or wallet prompt open
+  const formLocked = isLoading || awaitingWallet;
 
   return (
     <>
@@ -225,9 +273,10 @@ export default function CreatePool() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                if (formLocked) return;
                 form.handleSubmit();
               }}
-              className="space-y-8"
+              className={`space-y-8 ${awaitingWallet ? 'pointer-events-none opacity-60' : ''}`}
             >
               {/* Token Details Section */}
               <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
@@ -255,6 +304,7 @@ export default function CreatePool() {
                             onChange={(e) => field.handleChange(e.target.value)}
                             required
                             minLength={3}
+                            disabled={formLocked}
                           />
                         ),
                       })}
@@ -280,6 +330,7 @@ export default function CreatePool() {
                             onChange={(e) => field.handleChange(e.target.value)}
                             required
                             maxLength={10}
+                            disabled={formLocked}
                           />
                         ),
                       })}
@@ -304,6 +355,7 @@ export default function CreatePool() {
                             value={field.state.value}
                             onChange={(e) => field.handleChange(e.target.value)}
                             maxLength={4}
+                            disabled={formLocked}
                           />
                         ),
                       })}
@@ -331,15 +383,17 @@ export default function CreatePool() {
                             id="tokenLogo"
                             className="hidden"
                             onChange={(e) => {
+                              if (formLocked) return;
                               const file = e.target.files?.[0];
                               if (file) {
                                 field.handleChange(file);
                               }
                             }}
+                            disabled={formLocked}
                           />
                           <label
                             htmlFor="tokenLogo"
-                            className="bg-white/10 px-4 py-2 rounded-lg text-sm hover:bg-white/20 transition cursor-pointer"
+                            className={`bg-white/10 px-4 py-2 rounded-lg text-sm transition cursor-pointer ${formLocked ? 'opacity-60 pointer-events-none' : 'hover:bg-white/20'}`}
                           >
                             Browse Files
                           </label>
@@ -373,6 +427,7 @@ export default function CreatePool() {
                           placeholder="https://yourwebsite.com"
                           value={field.state.value}
                           onChange={(e) => field.handleChange(e.target.value)}
+                          disabled={formLocked}
                         />
                       ),
                     })}
@@ -396,6 +451,7 @@ export default function CreatePool() {
                           placeholder="https://twitter.com/yourusername"
                           value={field.state.value}
                           onChange={(e) => field.handleChange(e.target.value)}
+                          disabled={formLocked}
                         />
                       ),
                     })}
@@ -418,6 +474,7 @@ export default function CreatePool() {
                           className="h-5 w-5 accent-white/80"
                           checked={!!field.state.value}
                           onChange={(e) => field.handleChange(e.currentTarget.checked)}
+                          disabled={formLocked}
                         />
                       ),
                     })}
@@ -432,22 +489,25 @@ export default function CreatePool() {
                     </label>
                     {form.Field({
                       name: 'devAmountSol',
-                      children: (field) => (
-                        <input
-                          id="devAmountSol"
-                          name={field.name}
-                          type="number"
-                          min="0"
-                          step="0.001"
-                          placeholder="0.25"
-                          className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                          value={field.state.value}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                          disabled={!Boolean(form.state.values?.devPrebuy)}
-                        />
-                      ),
+                      children: (field) => {
+                        const disabled = !Boolean(form.state.values?.devPrebuy) || formLocked;
+                        return (
+                          <input
+                            key={disabled ? 'dev-off' : 'dev-on'} // forces remount to avoid browser quirks
+                            id="devAmountSol"
+                            name={field.name}
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0.25"
+                            className={`w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white ${disabled ? 'opacity-60' : ''}`}
+                            value={field.state.value}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            disabled={disabled}
+                          />
+                        );
+                      },
                     })}
-                    <p className="text-xs text-gray-400 mt-1">We’ll execute a buy inside the same transaction.</p>
+                    <p className="text-xs text-gray-400 mt-1">We’ll execute a buy immediately after your pool is created.</p>
                   </div>
                 </div>
               </div>
@@ -471,7 +531,7 @@ export default function CreatePool() {
               )}
 
               <div className="flex justify-end">
-                <SubmitButton isSubmitting={isLoading} />
+                <SubmitButton isSubmitting={isLoading || awaitingWallet} awaitingWallet={awaitingWallet} />
               </div>
             </form>
           )}
@@ -481,7 +541,7 @@ export default function CreatePool() {
   );
 }
 
-const SubmitButton = ({ isSubmitting }: { isSubmitting: boolean }) => {
+const SubmitButton = ({ isSubmitting, awaitingWallet }: { isSubmitting: boolean; awaitingWallet: boolean }) => {
   const { publicKey } = useWallet();
   const { setShowModal } = useUnifiedWalletContext();
 
@@ -498,7 +558,7 @@ const SubmitButton = ({ isSubmitting }: { isSubmitting: boolean }) => {
       {isSubmitting ? (
         <>
           <span className="iconify ph--spinner w-5 h-5 animate-spin" />
-          <span>Creating Pool...</span>
+          <span>{awaitingWallet ? 'Awaiting Wallet…' : 'Creating Pool...'}</span>
         </>
       ) : (
         <>
