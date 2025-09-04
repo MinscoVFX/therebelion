@@ -37,7 +37,6 @@ function sanitize(s: string | undefined | null): string {
   // trim + strip zero-width spaces that often sneak in from copy/paste
   return (s ?? '').trim().replace(/\u200B/g, '');
 }
-
 function parsePubkey(label: string, value: string): PublicKey {
   const v = sanitize(value);
   try {
@@ -45,6 +44,25 @@ function parsePubkey(label: string, value: string): PublicKey {
   } catch {
     throw new Error(`${label} is not a valid base58 pubkey: "${v}"`);
   }
+}
+// Parse a decimal SOL string to lamports with no floating-point precision loss
+function parseSolToLamports(label: string, solStr: string): bigint {
+  const s = sanitize(solStr);
+  if (!s) throw new Error(`${label} must be provided`);
+  // allow forms like ".5" or "0.5"
+  const parts = s.split('.');
+  if (parts.length > 2) throw new Error(`${label} is not a valid number: "${s}"`);
+  const [intPartRaw, fracPartRaw = ''] = parts;
+  const intPart = intPartRaw.replace(/^0+(?=\d)/, '') || '0';
+  const fracPart = (fracPartRaw + '000000000').slice(0, 9); // pad/cut to 9
+  if (!/^\d+$/.test(intPart) || !/^\d{0,9}$/.test(fracPart)) {
+    throw new Error(`${label} is not a valid number: "${s}"`);
+  }
+  const i = BigInt(intPart || '0');
+  const f = BigInt(fracPart || '0');
+  const lamports = i * 1_000_000_000n + f;
+  if (lamports <= 0n) throw new Error(`${label} must be greater than 0`);
+  return lamports;
 }
 
 // Validate base envs at runtime (so errors return JSON, not HTML)
@@ -269,7 +287,8 @@ async function uploadMetadata(params: MetadataUploadParams): Promise<string | fa
       files: [
         {
           uri: params.image,
-          type: params.image.endsWith('.png') ? 'image/png' : 'image/jpeg',
+          // Use content-type based on extension we saved (matches uploadImage)
+          type: params.image.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg',
         },
       ],
     },
@@ -366,11 +385,15 @@ async function createPoolTransaction({
   tx.instructions = [...transferIxs, memoIx, ...tx.instructions];
 
   // 2) Optional: append dev pre-buy IN THE SAME TX using SDK swap()
-  if (devPrebuy && devAmountSol && Number(devAmountSol) > 0) {
+  if (devPrebuy) {
+    if (!devAmountSol) {
+      throw new Error('devAmountSol must be provided when devPrebuy is true');
+    }
+    const lamports = parseSolToLamports('devAmountSol', devAmountSol);
+
     // Add compute price AFTER the fee ixs; they remain first
     tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 5_000 }));
 
-    const lamports = BigInt(Math.floor(Number(devAmountSol) * LAMPORTS_PER_SOL));
     const params = {
       baseMint,
       payer,
