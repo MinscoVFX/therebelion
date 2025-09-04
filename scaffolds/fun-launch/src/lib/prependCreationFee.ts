@@ -60,11 +60,19 @@ export function prependCreationFeeToBase64Tx(opts: {
 }): string {
   const { poolTxBase64, payer } = opts;
 
+  const base64 = sanitize(poolTxBase64);
+  if (!base64) throw new Error("poolTxBase64 is empty");
+
   const payerPk = parsePubkey("payer", payer);
   const splits = getFeeSplitsFromEnv();
 
-  // Decode existing tx
-  const tx = Transaction.from(Buffer.from(poolTxBase64, "base64"));
+  // Decode existing tx (surface a clean error if base64 is malformed)
+  let tx: Transaction;
+  try {
+    tx = Transaction.from(Buffer.from(base64, "base64"));
+  } catch {
+    throw new Error("poolTxBase64 is not a valid base64-encoded transaction");
+  }
 
   // Ensure feePayer is set to the wallet that will sign
   tx.feePayer = payerPk;
