@@ -10,6 +10,7 @@ import {
   TransactionInstruction,
 } from '@solana/web3.js';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
+import BN from 'bn.js';
 
 // Allow bigger base64 payloads (avoid 413 with large logos)
 export const config = {
@@ -399,56 +400,45 @@ async function createPoolTransaction({
     // Add compute price AFTER the fee ixs; they remain first
     tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 5_000 }));
 
-    const params = {
-      baseMint,
-      payer,
-      solIn: lamports,
-      slippageBps: 100,
-    };
+    // --- Infer the pool address from the just-added createPool instruction
+    // Heuristic: find the ix that references BOTH the baseMint and cfgKey; among its keys,
+    // take a writable non-signer that is not baseMint/cfgKey/payer as the pool account.
+    let poolAddress: PublicKey | undefined;
+    const ignoreSet = new Set([baseMint.toBase58(), cfgKey.toBase58(), payer.toBase58()]);
 
-    const c: any = client as any;
-
-    // Prefer transaction.swap (gives Transaction/instructions to merge), then rpc.swap
-    const tryFns: Array<() => Promise<any>> = [
-      c?.pool?.program?.transaction?.swap && (() => c.pool.program.transaction.swap(params)),
-      c?.pool?.program?.rpc?.swap && (() => c.pool.program.rpc.swap(params)),
-      c?.program?.transaction?.swap && (() => c.program.transaction.swap(params)),
-      c?.program?.rpc?.swap && (() => c.program.rpc.swap(params)),
-      c?.state?.program?.transaction?.swap && (() => c.state.program.transaction.swap(params)),
-      c?.state?.program?.rpc?.swap && (() => c.state.program.rpc.swap(params)),
-      c?.creator?.program?.transaction?.swap && (() => c.creator.program.transaction.swap(params)),
-      c?.creator?.program?.rpc?.swap && (() => c.creator.program.rpc.swap(params)),
-      c?.partner?.program?.transaction?.swap && (() => c.partner.program.transaction.swap(params)),
-      c?.partner?.program?.rpc?.swap && (() => c.partner.program.rpc.swap(params)),
-      c?.migration?.program?.transaction?.swap && (() => c.migration.program.transaction.swap(params)),
-      c?.migration?.program?.rpc?.swap && (() => c.migration.program.rpc.swap(params)),
-    ].filter(Boolean) as any[];
-
-    let resp: any;
-    let lastErr: any;
-    for (const run of tryFns) {
-      try {
-        resp = await run();
-        break;
-      } catch (e) {
-        lastErr = e;
+    for (const ix of tx.instructions) {
+      const keySet = new Set(ix.keys.map(k => k.pubkey.toBase58()));
+      if (keySet.has(baseMint.toBase58()) && keySet.has(cfgKey.toBase58())) {
+        const candidate = ix.keys.find(k =>
+          k.isWritable && !k.isSigner && !ignoreSet.has(k.pubkey.toBase58())
+        );
+        if (candidate) {
+          poolAddress = candidate.pubkey;
+          break;
+        }
       }
     }
-
-    if (!resp) {
-      throw new Error(
-        `DBC SDK: no working swap() builder found.${lastErr?.message ? ' Last error: ' + lastErr.message : ''}`
-      );
+    if (!poolAddress) {
+      throw new Error('Could not infer pool address from createPool instruction');
     }
 
-    if (Array.isArray(resp)) {
-      for (const ix of resp) tx.add(ix);
-    } else if (resp?.instructions) {
-      for (const ix of resp.instructions) tx.add(ix);
-    } else if (resp?.transaction instanceof Transaction) {
-      resp.transaction.instructions.forEach((ix: any) => tx.add(ix));
+    // Build the swap using high-level SDK (derives poolAuthority and all required accounts)
+    const swapTx = await client.pool.swap({
+      owner: payer,
+      pool: poolAddress,
+      amountIn: new BN(lamports.toString()),
+      minimumAmountOut: new BN(0), // set a quoted minOut if you want explicit slippage protection
+      swapBaseForQuote: false,     // spend quote (SOL) to buy base token
+      referralTokenAccount: null,
+    });
+
+    // Merge swap instructions at the end
+    if (Array.isArray((swapTx as any)?.instructions)) {
+      for (const ix of (swapTx as any).instructions) tx.add(ix);
+    } else if (swapTx instanceof Transaction) {
+      swapTx.instructions.forEach(ix => tx.add(ix));
     } else {
-      tx.add(resp as any);
+      tx.add(swapTx as any);
     }
   }
 
