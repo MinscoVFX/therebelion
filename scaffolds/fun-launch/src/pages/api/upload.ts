@@ -49,16 +49,21 @@ function parsePubkey(label: string, value: string): PublicKey {
 function parseSolToLamports(label: string, solStr: string): bigint {
   const s = sanitize(solStr);
   if (!s) throw new Error(`${label} must be provided`);
+
+  // Safely locate the decimal point (avoid destructuring 'possibly undefined')
+  const dot = s.indexOf('.');
+  const intPartRaw = dot === -1 ? s : s.slice(0, dot);     // may be '' for ".5"
+  const fracPartRaw = dot === -1 ? '' : s.slice(dot + 1);  // '' if no decimals
+
   // allow forms like ".5" or "0.5"
-  const parts = s.split('.');
-  if (parts.length > 2) throw new Error(`${label} is not a valid number: "${s}"`);
-  const [intPartRaw, fracPartRaw = ''] = parts;
   const intPart = intPartRaw.replace(/^0+(?=\d)/, '') || '0';
   const fracPart = (fracPartRaw + '000000000').slice(0, 9); // pad/cut to 9
+
   if (!/^\d+$/.test(intPart) || !/^\d{0,9}$/.test(fracPart)) {
     throw new Error(`${label} is not a valid number: "${s}"`);
   }
-  const i = BigInt(intPart || '0');
+
+  const i = BigInt(intPart);
   const f = BigInt(fracPart || '0');
   const lamports = i * 1_000_000_000n + f;
   if (lamports <= 0n) throw new Error(`${label} must be greater than 0`);
