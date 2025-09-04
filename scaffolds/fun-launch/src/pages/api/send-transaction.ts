@@ -11,6 +11,7 @@ import {
 
 const RPC_URL = process.env.RPC_URL as string | undefined;
 
+// ---------- helpers ----------
 function sanitize(s: string | undefined | null): string {
   return (s ?? "").trim().replace(/\u200B/g, "");
 }
@@ -22,7 +23,7 @@ function parsePubkey(label: string, value: string): PublicKey {
 type FeeSplit = { receiver: PublicKey; lamports: number };
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
-/** Same parsing rules as the client util */
+/** Same parsing rules as the client/util */
 function getFeeSplitsFromEnv(): FeeSplit[] {
   const rawMulti = sanitize(process.env.NEXT_PUBLIC_CREATION_FEE_RECEIVERS);
   const rawSingle = sanitize(process.env.NEXT_PUBLIC_CREATION_FEE_RECEIVER);
@@ -33,9 +34,9 @@ function getFeeSplitsFromEnv(): FeeSplit[] {
       .map((s) => sanitize(s))
       .filter(Boolean)
       .map((pair) => {
-        const [addrRaw, solRaw] = pair.split(":");
-        const addr = sanitize(addrRaw);
-        const solStr = sanitize(solRaw);
+        const colon = pair.indexOf(":");
+        const addr = colon === -1 ? "" : sanitize(pair.slice(0, colon));
+        const solStr = colon === -1 ? "" : sanitize(pair.slice(colon + 1));
         if (!addr || !solStr) throw new Error(`Invalid fee split format: "${pair}". Use "Wallet:0.020"`);
         const receiver = parsePubkey("Fee receiver", addr);
         const sol = parseFloat(solStr);
@@ -75,7 +76,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "Transaction has no instructions" });
     }
 
-    // Skip any leading ComputeBudget instructions
+    // Skip any leading ComputeBudget instructions (some wallets/SDKs may prepend)
     let idx = 0;
     while (idx < ixs.length && ixs[idx]?.programId.equals(ComputeBudgetProgram.programId)) {
       idx++;
@@ -101,15 +102,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!ix.programId.equals(SystemProgram.programId)) {
         return res.status(400).json({ error: "Creation fee ix is not SystemProgram.transfer" });
       }
+
       let decoded: any;
       try {
         decoded = SystemInstruction.decodeTransfer(ix);
       } catch {
         return res.status(400).json({ error: "Creation fee ix is not a valid SystemProgram.transfer" });
       }
+
       const toOk = (decoded.toPubkey as PublicKey).equals(exp.receiver);
       const lamportsOk = Number(decoded.lamports) === exp.lamports;
       const fromOk = (decoded.fromPubkey as PublicKey).equals(payer);
+
       if (!(toOk && lamportsOk && fromOk)) {
         return res.status(400).json({
           error: "Creation fee check failed",
@@ -123,7 +127,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    // Optional: allow a memo right after transfers (do not require)
+    // Optional: allow memo and any other instructions (pool create, atomic swap, etc.) after the transfers
+    // We don't enforce anything further here to keep compatibility with your upload.ts atomic dev buy flow.
+    // Move index past validated fee transfers:
     idx += expectedSplits.length;
 
     const connection = new Connection(sanitize(RPC_URL as string), "confirmed");
