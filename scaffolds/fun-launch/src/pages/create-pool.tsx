@@ -55,25 +55,23 @@ export default function CreatePool() {
   const [isLoading, setIsLoading] = useState(false);
   const [poolCreated, setPoolCreated] = useState(false);
 
-  // IMPORTANT:
-  // - No generic on useForm (your TanStack version balks at <T> -> TS2558)
-  // - We cast the created form to `any` to allow a File-typed field ("tokenLogo") without fighting TanStack's Updater types.
   const form = useForm({
     defaultValues: {
       tokenName: '',
       tokenSymbol: '',
-      tokenLogo: undefined as File | undefined, // keep this in default values so the key exists
+      tokenLogo: undefined as File | undefined, // ensure key exists
       website: '',
       twitter: '',
       vanitySuffix: '',
       devPrebuy: false,
       devAmountSol: '',
     },
-    onSubmit: async ({ value }) => {
+    // ---- FIX 1: explicitly type the destructured param to avoid TS7031
+    onSubmit: async ({ value }: { value: any }) => {
       try {
         setIsLoading(true);
 
-        const tokenLogo = (value as any).tokenLogo as File | undefined;
+        const tokenLogo = value.tokenLogo as File | undefined;
         if (!tokenLogo) {
           toast.error('Token logo is required');
           return;
@@ -92,7 +90,7 @@ export default function CreatePool() {
         });
 
         // Vanity mint (optional)
-        const rawSuffix = ((value as any).vanitySuffix || '').trim();
+        const rawSuffix = (value.vanitySuffix || '').trim();
         let keyPair: Keypair;
 
         if (rawSuffix.length > 0) {
@@ -117,22 +115,21 @@ export default function CreatePool() {
           keyPair = Keypair.generate();
         }
 
-        // Step 1: Ask backend to upload assets and build CREATE-ONLY tx (fees + memo are inside)
+        // Step 1: Ask backend to upload assets and build CREATE-ONLY tx (fees + memo inside)
         const uploadResponse = await fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             tokenLogo: base64File,
             mint: keyPair.publicKey.toBase58(),
-            tokenName: (value as any).tokenName,
-            tokenSymbol: (value as any).tokenSymbol,
+            tokenName: value.tokenName,
+            tokenSymbol: value.tokenSymbol,
             userWallet: address,
-            website: (value as any).website || '',
-            twitter: (value as any).twitter || '',
-            // NOTE: devPrebuy/devAmountSol are ignored by /api/upload now (create-only),
-            // but we pass them to preserve your UI compatibility.
-            devPrebuy: !!(value as any).devPrebuy,
-            devAmountSol: (value as any).devAmountSol || '',
+            website: value.website || '',
+            twitter: value.twitter || '',
+            // passed for compatibility; /api/upload ignores them for tx building
+            devPrebuy: !!value.devPrebuy,
+            devAmountSol: value.devAmountSol || '',
           }),
         });
 
@@ -173,8 +170,8 @@ export default function CreatePool() {
       }
     },
     validators: {
-      onSubmit: ({ value }) => {
-        // Keep your zod check
+      // ---- FIX 2: explicitly type the destructured param to avoid TS7031
+      onSubmit: ({ value }: { value: any }) => {
         const result = poolSchema.safeParse(value);
         if (!result.success) {
           return result.error.formErrors.fieldErrors as any;
@@ -182,7 +179,7 @@ export default function CreatePool() {
         return undefined;
       },
     },
-  } as any); // <= relaxed typing to avoid Field name/value generics issues on this TanStack version
+  } as any); // keep loosened due to TanStack version & File field
 
   return (
     <>
@@ -251,7 +248,7 @@ export default function CreatePool() {
                     <div className="mb-4">
                       <label
                         htmlFor="tokenSymbol"
-                        className="block text-sm font-medium text-gray-300 mb-1"
+                        className="block text sm font-medium text-gray-300 mb-1"
                       >
                         Token Symbol*
                       </label>
@@ -309,10 +306,8 @@ export default function CreatePool() {
                       Token Logo*
                     </label>
 
-                    {/* NOTE: We don't rely on TanStack's strict typing for File here. */}
                     {form.Field({
-                      // Cast the name to any to avoid the string-literal union error
-                      name: 'tokenLogo' as any,
+                      name: 'tokenLogo' as any, // relax field name typing for File
                       children: (field: any) => (
                         <div className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center">
                           <span className="iconify w-6 h-6 mx-auto mb-2 text-gray-400 ph--upload-bold" />
@@ -324,7 +319,6 @@ export default function CreatePool() {
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                // File -> loosen type with any to satisfy Updater typing of current TanStack version
                                 field.handleChange(file as any);
                               }
                             }}
