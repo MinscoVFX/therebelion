@@ -55,7 +55,7 @@ export default function CreatePool() {
   const [isLoading, setIsLoading] = useState(false);
   const [poolCreated, setPoolCreated] = useState(false);
 
-  // IMPORTANT: no generic on useForm — older TanStack version expects 10 type args
+  // IMPORTANT: no generic on useForm — matches your repo's TanStack version
   const form = useForm({
     defaultValues: {
       tokenName: '',
