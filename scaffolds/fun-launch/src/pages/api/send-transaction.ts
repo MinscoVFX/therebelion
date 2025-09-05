@@ -9,7 +9,7 @@ import {
   ComputeBudgetProgram,
 } from "@solana/web3.js";
 
-const RPC_URL = process.env.RPC_URL as string | undefined;
+const RPC_URL = process.env.RPC_URL;
 
 // ---------- helpers ----------
 function sanitize(s: string | undefined | null): string {
@@ -66,7 +66,9 @@ function getFeeSplitsFromEnv(): FeeSplit[] {
   );
 }
 
-if (!sanitize(RPC_URL)) {
+// ---- Strictly narrow RPC endpoint to a plain string (fixes TS2345) ----
+const ENDPOINT = sanitize(RPC_URL);
+if (!ENDPOINT) {
   throw new Error("RPC_URL not configured");
 }
 
@@ -152,7 +154,8 @@ export default async function handler(
   try {
     const body = (req.body ?? {}) as SingleTxBody & BundleBody;
 
-    const connection = new Connection(sanitize(RPC_URL as string), "confirmed");
+    // Construct Connection with narrowed endpoint (plain string)
+    const connection = new Connection(ENDPOINT, "confirmed");
     const expectedSplits = getFeeSplitsFromEnv();
 
     // -------- Path A: Bundle submission (recommended) --------
@@ -164,14 +167,14 @@ export default async function handler(
       validateCreationFeeTransfers(tx0, expectedSplits);
 
       // Forward bundle to our Jito forwarder route
-      const proto =
+      const protoHeader =
         (req.headers["x-forwarded-proto"] as string) ||
         (req.headers["x-forwarded-protocol"] as string) ||
         "https";
-      const host = req.headers.host as string;
-      const url = `${proto}://${host}/api/jito-bundle`;
+      const hostHeader = (req.headers.host as string) || "localhost:3000"; // safe fallback
+      const forwardUrl = `${protoHeader}://${hostHeader}/api/jito-bundle`;
 
-      const r = await fetch(url, {
+      const r = await fetch(forwardUrl, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -181,8 +184,13 @@ export default async function handler(
       });
 
       if (!r.ok) {
-        const err = await r.json().catch(() => ({} as any));
-        const msg = (err && (err.error || err.message)) || `HTTP ${r.status}`;
+        let msg = `HTTP ${r.status}`;
+        try {
+          const err = await r.json();
+          msg = (err && (err.error || err.message)) || msg;
+        } catch {
+          // ignore JSON parse errors
+        }
         return res.status(502).json({ error: String(msg) });
       }
       const out = await r.json();
