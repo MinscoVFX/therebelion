@@ -10,6 +10,7 @@ import {
   TransactionInstruction,
 } from '@solana/web3.js';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
+import { Buffer } from 'buffer'; // ✅ ensure Buffer type is available in TS/Node
 
 // Allow bigger base64 payloads (avoid 413 with large logos)
 export const config = {
@@ -112,8 +113,8 @@ type UploadRequest = {
   userWallet: string;
   website?: string;
   twitter?: string;
-  devPrebuy?: boolean;    // accepted, but NOT executed here anymore
-  devAmountSol?: string;  // accepted, but NOT executed here anymore
+  devPrebuy?: boolean; // accepted, but NOT executed here anymore
+  devAmountSol?: string; // accepted, but NOT executed here anymore
 };
 
 type Metadata = {
