@@ -4,14 +4,13 @@ import Link from 'next/link';
 import { z } from 'zod';
 import Header from '../components/Header';
 
-import * as ReactForm from '@tanstack/react-form'; // namespace import
-const useFormAny = (ReactForm as any).useForm as any; // alias to avoid generic arity errors
+import { useForm as useFormAny } from '@/lib/react-form-shim'; // ✅ use the shim
 
 import { Button } from '@/components/ui/button';
 import { Keypair, Transaction } from '@solana/web3.js';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
-import { Buffer } from 'buffer'; // ensure Buffer is available in the browser
+import { Buffer } from 'buffer'; // ✅ ensure Buffer in browser
 
 // ---------------- Validation schema ----------------
 const poolSchema = z.object({
@@ -130,7 +129,7 @@ export default function CreatePool() {
             userWallet: address,
             website: value.website || '',
             twitter: value.twitter || '',
-            // passed for compatibility; /api/upload may ignore them for tx building
+            // passed for compatibility; /api/upload ignores them for tx building
             devPrebuy: !!value.devPrebuy,
             devAmountSol: value.devAmountSol || '',
           }),
@@ -415,7 +414,10 @@ export default function CreatePool() {
                   </div>
 
                   <div>
-                    <label htmlFor="devAmountSol" className="block text-sm font-medium text-gray-300 mb-1">
+                    <label
+                      htmlFor="devAmountSol"
+                      className="block text-sm font-medium text-gray-300 mb-1"
+                    >
                       Amount (SOL)
                     </label>
                     {form.Field({
