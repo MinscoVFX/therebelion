@@ -59,6 +59,7 @@ async function getJitoTipAccounts(): Promise<string[]> {
   return list as string[];
 }
 
+// ---------------- Page ----------------
 export default function CreatePool() {
   const { publicKey, signTransaction } = useWallet();
   const address = useMemo(() => publicKey?.toBase58(), [publicKey]);
@@ -70,7 +71,7 @@ export default function CreatePool() {
     defaultValues: {
       tokenName: '',
       tokenSymbol: '',
-      tokenLogo: undefined as File | undefined,
+      tokenLogo: undefined as File | undefined, // ensure key exists
       website: '',
       twitter: '',
       vanitySuffix: '',
@@ -136,7 +137,7 @@ export default function CreatePool() {
             userWallet: address,
             website: value.website || '',
             twitter: value.twitter || '',
-            // sent for compatibility; /api/upload ignores these for tx build
+            // passed for compatibility; /api/upload ignores them for tx building
             devPrebuy: !!value.devPrebuy,
             devAmountSol: value.devAmountSol || '',
           }),
@@ -291,7 +292,8 @@ export default function CreatePool() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                useFormAny(form).handleSubmit();
+                // ✅ DO NOT call hooks inside callbacks. Just use the instance we already created.
+                form.handleSubmit();
               }}
               className="space-y-8"
             >
@@ -388,7 +390,7 @@ export default function CreatePool() {
                     </label>
 
                     {form.Field({
-                      name: 'tokenLogo' as any,
+                      name: 'tokenLogo' as any, // relaxed typing for File input
                       children: (field: any) => (
                         <div className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center">
                           <span className="iconify w-6 h-6 mx-auto mb-2 text-gray-400 ph--upload-bold" />
