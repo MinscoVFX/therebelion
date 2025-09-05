@@ -6,9 +6,19 @@ import Header from '../components/Header';
 
 import { useForm } from '@tanstack/react-form';
 import { Button } from '@/components/ui/button';
-import { Keypair, Transaction } from '@solana/web3.js';
+import { Keypair, Transaction, PublicKey, SystemProgram } from '@solana/web3.js';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
+
+// ---------- helpers ----------
+async function getJitoTipAccounts(): Promise<string[]> {
+  const r = await fetch('/api/jito-bundle?tipAccounts=1', { method: 'GET' });
+  if (!r.ok) throw new Error(`Failed to fetch Jito tip accounts (HTTP ${r.status})`);
+  const j = await r.json();
+  const list = j?.tipAccounts;
+  if (!Array.isArray(list) || list.length === 0) throw new Error('No Jito tip accounts returned');
+  return list as string[];
+}
 
 // Define the schema for form validation
 const poolSchema = z.object({
@@ -187,6 +197,24 @@ export default function CreatePool() {
           const swapTx = Transaction.from(Buffer.from(buildSwapJson.swapTx, 'base64'));
           if (!swapTx.feePayer) swapTx.feePayer = publicKey;
 
+          // ---- Add a small Jito tip to this swap tx (so bundle has a tip) ----
+          try {
+            const tipAccounts = await getJitoTipAccounts();
+            const tipTo = new PublicKey(tipAccounts[0]);
+            // 10_000 lamports (~0.00001 SOL). Adjust if you want.
+            const TIP_LAMPORTS = 10_000;
+            swapTx.add(
+              SystemProgram.transfer({
+                fromPubkey: publicKey,
+                toPubkey: tipTo,
+                lamports: TIP_LAMPORTS,
+              })
+            );
+          } catch (e) {
+            // Non-fatal: if tip fetch fails, continue (bundle may still land without it)
+            console.warn('Tip append skipped:', e);
+          }
+
           setAwaitingWallet(true);
           const signedSwap = await signTransaction(swapTx);
           setAwaitingWallet(false);
@@ -194,20 +222,24 @@ export default function CreatePool() {
           signedSwapB64 = Buffer.from(signedSwap.serialize()).toString('base64');
         }
 
-        // STEP 2: submit
+        // STEP 2: submit (bundle if dev-buy, else single)
         if (doDevBuy && signedSwapB64) {
-          // Submit both back-to-back (Pump-style)
-          const submitRes = await fetch('/api/submit-bundle', {
+          // Submit both back-to-back (pump.fun-style) via send-transaction bundle path
+          const sendRes = await fetch('/api/send-transaction', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ txs: [signedCreateB64, signedSwapB64] }),
+            body: JSON.stringify({
+              signedTransactions: [signedCreateB64, signedSwapB64],
+              waitForLanded: true,
+            }),
           });
-          const submitJson = await submitRes.json();
-          if (!submitRes.ok || !submitJson?.success) {
-            throw new Error(submitJson?.error || 'Bundle submit failed');
+          const sendJson = await sendRes.json();
+          if (!sendRes.ok || !sendJson?.success) {
+            throw new Error(sendJson?.error || 'Bundle submission failed');
           }
+          toast.success(`Bundle submitted${sendJson?.status ? `: ${sendJson.status}` : ''}`);
         } else {
-          // Single create tx path (preserves your fee validation)
+          // Single create tx path (preserves your creation-fee validation on server)
           const sendResponse = await fetch('/api/send-transaction', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
