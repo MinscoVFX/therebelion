@@ -75,6 +75,7 @@ export default function CreatePool() {
   const [isLoading, setIsLoading] = useState(false);
   const [awaitingWallet, setAwaitingWallet] = useState(false);
   const [poolCreated, setPoolCreated] = useState(false);
+  const devAmountSnapRef = useRef<string>(''); // snapshot at click/submit
 
   const form = useForm({
     defaultValues: {
@@ -88,6 +89,9 @@ export default function CreatePool() {
       devAmountSol: '',
     } as FormValues,
     onSubmit: async ({ value }) => {
+      // snapshot amount to avoid edits during wallet prompt
+      devAmountSnapRef.current = value.devAmountSol || '';
+
       try {
         setIsLoading(true);
 
@@ -101,11 +105,10 @@ export default function CreatePool() {
           toast.error('Wallet not connected');
           return;
         }
-        const ownerPk = publicKey; // non-null from guard above
+        const ownerPk = publicKey;
         const owner = ownerPk.toBase58();
 
         const reader = new FileReader();
-        // Convert file to base64
         const base64File = await new Promise<string>((resolve) => {
           reader.onload = (e) => resolve(e.target?.result as string);
           reader.readAsDataURL(tokenLogo);
@@ -137,7 +140,7 @@ export default function CreatePool() {
           keyPair = Keypair.generate();
         }
 
-        // ------- STEP 1: ask the server to build ONLY the create-pool tx (no prebuy inside) -------
+        // STEP 1: build create tx on backend (NO swap inside; bundle separately)
         const uploadResponse = await fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -149,7 +152,6 @@ export default function CreatePool() {
             userWallet: owner,
             website: value.website || '',
             twitter: value.twitter || '',
-            // IMPORTANT: disable server-side prebuy here, we’ll bundle it separately
             devPrebuy: false,
             devAmountSol: '',
           }),
@@ -168,13 +170,13 @@ export default function CreatePool() {
         setAwaitingWallet(true);
         const signedCreate = await signTransaction(createTx);
         setAwaitingWallet(false);
-        // Use the createTx blockhash for the swap (so the bundle shares one blockhash)
-        const sharedBlockhash = signedCreate.recentBlockhash ?? createTx.recentBlockhash;
 
-        // ------- Optional STEP 1.5: build swap tx in "prelaunch" mode (no pool fetch) -------
+        const sharedBlockhash = signedCreate.recentBlockhash ?? createTx.recentBlockhash;
+        const signedCreateB64 = Buffer.from(signedCreate.serialize()).toString('base64');
+
+        // Optional: dev buy
         let signedSwapB64: string | undefined = undefined;
-        const doDevBuy =
-          !!value.devPrebuy && !!value.devAmountSol && Number(value.devAmountSol) > 0;
+        const doDevBuy = !!value.devPrebuy && Number(devAmountSnapRef.current) > 0;
 
         if (doDevBuy) {
           const buildSwapRes = await fetch('/api/build-swap', {
@@ -183,11 +185,11 @@ export default function CreatePool() {
             body: JSON.stringify({
               baseMint: keyPair.publicKey.toBase58(),
               payer: owner,
-              amountSol: value.devAmountSol,
-              pool: pool || undefined,         // use pool if server returned one
-              slippageBps: 100,                 // 1% — not used when prelaunch=true (minOut=0)
-              prelaunch: true,                  // <— CRITICAL: don’t fetch/quote the pool
-              blockhash: sharedBlockhash || '', // ask server to set this if provided
+              amountSol: devAmountSnapRef.current,
+              pool: pool || undefined,
+              slippageBps: 100,
+              prelaunch: true,
+              blockhash: sharedBlockhash || '',
             }),
           });
           const buildSwapJson = await buildSwapRes.json();
@@ -196,22 +198,26 @@ export default function CreatePool() {
           }
 
           const swapTx = Transaction.from(Buffer.from(buildSwapJson.swapTx, 'base64'));
-          // Use the same blockhash as create tx to satisfy bundle rules
           if (sharedBlockhash) swapTx.recentBlockhash = sharedBlockhash;
           swapTx.feePayer = ownerPk;
 
-          // Add a tiny Jito tip to the *swap* tx so the bundle has a tip
+          // ---- Add a small Jito tip to this swap tx (so bundle has a tip) ----
           try {
             const tipAccounts = await getJitoTipAccounts();
-            const tipTo = new PublicKey(tipAccounts[0]);
-            const TIP_LAMPORTS = 10_000; // ~0.00001 SOL
-            swapTx.add(
-              SystemProgram.transfer({
-                fromPubkey: ownerPk,
-                toPubkey: tipTo,
-                lamports: TIP_LAMPORTS,
-              })
-            );
+            const tipToStr = (Array.isArray(tipAccounts) ? tipAccounts[0] : undefined) || '';
+            if (tipToStr) {
+              const tipTo = new PublicKey(tipToStr);
+              const TIP_LAMPORTS = 10_000; // ~0.00001 SOL
+              swapTx.add(
+                SystemProgram.transfer({
+                  fromPubkey: ownerPk,
+                  toPubkey: tipTo,
+                  lamports: TIP_LAMPORTS,
+                })
+              );
+            } else {
+              console.warn('Tip append skipped: no tip account string available');
+            }
           } catch (e) {
             console.warn('Tip append skipped:', e);
           }
@@ -219,12 +225,11 @@ export default function CreatePool() {
           setAwaitingWallet(true);
           const signedSwap = await signTransaction(swapTx);
           setAwaitingWallet(false);
+
           signedSwapB64 = Buffer.from(signedSwap.serialize()).toString('base64');
         }
 
-        const signedCreateB64 = Buffer.from(signedCreate.serialize()).toString('base64');
-
-        // ------- STEP 2: submit (bundle if dev-buy, else single) -------
+        // STEP 2: submit (bundle if dev-buy, else single)
         if (doDevBuy && signedSwapB64) {
           const sendRes = await fetch('/api/send-transaction', {
             method: 'POST',
@@ -240,7 +245,6 @@ export default function CreatePool() {
           }
           toast.success(`Bundle submitted${sendJson?.status ? `: ${sendJson.status}` : ''}`);
         } else {
-          // Single create tx route (keeps your server-side creation fee checks)
           const sendResponse = await fetch('/api/send-transaction', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
