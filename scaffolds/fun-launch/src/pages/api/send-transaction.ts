@@ -17,7 +17,11 @@ function sanitize(s: string | undefined | null): string {
 }
 function parsePubkey(label: string, value: string): PublicKey {
   const v = sanitize(value);
-  try { return new PublicKey(v); } catch { throw new Error(`${label} is not a valid base58 pubkey: "${v}"`); }
+  try {
+    return new PublicKey(v);
+  } catch {
+    throw new Error(`${label} is not a valid base58 pubkey: "${v}"`);
+  }
 }
 
 type FeeSplit = { receiver: PublicKey; lamports: number };
@@ -37,16 +41,24 @@ function getFeeSplitsFromEnv(): FeeSplit[] {
         const colon = pair.indexOf(":");
         const addr = colon === -1 ? "" : sanitize(pair.slice(0, colon));
         const solStr = colon === -1 ? "" : sanitize(pair.slice(colon + 1));
-        if (!addr || !solStr) throw new Error(`Invalid fee split format: "${pair}". Use "Wallet:0.020"`);
+        if (!addr || !solStr)
+          throw new Error(`Invalid fee split format: "${pair}". Use "Wallet:0.020"`);
         const receiver = parsePubkey("Fee receiver", addr);
         const sol = parseFloat(solStr);
-        if (!Number.isFinite(sol) || sol <= 0) throw new Error(`Invalid SOL amount in split "${pair}"`);
+        if (!Number.isFinite(sol) || sol <= 0)
+          throw new Error(`Invalid SOL amount in split "${pair}"`);
         return { receiver, lamports: Math.floor(sol * LAMPORTS_PER_SOL) };
       });
   }
 
   if (rawSingle) {
-    return [{ receiver: parsePubkey("NEXT_PUBLIC_CREATION_FEE_RECEIVER", rawSingle), lamports: 35_000_000 }];
+    // default single split = 0.035 SOL if you used that before
+    return [
+      {
+        receiver: parsePubkey("NEXT_PUBLIC_CREATION_FEE_RECEIVER", rawSingle),
+        lamports: 35_000_000,
+      },
+    ];
   }
 
   throw new Error(
@@ -58,89 +70,154 @@ if (!sanitize(RPC_URL)) {
   throw new Error("RPC_URL not configured");
 }
 
-type SendTransactionRequest = {
-  signedTransaction: string; // base64-encoded signed transaction
+type SingleTxBody = {
+  signedTransaction?: string; // base64
+  waitForLanded?: boolean;
+};
+type BundleBody = {
+  signedTransactions?: string[]; // 1–5 base64, ordered (e.g., [createPool, devBuy])
+  waitForLanded?: boolean;
 };
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+function decodeTransactionOrThrow(b64: string): Transaction {
+  const trimmed = (b64 ?? "").trim();
+  if (!trimmed) throw new Error("Transaction base64 string is empty");
+  try {
+    return Transaction.from(Buffer.from(trimmed, "base64"));
+  } catch {
+    throw new Error("Invalid signed transaction (base64 decode failed)");
+  }
+}
+
+/**
+ * Validate creation-fee SystemProgram.transfer instructions that must appear
+ * immediately after any leading ComputeBudget ixs.
+ *
+ * We validate ONLY in the first transaction of the bundle (Tx 0) to keep
+ * compatibility with the previous single-tx validator.
+ */
+function validateCreationFeeTransfers(tx: Transaction, expectedSplits: FeeSplit[]) {
+  const ixs = tx.instructions ?? [];
+  if (ixs.length === 0) throw new Error("Transaction has no instructions");
+
+  // Skip any leading ComputeBudget instructions
+  let idx = 0;
+  while (idx < ixs.length && ixs[idx]?.programId.equals(ComputeBudgetProgram.programId)) {
+    idx++;
+  }
+
+  // Determine the payer (feePayer or first signer)
+  const payer =
+    tx.feePayer ?? (tx.signatures[0]?.publicKey as PublicKey | undefined);
+  if (!payer) throw new Error("Missing payer (feePayer/signers) on transaction");
+
+  // Validate that the next N instructions are SystemProgram.transfer in order
+  for (let s = 0; s < expectedSplits.length; s++) {
+    const ix = ixs[idx + s];
+    if (!ix) throw new Error("Missing creation fee instruction(s)");
+
+    const exp = expectedSplits[s];
+    if (!exp) throw new Error("Fee split index out of bounds");
+
+    if (!ix.programId.equals(SystemProgram.programId)) {
+      throw new Error("Creation fee ix is not SystemProgram.transfer");
+    }
+
+    let decoded: any;
+    try {
+      decoded = SystemInstruction.decodeTransfer(ix);
+    } catch {
+      throw new Error("Creation fee ix is not a valid SystemProgram.transfer");
+    }
+
+    const toOk = (decoded.toPubkey as PublicKey).equals(exp.receiver);
+    const lamportsOk = Number(decoded.lamports) === exp.lamports;
+    const fromOk = (decoded.fromPubkey as PublicKey).equals(payer);
+
+    if (!(toOk && lamportsOk && fromOk)) {
+      throw new Error(
+        `Creation fee check failed at ix ${idx + s}. Expected {from=${payer.toBase58()}, to=${exp.receiver.toBase58()}, lamports=${exp.lamports}}`
+      );
+    }
+  }
+}
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  if (req.method !== "POST")
+    return res.status(405).json({ error: "Method not allowed" });
 
   try {
-    const { signedTransaction } = req.body as SendTransactionRequest;
-    if (!signedTransaction) return res.status(400).json({ error: "Missing signed transaction" });
-
-    const tx = Transaction.from(Buffer.from(signedTransaction, "base64"));
-
-    const ixs = tx.instructions ?? [];
-    if (ixs.length === 0) {
-      return res.status(400).json({ error: "Transaction has no instructions" });
-    }
-
-    // Skip any leading ComputeBudget instructions (some wallets/SDKs may prepend)
-    let idx = 0;
-    while (idx < ixs.length && ixs[idx]?.programId.equals(ComputeBudgetProgram.programId)) {
-      idx++;
-    }
-
-    // Required fee splits from env (validated + sanitized)
-    const expectedSplits = getFeeSplitsFromEnv();
-
-    // Determine the payer (feePayer or first signer)
-    const payer = tx.feePayer ?? (tx.signatures[0]?.publicKey as PublicKey | undefined);
-    if (!payer) return res.status(400).json({ error: "Missing payer (feePayer/signers) on transaction" });
-
-    // Validate that the next N instructions are SystemProgram.transfer matching expected splits in order
-    for (let s = 0; s < expectedSplits.length; s++) {
-      const ix = ixs[idx + s];
-      if (!ix) return res.status(400).json({ error: "Missing creation fee instruction(s)" });
-
-      const exp = expectedSplits[s];
-      if (!exp) {
-        return res.status(400).json({ error: "Fee split index out of bounds" });
-      }
-
-      if (!ix.programId.equals(SystemProgram.programId)) {
-        return res.status(400).json({ error: "Creation fee ix is not SystemProgram.transfer" });
-      }
-
-      let decoded: any;
-      try {
-        decoded = SystemInstruction.decodeTransfer(ix);
-      } catch {
-        return res.status(400).json({ error: "Creation fee ix is not a valid SystemProgram.transfer" });
-      }
-
-      const toOk = (decoded.toPubkey as PublicKey).equals(exp.receiver);
-      const lamportsOk = Number(decoded.lamports) === exp.lamports;
-      const fromOk = (decoded.fromPubkey as PublicKey).equals(payer);
-
-      if (!(toOk && lamportsOk && fromOk)) {
-        return res.status(400).json({
-          error: "Creation fee check failed",
-          details: {
-            index: idx + s,
-            expected_to: exp.receiver.toBase58(),
-            expected_lamports: exp.lamports,
-            expected_from: payer.toBase58(),
-          },
-        } as any);
-      }
-    }
-
-    // Optional: allow memo and any other instructions (pool create, atomic swap, etc.) after the transfers
-    // We don't enforce anything further here to keep compatibility with your upload.ts atomic dev buy flow.
-    // Move index past validated fee transfers:
-    idx += expectedSplits.length;
+    const body = (req.body ?? {}) as SingleTxBody & BundleBody;
 
     const connection = new Connection(sanitize(RPC_URL as string), "confirmed");
-    const signature = await sendAndConfirmRawTransaction(connection, tx.serialize(), {
-      commitment: "confirmed",
-    });
+    const expectedSplits = getFeeSplitsFromEnv();
 
-    return res.status(200).json({ success: true, signature });
+    // -------- Path A: Bundle submission (recommended) --------
+    if (Array.isArray(body.signedTransactions) && body.signedTransactions.length > 0) {
+      const signedTransactions = body.signedTransactions;
+
+      // Decode Tx 0 only for fee validation
+      const tx0 = decodeTransactionOrThrow(signedTransactions[0]);
+      validateCreationFeeTransfers(tx0, expectedSplits);
+
+      // Forward bundle to our Jito forwarder route
+      const proto =
+        (req.headers["x-forwarded-proto"] as string) ||
+        (req.headers["x-forwarded-protocol"] as string) ||
+        "https";
+      const host = req.headers.host as string;
+      const url = `${proto}://${host}/api/jito-bundle`;
+
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          txs: signedTransactions,
+          waitForLanded: !!body.waitForLanded,
+        }),
+      });
+
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({} as any));
+        const msg = (err && (err.error || err.message)) || `HTTP ${r.status}`;
+        return res.status(502).json({ error: String(msg) });
+      }
+      const out = await r.json();
+      return res.status(200).json({
+        success: true,
+        mode: "bundle",
+        bundleId: out?.bundleId,
+        status: out?.status,
+        region: out?.region,
+      });
+    }
+
+    // -------- Path B: Single transaction (legacy) --------
+    const { signedTransaction } = body;
+    if (!signedTransaction)
+      return res.status(400).json({
+        error:
+          "Missing signed transaction. Provide { signedTransaction } for legacy path or { signedTransactions: [] } for bundle.",
+      });
+
+    const tx = decodeTransactionOrThrow(signedTransaction);
+    validateCreationFeeTransfers(tx, expectedSplits);
+
+    const signature = await sendAndConfirmRawTransaction(
+      connection,
+      tx.serialize(),
+      { commitment: "confirmed" }
+    );
+
+    return res.status(200).json({ success: true, mode: "single", signature });
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error("Transaction error:", error);
-    return res.status(500).json({ error: error instanceof Error ? error.message : "Unknown error" });
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 }
