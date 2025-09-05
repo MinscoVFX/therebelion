@@ -59,7 +59,6 @@ async function getJitoTipAccounts(): Promise<string[]> {
   return list as string[];
 }
 
-// ---------------- Page ----------------
 export default function CreatePool() {
   const { publicKey, signTransaction } = useWallet();
   const address = useMemo(() => publicKey?.toBase58(), [publicKey]);
@@ -71,7 +70,7 @@ export default function CreatePool() {
     defaultValues: {
       tokenName: '',
       tokenSymbol: '',
-      tokenLogo: undefined as File | undefined, // ensure key exists
+      tokenLogo: undefined as File | undefined,
       website: '',
       twitter: '',
       vanitySuffix: '',
@@ -137,7 +136,7 @@ export default function CreatePool() {
             userWallet: address,
             website: value.website || '',
             twitter: value.twitter || '',
-            // passed for compatibility; /api/upload ignores them for tx building
+            // sent for compatibility; /api/upload ignores these for tx build
             devPrebuy: !!value.devPrebuy,
             devAmountSol: value.devAmountSol || '',
           }),
@@ -154,57 +153,60 @@ export default function CreatePool() {
         const createTx = Transaction.from(Buffer.from(poolTx, 'base64'));
         createTx.sign(keyPair);
 
-        const sharedBlockhash: string | null = createTx.recentBlockhash ?? null;
-
         const signedCreate = await signTransaction(createTx);
         const signedCreateB64 = Buffer.from(signedCreate.serialize()).toString('base64');
 
-        // Should we dev pre-buy?
+        // Should we dev pre-buy (bundled)?
         const doDevBuy =
           !!value.devPrebuy &&
           typeof value.devAmountSol === 'string' &&
           Number(value.devAmountSol) > 0;
 
         if (doDevBuy) {
+          if (!pool) {
+            console.warn('No pool returned from /api/upload; swap builder will still prelaunch-build.');
+          }
+
+          // Step 2.5: Build the swap **in prelaunch mode** sharing the createTx blockhash
           const payerAddr = address || publicKey.toBase58();
-
-          // Step 2.5: Build the swap (prelaunch mode, reuse SAME blockhash for bundle)
-          const buildSwapBody: any = {
-            baseMint: keyPair.publicKey.toBase58(),
-            payer: payerAddr,
-            amountSol: value.devAmountSol,
-            pool: pool || '',          // okay if empty; server will not wait in prelaunch
-            slippageBps: 100,
-            prelaunch: true,           // <--- important
-            blockhash: sharedBlockhash || '', // <--- share the blockhash with createTx
-          };
-
           const buildSwapRes = await fetch('/api/build-swap', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(buildSwapBody),
+            body: JSON.stringify({
+              baseMint: keyPair.publicKey.toBase58(),
+              payer: payerAddr,
+              amountSol: value.devAmountSol,
+              pool: pool || '',
+              slippageBps: 100,
+              prelaunch: true,                               // <-- IMPORTANT
+              blockhash: String(createTx.recentBlockhash || ''), // share blockhash
+            }),
           });
           const buildSwapJson = await buildSwapRes.json();
           if (!buildSwapRes.ok || !buildSwapJson?.swapTx) {
             throw new Error(buildSwapJson?.error || 'Failed to build swap');
           }
 
-          // Optionally add a tiny Jito tip to the swap tx (non-fatal if it fails)
           const swapTx = Transaction.from(Buffer.from(buildSwapJson.swapTx, 'base64'));
+
+          // (Optional) add a tiny Jito tip to the swap tx
           try {
             const tips = await getJitoTipAccounts().catch(() => []);
-            const firstTip: string | undefined =
-              Array.isArray(tips) ? tips.find((t) => typeof t === 'string' && t.length > 0) : undefined;
-            if (firstTip) {
-              const tipTo = new PublicKey(firstTip); // safe: only runs if string present
+            const firstTip: string | undefined = Array.isArray(tips)
+              ? tips.find((t) => typeof t === 'string' && t.length > 0)
+              : undefined;
+            if (typeof firstTip === 'string') {
+              const tipTo = new PublicKey(firstTip);
               const TIP_LAMPORTS = 10_000; // ~0.00001 SOL
-              swapTx.add(
-                SystemProgram.transfer({
-                  fromPubkey: publicKey, // your wallet pays the tip
-                  toPubkey: tipTo,
-                  lamports: TIP_LAMPORTS,
-                })
-              );
+              if (publicKey) {
+                swapTx.add(
+                  SystemProgram.transfer({
+                    fromPubkey: publicKey,
+                    toPubkey: tipTo,
+                    lamports: TIP_LAMPORTS,
+                  })
+                );
+              }
             }
           } catch (e) {
             console.warn('Skipping Jito tip append:', e);
@@ -213,7 +215,7 @@ export default function CreatePool() {
           const signedSwap = await signTransaction(swapTx);
           const signedSwapB64 = Buffer.from(signedSwap.serialize()).toString('base64');
 
-          // Step 3: Submit both via bundle (server forwards to /api/jito-bundle)
+          // Step 3: Submit both via bundle
           const sendRes = await fetch('/api/send-transaction', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -228,7 +230,7 @@ export default function CreatePool() {
           }
           toast.success(`Bundle submitted${sendJson?.status ? `: ${sendJson.status}` : ''}`);
         } else {
-          // Single create tx path (preserves your creation-fee validation on server)
+          // Single create tx path (server validates creation-fee transfers)
           const sendResponse = await fetch('/api/send-transaction', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -289,7 +291,7 @@ export default function CreatePool() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                form.handleSubmit();
+                useFormAny(form).handleSubmit();
               }}
               className="space-y-8"
             >
@@ -421,12 +423,6 @@ export default function CreatePool() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="mb-4">
-                    <label
-                      htmlFor="website"
-                      className="block text-sm font-medium text-gray-300 mb-1"
-                    >
-                      Website
-                    </label>
                     {form.Field({
                       name: 'website',
                       children: (field: any) => (
@@ -444,12 +440,6 @@ export default function CreatePool() {
                   </div>
 
                   <div className="mb-4">
-                    <label
-                      htmlFor="twitter"
-                      className="block text-sm font-medium text-gray-300 mb-1"
-                    >
-                      Twitter
-                    </label>
                     {form.Field({
                       name: 'twitter',
                       children: (field: any) => (
