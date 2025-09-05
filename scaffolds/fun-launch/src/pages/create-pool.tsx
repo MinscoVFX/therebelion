@@ -154,6 +154,8 @@ export default function CreatePool() {
         const createTx = Transaction.from(Buffer.from(poolTx, 'base64'));
         createTx.sign(keyPair);
 
+        const sharedBlockhash: string | null = createTx.recentBlockhash ?? null;
+
         const signedCreate = await signTransaction(createTx);
         const signedCreateB64 = Buffer.from(signedCreate.serialize()).toString('base64');
 
@@ -164,25 +166,23 @@ export default function CreatePool() {
           Number(value.devAmountSol) > 0;
 
         if (doDevBuy) {
-          if (!pool) {
-            // Last-resort: if /api/upload didn’t infer a pool, we still try the bundle (the swap builder waits)
-            console.warn('No pool returned from /api/upload; swap builder will wait for pool.');
-          }
-
-          // Step 2.5: Build the swap (server waits for pool creation on-chain)
           const payerAddr = address || publicKey.toBase58();
+
+          // Step 2.5: Build the swap (prelaunch mode, reuse SAME blockhash for bundle)
+          const buildSwapBody: any = {
+            baseMint: keyPair.publicKey.toBase58(),
+            payer: payerAddr,
+            amountSol: value.devAmountSol,
+            pool: pool || '',          // okay if empty; server will not wait in prelaunch
+            slippageBps: 100,
+            prelaunch: true,           // <--- important
+            blockhash: sharedBlockhash || '', // <--- share the blockhash with createTx
+          };
+
           const buildSwapRes = await fetch('/api/build-swap', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              baseMint: keyPair.publicKey.toBase58(),
-              payer: payerAddr,
-              amountSol: value.devAmountSol,
-              pool: pool || '',
-              slippageBps: 100,
-              waitMs: 8000,
-              checkIntervalMs: 150,
-            }),
+            body: JSON.stringify(buildSwapBody),
           });
           const buildSwapJson = await buildSwapRes.json();
           if (!buildSwapRes.ok || !buildSwapJson?.swapTx) {
@@ -192,23 +192,19 @@ export default function CreatePool() {
           // Optionally add a tiny Jito tip to the swap tx (non-fatal if it fails)
           const swapTx = Transaction.from(Buffer.from(buildSwapJson.swapTx, 'base64'));
           try {
-            if (publicKey) {
-              const tipsRaw = await getJitoTipAccounts().catch(() => []);
-              const tips: string[] = Array.isArray(tipsRaw) ? tipsRaw : [];
-              const firstTip: string | undefined =
-                tips.find((t) => typeof t === 'string' && t.length > 0);
-
-              if (firstTip) {
-                const tipTo = new PublicKey(firstTip); // <-- type-safe (string guaranteed)
-                const TIP_LAMPORTS = 10_000; // ~0.00001 SOL
-                swapTx.add(
-                  SystemProgram.transfer({
-                    fromPubkey: publicKey,
-                    toPubkey: tipTo,
-                    lamports: TIP_LAMPORTS,
-                  })
-                );
-              }
+            const tips = await getJitoTipAccounts().catch(() => []);
+            const firstTip: string | undefined =
+              Array.isArray(tips) ? tips.find((t) => typeof t === 'string' && t.length > 0) : undefined;
+            if (firstTip) {
+              const tipTo = new PublicKey(firstTip); // safe: only runs if string present
+              const TIP_LAMPORTS = 10_000; // ~0.00001 SOL
+              swapTx.add(
+                SystemProgram.transfer({
+                  fromPubkey: publicKey, // your wallet pays the tip
+                  toPubkey: tipTo,
+                  lamports: TIP_LAMPORTS,
+                })
+              );
             }
           } catch (e) {
             console.warn('Skipping Jito tip append:', e);
