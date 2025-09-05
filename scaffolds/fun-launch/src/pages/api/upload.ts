@@ -10,13 +10,12 @@ import {
   TransactionInstruction,
 } from '@solana/web3.js';
 import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
-import BN from 'bn.js';
 
 // Allow bigger base64 payloads (avoid 413 with large logos)
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '25mb', // was 10mb
+      sizeLimit: '25mb',
     },
   },
 };
@@ -35,7 +34,6 @@ const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfc
 
 // ---------- helpers ----------
 function sanitize(s: string | undefined | null): string {
-  // trim + strip zero-width spaces that often sneak in from copy/paste
   return (s ?? '').trim().replace(/\u200B/g, '');
 }
 function parsePubkey(label: string, value: string): PublicKey {
@@ -45,30 +43,6 @@ function parsePubkey(label: string, value: string): PublicKey {
   } catch {
     throw new Error(`${label} is not a valid base58 pubkey: "${v}"`);
   }
-}
-// Parse a decimal SOL string to lamports with no floating-point precision loss
-function parseSolToLamports(label: string, solStr: string): bigint {
-  const s = sanitize(solStr);
-  if (!s) throw new Error(`${label} must be provided`);
-
-  // Safely locate the decimal point (avoid destructuring 'possibly undefined')
-  const dot = s.indexOf('.');
-  const intPartRaw = dot === -1 ? s : s.slice(0, dot);     // may be '' for ".5"
-  const fracPartRaw = dot === -1 ? '' : s.slice(dot + 1);  // '' if no decimals
-
-  // allow forms like ".5" or "0.5"
-  const intPart = intPartRaw.replace(/^0+(?=\d)/, '') || '0';
-  const fracPart = (fracPartRaw + '000000000').slice(0, 9); // pad/cut to 9
-
-  if (!/^\d+$/.test(intPart) || !/^\d{0,9}$/.test(fracPart)) {
-    throw new Error(`${label} is not a valid number: "${s}"`);
-  }
-
-  const i = BigInt(intPart);
-  const f = BigInt(fracPart || '0');
-  const lamports = i * 1_000_000_000n + f;
-  if (lamports <= 0n) throw new Error(`${label} must be greater than 0`);
-  return lamports;
 }
 
 // Validate base envs at runtime (so errors return JSON, not HTML)
@@ -85,9 +59,6 @@ function validateBaseEnv(): string[] {
 }
 
 // --- Fee splits parser ---
-// Supports:
-// - NEXT_PUBLIC_CREATION_FEE_RECEIVERS="Wallet1:0.020,Wallet2:0.015"
-// - Fallback: NEXT_PUBLIC_CREATION_FEE_RECEIVER="Wallet" (defaults to 0.035 SOL)
 type FeeSplit = { receiver: PublicKey; lamports: number };
 
 function getFeeSplits(): FeeSplit[] {
@@ -141,8 +112,8 @@ type UploadRequest = {
   userWallet: string;
   website?: string;
   twitter?: string;
-  devPrebuy?: boolean;
-  devAmountSol?: string;
+  devPrebuy?: boolean;    // accepted, but NOT executed here anymore
+  devAmountSol?: string;  // accepted, but NOT executed here anymore
 };
 
 type Metadata = {
@@ -169,7 +140,7 @@ type MetadataUploadParams = {
   twitter?: string;
 };
 
-// R2 client setup (safe to construct; failures surface on use)
+// R2 client setup
 const r2 = new AWS.S3({
   endpoint: PRIVATE_R2_URL,
   accessKeyId: R2_ACCESS_KEY_ID,
@@ -179,7 +150,7 @@ const r2 = new AWS.S3({
   s3ForcePathStyle: true,
 });
 
-// --- NEW: infer pool from createPool ix we just built ---
+// --- Infer pool from the createPool ix we just built (best-effort) ---
 function inferPoolFromTx(
   tx: Transaction,
   baseMint: PublicKey,
@@ -188,9 +159,11 @@ function inferPoolFromTx(
 ): PublicKey | undefined {
   const ignore = new Set([baseMint.toBase58(), cfgKey.toBase58(), payer.toBase58()]);
   for (const ix of tx.instructions) {
-    const keySet = new Set(ix.keys.map(k => k.pubkey.toBase58()));
+    const keySet = new Set(ix.keys.map((k) => k.pubkey.toBase58()));
     if (keySet.has(baseMint.toBase58()) && keySet.has(cfgKey.toBase58())) {
-      const candidate = ix.keys.find(k => k.isWritable && !k.isSigner && !ignore.has(k.pubkey.toBase58()));
+      const candidate = ix.keys.find(
+        (k) => k.isWritable && !k.isSigner && !ignore.has(k.pubkey.toBase58())
+      );
       if (candidate) return candidate.pubkey;
     }
   }
@@ -217,8 +190,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       userWallet,
       website,
       twitter,
-      devPrebuy,
-      devAmountSol,
+      // NOTE: devPrebuy & devAmountSol are intentionally ignored for tx building
+      //       (we build the buy in /api/build-swap prelaunch mode and bundle)
     } = req.body as UploadRequest;
 
     // Validate required fields
@@ -244,15 +217,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'Failed to upload metadata' });
     }
 
-    // Create pool transaction (+ optional atomic dev pre-buy) with fees prepended
-    const { tx: poolTxRaw, pool: inferredPool } = await createPoolTransaction({
+    // Build CREATE-POOL tx ONLY (fees + memo are prepended)
+    const { tx: poolTxRaw, pool: inferredPool } = await buildCreatePoolTxOnly({
       mint,
       tokenName,
       tokenSymbol,
       metadataUrl,
       userWallet,
-      devPrebuy: !!devPrebuy,
-      devAmountSol: devAmountSol,
     });
 
     const poolTxBase64 = poolTxRaw
@@ -262,7 +233,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({
       success: true,
       poolTx: poolTxBase64,
-      pool: inferredPool ? inferredPool.toBase58() : null, // <-- return pool for follow-up buys
+      pool: inferredPool ? inferredPool.toBase58() : null,
     });
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -311,7 +282,6 @@ async function uploadMetadata(params: MetadataUploadParams): Promise<string | fa
       files: [
         {
           uri: params.image,
-          // Use content-type based on extension we saved (matches uploadImage)
           type: params.image.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg',
         },
       ],
@@ -350,22 +320,18 @@ async function uploadToR2(
   });
 }
 
-async function createPoolTransaction({
+async function buildCreatePoolTxOnly({
   mint,
   tokenName,
   tokenSymbol,
   metadataUrl,
   userWallet,
-  devPrebuy,
-  devAmountSol,
 }: {
   mint: string;
   tokenName: string;
   tokenSymbol: string;
   metadataUrl: string;
   userWallet: string;
-  devPrebuy: boolean;
-  devAmountSol?: string;
 }): Promise<{ tx: Transaction; pool?: PublicKey }> {
   const connection = new Connection(sanitize(RPC_URL as string), 'confirmed');
   const client = new DynamicBondingCurveClient(connection, 'confirmed');
@@ -388,8 +354,6 @@ async function createPoolTransaction({
 
   // 1.a) Prepend fees from env — ensure FIRST ix is a SystemProgram.transfer
   const splits = getFeeSplits();
-
-  // Build all transfer ixs in the SAME order as provided
   const transferIxs = splits.map((split) =>
     SystemProgram.transfer({
       fromPubkey: payer,
@@ -398,52 +362,21 @@ async function createPoolTransaction({
     })
   );
 
-  // Brand memo (placed AFTER transfers so first ix is a transfer)
+  // Optional: small compute price bump (AFTER fee transfers so first ix is transfer)
+  const computeIx = ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 5_000 });
+
+  // Brand memo (placed AFTER transfers)
   const memoIx = new TransactionInstruction({
     programId: MEMO_PROGRAM_ID,
     keys: [{ pubkey: payer, isSigner: true, isWritable: false }],
     data: Buffer.from('Meteora Protocol Fees (fees can fluctuate)', 'utf8'),
   });
 
-  // Ensure ordering: [transfers..., memo, ...original]
-  tx.instructions = [...transferIxs, memoIx, ...tx.instructions];
+  // Ensure ordering: [transfers..., memo, compute, ...original createPool ixs]
+  tx.instructions = [...transferIxs, memoIx, computeIx, ...tx.instructions];
 
   // Infer pool *now* (so we can return it in response)
   const inferredPool = inferPoolFromTx(tx, baseMint, cfgKey, payer);
-
-  // 2) Optional: append dev pre-buy IN THE SAME TX using SDK swap()
-  if (devPrebuy) {
-    if (!devAmountSol) {
-      throw new Error('devAmountSol must be provided when devPrebuy is true');
-    }
-    const lamports = parseSolToLamports('devAmountSol', devAmountSol);
-
-    // Add compute price AFTER the fee ixs; they remain first
-    tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 5_000 }));
-
-    if (!inferredPool) {
-      throw new Error('Could not infer pool address from createPool instruction');
-    }
-
-    // Build the swap using high-level SDK (derives poolAuthority and all required accounts)
-    const swapTx = await client.pool.swap({
-      owner: payer,
-      pool: inferredPool,
-      amountIn: new BN(lamports.toString()),
-      minimumAmountOut: new BN(0), // set a quoted minOut if you want explicit slippage protection
-      swapBaseForQuote: false,     // spend quote (SOL) to buy base token
-      referralTokenAccount: null,
-    });
-
-    // Merge swap instructions at the end
-    if (Array.isArray((swapTx as any)?.instructions)) {
-      for (const ix of (swapTx as any).instructions) tx.add(ix);
-    } else if (swapTx instanceof Transaction) {
-      swapTx.instructions.forEach(ix => tx.add(ix));
-    } else {
-      tx.add(swapTx as any);
-    }
-  }
 
   const { blockhash } = await connection.getLatestBlockhash();
   tx.feePayer = payer;
