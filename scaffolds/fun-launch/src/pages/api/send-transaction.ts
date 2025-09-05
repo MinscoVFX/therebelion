@@ -9,7 +9,12 @@ import {
   ComputeBudgetProgram,
 } from "@solana/web3.js";
 
-const RPC_URL = process.env.RPC_URL;
+// ---------- STRICT ENV NARROWING ----------
+const RAW_RPC_URL = process.env.RPC_URL;
+const RPC_ENDPOINT: string = typeof RAW_RPC_URL === "string" ? RAW_RPC_URL.trim() : "";
+if (!RPC_ENDPOINT) {
+  throw new Error("RPC_URL not configured");
+}
 
 // ---------- helpers ----------
 function sanitize(s: string | undefined | null): string {
@@ -63,12 +68,6 @@ function getFeeSplitsFromEnv(): FeeSplit[] {
   throw new Error(
     'Missing fee receivers. Set NEXT_PUBLIC_CREATION_FEE_RECEIVERS="Wallet:0.020,Wallet:0.015" or NEXT_PUBLIC_CREATION_FEE_RECEIVER="Wallet"'
   );
-}
-
-// ---- Strictly narrow RPC endpoint to a plain string (fixes TS2345) ----
-const ENDPOINT = sanitize(RPC_URL);
-if (!ENDPOINT) {
-  throw new Error("RPC_URL not configured");
 }
 
 type SingleTxBody = {
@@ -152,8 +151,8 @@ export default async function handler(
   try {
     const body = (req.body ?? {}) as SingleTxBody & BundleBody;
 
-    // Construct Connection with narrowed endpoint (plain string)
-    const connection = new Connection(ENDPOINT, "confirmed");
+    // Construct Connection with strictly narrowed endpoint (plain string)
+    const connection = new Connection(RPC_ENDPOINT, "confirmed");
     const expectedSplits = getFeeSplitsFromEnv();
 
     // -------- Path A: Bundle submission (recommended) --------
