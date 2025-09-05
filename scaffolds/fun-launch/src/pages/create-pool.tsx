@@ -104,6 +104,9 @@ export default function CreatePool() {
           toast.error('Wallet not connected');
           return;
         }
+        // ---- narrow once and reuse (fix TS) ----
+        const walletPk: PublicKey = publicKey;
+        const addressStr: string = walletPk.toBase58();
 
         const reader = new FileReader();
         // Convert file to base64
@@ -147,7 +150,7 @@ export default function CreatePool() {
             mint: keyPair.publicKey.toBase58(),
             tokenName: value.tokenName,
             tokenSymbol: value.tokenSymbol,
-            userWallet: address,
+            userWallet: addressStr, // narrowed string
             website: value.website || '',
             twitter: value.twitter || '',
             // Important: let server build ONLY the create tx (we handle dev-buy separately)
@@ -183,7 +186,7 @@ export default function CreatePool() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               baseMint: keyPair.publicKey.toBase58(),
-              payer: address,
+              payer: addressStr, // narrowed string
               amountSol: devAmountSnapRef.current, // snapshot
               pool: pool || undefined,             // if upload returned pool, use it
               slippageBps: 100,
@@ -195,17 +198,17 @@ export default function CreatePool() {
           }
 
           const swapTx = Transaction.from(Buffer.from(buildSwapJson.swapTx, 'base64'));
-          if (!swapTx.feePayer) swapTx.feePayer = publicKey;
+          if (!swapTx.feePayer) swapTx.feePayer = walletPk; // narrowed PublicKey
 
           // ---- Add a small Jito tip to this swap tx (so bundle has a tip) ----
           try {
             const tipAccounts = await getJitoTipAccounts();
-            const tipTo = new PublicKey(tipAccounts[0]);
+            const tipTo = new PublicKey(String(tipAccounts[0])); // ensure string
             // 10_000 lamports (~0.00001 SOL). Adjust if you want.
             const TIP_LAMPORTS = 10_000;
             swapTx.add(
               SystemProgram.transfer({
-                fromPubkey: publicKey,
+                fromPubkey: walletPk, // narrowed PublicKey
                 toPubkey: tipTo,
                 lamports: TIP_LAMPORTS,
               })
