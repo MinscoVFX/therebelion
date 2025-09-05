@@ -1,5 +1,4 @@
-// scaffolds/fun-launch/src/pages/create-pool.tsx
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { z } from 'zod';
@@ -11,7 +10,7 @@ import { Keypair, Transaction } from '@solana/web3.js';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
 
-// -------- schema --------
+// ---------------- Validation schema ----------------
 const poolSchema = z.object({
   tokenName: z.string().min(3, 'Token name must be at least 3 characters'),
   tokenSymbol: z.string().min(1, 'Token symbol is required'),
@@ -28,11 +27,19 @@ const poolSchema = z.object({
   devAmountSol: z.string().optional().or(z.literal('')),
 });
 
-type FormValues = z.infer<typeof poolSchema> & {
+// ---------------- Types ----------------
+interface FormValues {
+  tokenName: string;
+  tokenSymbol: string;
   tokenLogo: File | undefined;
-};
+  website?: string;
+  twitter?: string;
+  vanitySuffix?: string;
+  devPrebuy?: boolean;
+  devAmountSol?: string;
+}
 
-// -------- helpers --------
+// ---------------- Helpers ----------------
 function isBase58(str: string) {
   return /^[1-9A-HJ-NP-Za-km-z]+$/.test(str);
 }
@@ -52,18 +59,16 @@ async function findVanityKeypair(suffix: string, maxSeconds = 30) {
   return { kp: null as any, addr: '', tries, timedOut: true };
 }
 
+// ---------------- Page ----------------
 export default function CreatePool() {
   const { publicKey, signTransaction } = useWallet();
-  const address = useMemo(() => publicKey?.toBase58() ?? '', [publicKey]);
+  const address = useMemo(() => publicKey?.toBase58(), [publicKey]);
 
   const [isLoading, setIsLoading] = useState(false);
-  const [awaitingWallet, setAwaitingWallet] = useState(false);
   const [poolCreated, setPoolCreated] = useState(false);
 
-  // snapshot the dev amount at submit to prevent edits during wallet prompts
-  const devAmountSnapRef = useRef<string>('');
-
-  const form = useForm<FormValues>({
+  // IMPORTANT: Do NOT pass a generic to useForm (your TanStack version expects 0 or many generics)
+  const form = useForm({
     defaultValues: {
       tokenName: '',
       tokenSymbol: '',
@@ -78,28 +83,28 @@ export default function CreatePool() {
       try {
         setIsLoading(true);
 
-        // Guards
-        if (!value.tokenLogo) {
+        const { tokenLogo } = value;
+        if (!tokenLogo) {
           toast.error('Token logo is required');
           return;
         }
-        if (!publicKey || !signTransaction || !address) {
+
+        if (!signTransaction || !publicKey) {
           toast.error('Wallet not connected');
           return;
         }
 
-        devAmountSnapRef.current = value.devAmountSol || '';
-
-        // Read logo as base64
+        // Convert logo file to base64
         const base64File = await new Promise<string>((resolve) => {
           const reader = new FileReader();
           reader.onload = (e) => resolve((e.target?.result as string) ?? '');
-          reader.readAsDataURL(value.tokenLogo as File);
+          reader.readAsDataURL(tokenLogo);
         });
 
         // Vanity mint (optional)
         const rawSuffix = (value.vanitySuffix || '').trim();
         let keyPair: Keypair;
+
         if (rawSuffix.length > 0) {
           if (!isBase58(rawSuffix)) {
             toast.error('Suffix must be base58 (no 0, O, I, l).');
@@ -122,11 +127,8 @@ export default function CreatePool() {
           keyPair = Keypair.generate();
         }
 
-        // ===== SINGLE-TX FLOW =====
-        // Ask backend to build ONE tx that includes:
-        //   fee transfers → create DBC pool → (optional) dev pre-buy
-        const doDevBuy = !!value.devPrebuy && Number(devAmountSnapRef.current) > 0;
-        const uploadRes = await fetch('/api/upload', {
+        // Step 1: Ask backend to upload assets and build CREATE-ONLY tx (fees + memo are inside)
+        const uploadResponse = await fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -137,68 +139,75 @@ export default function CreatePool() {
             userWallet: address,
             website: value.website || '',
             twitter: value.twitter || '',
-            devPrebuy: doDevBuy,
-            devAmountSol: doDevBuy ? devAmountSnapRef.current : '',
+            // NOTE: devPrebuy/devAmountSol are ignored by /api/upload now (create-only)
+            devPrebuy: !!value.devPrebuy,
+            devAmountSol: value.devAmountSol || '',
           }),
         });
 
-        const uploadJson = await uploadRes.json();
-        if (!uploadRes.ok || !uploadJson?.poolTx) {
+        const uploadJson = await uploadResponse.json();
+        if (!uploadResponse.ok || !uploadJson?.poolTx) {
           throw new Error(uploadJson?.error || 'Upload/build failed');
         }
 
-        const poolTxB64: string = uploadJson.poolTx;
-        const tx = Transaction.from(Buffer.from(poolTxB64, 'base64'));
+        const { poolTx } = uploadJson as { poolTx: string };
 
-        // 1) sign with mint authority (vanity keypair)
-        tx.sign(keyPair);
+        // Step 2: Decode tx, sign with mint authority (keyPair), then user wallet
+        const transaction = Transaction.from(Buffer.from(poolTx, 'base64'));
+        transaction.sign(keyPair);
 
-        // 2) then sign with user wallet (payer)
-        setAwaitingWallet(true);
-        const signed = await signTransaction(tx);
-        setAwaitingWallet(false);
+        const signedTransaction = await signTransaction(transaction);
 
-        // 3) send via your fee-enforcing endpoint
-        const sendRes = await fetch('/api/send-transaction', {
+        // Step 3: Send signed transaction (server validates creation fees)
+        const sendResponse = await fetch('/api/send-transaction', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ signedTransaction: Buffer.from(signed.serialize()).toString('base64') }),
+          body: JSON.stringify({
+            signedTransaction: signedTransaction.serialize().toString('base64'),
+          }),
         });
-        const sendJson = await sendRes.json();
-        if (!sendRes.ok || !sendJson?.success) {
+
+        const sendJson = await sendResponse.json();
+        if (!sendResponse.ok || !sendJson?.success) {
           throw new Error(sendJson?.error || 'Send failed');
         }
 
         toast.success('Pool created successfully');
         setPoolCreated(true);
-      } catch (err) {
-        console.error('Error creating pool:', err);
-        setAwaitingWallet(false);
-        toast.error(err instanceof Error ? err.message : 'Failed to create pool');
+      } catch (error) {
+        console.error('Error creating pool:', error);
+        toast.error(error instanceof Error ? error.message : 'Failed to create pool');
       } finally {
         setIsLoading(false);
       }
     },
     validators: {
       onSubmit: ({ value }) => {
+        // Keep your zod check but don’t force TanStack generics
         const result = poolSchema.safeParse(value);
-        if (!result.success) return result.error.formErrors.fieldErrors as any;
+        if (!result.success) {
+          return result.error.formErrors.fieldErrors as any;
+        }
         return undefined;
       },
     },
   });
 
-  const formLocked = isLoading || awaitingWallet;
-
   return (
     <>
       <Head>
         <title>Create Pool - Virtual Curve</title>
-        <meta name="description" content="Create a new token pool on Virtual Curve with customizable price curves." />
+        <meta
+          name="description"
+          content="Create a new token pool on Virtual Curve with customizable price curves."
+        />
       </Head>
 
       <div className="min-h-screen bg-gradient-to-b text-white">
+        {/* Header */}
         <Header />
+
+        {/* Page Content */}
         <main className="container mx-auto px-4 py-10">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10">
             <div>
@@ -213,18 +222,21 @@ export default function CreatePool() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (formLocked) return;
                 form.handleSubmit();
               }}
-              className={`space-y-8 ${awaitingWallet ? 'pointer-events-none opacity-60' : ''}`}
+              className="space-y-8"
             >
-              {/* Token Details */}
+              {/* Token Details Section */}
               <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
                 <h2 className="text-2xl font-bold mb-4">Token Details</h2>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <div className="mb-4">
-                      <label htmlFor="tokenName" className="block text-sm font-medium text-gray-300 mb-1">
+                      <label
+                        htmlFor="tokenName"
+                        className="block text-sm font-medium text-gray-300 mb-1"
+                      >
                         Token Name*
                       </label>
                       {form.Field({
@@ -240,14 +252,16 @@ export default function CreatePool() {
                             onChange={(e) => field.handleChange(e.target.value)}
                             required
                             minLength={3}
-                            disabled={formLocked}
                           />
                         ),
                       })}
                     </div>
 
                     <div className="mb-4">
-                      <label htmlFor="tokenSymbol" className="block text-sm font-medium text-gray-300 mb-1">
+                      <label
+                        htmlFor="tokenSymbol"
+                        className="block text-sm font-medium text-gray-300 mb-1"
+                      >
                         Token Symbol*
                       </label>
                       {form.Field({
@@ -263,14 +277,16 @@ export default function CreatePool() {
                             onChange={(e) => field.handleChange(e.target.value)}
                             required
                             maxLength={10}
-                            disabled={formLocked}
                           />
                         ),
                       })}
                     </div>
 
                     <div className="mb-4">
-                      <label htmlFor="vanitySuffix" className="block text-sm font-medium text-gray-300 mb-1">
+                      <label
+                        htmlFor="vanitySuffix"
+                        className="block text-sm font-medium text-gray-300 mb-1"
+                      >
                         Vanity Suffix (optional)
                       </label>
                       {form.Field({
@@ -285,7 +301,6 @@ export default function CreatePool() {
                             value={field.state.value}
                             onChange={(e) => field.handleChange(e.target.value)}
                             maxLength={4}
-                            disabled={formLocked}
                           />
                         ),
                       })}
@@ -296,7 +311,10 @@ export default function CreatePool() {
                   </div>
 
                   <div>
-                    <label htmlFor="tokenLogo" className="block text-sm font-medium text-gray-300 mb-1">
+                    <label
+                      htmlFor="tokenLogo"
+                      className="block text-sm font-medium text-gray-300 mb-1"
+                    >
                       Token Logo*
                     </label>
                     {form.Field({
@@ -310,17 +328,13 @@ export default function CreatePool() {
                             id="tokenLogo"
                             className="hidden"
                             onChange={(e) => {
-                              if (formLocked) return;
                               const file = e.target.files?.[0];
                               if (file) field.handleChange(file);
                             }}
-                            disabled={formLocked}
                           />
                           <label
                             htmlFor="tokenLogo"
-                            className={`bg-white/10 px-4 py-2 rounded-lg text-sm transition cursor-pointer ${
-                              formLocked ? 'opacity-60 pointer-events-none' : 'hover:bg-white/20'
-                            }`}
+                            className="bg-white/10 px-4 py-2 rounded-lg text-sm hover:bg-white/20 transition cursor-pointer"
                           >
                             Browse Files
                           </label>
@@ -331,12 +345,16 @@ export default function CreatePool() {
                 </div>
               </div>
 
-              {/* Social Links */}
+              {/* Social Links Section */}
               <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
                 <h2 className="text-2xl font-bold mb-6">Social Links (Optional)</h2>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="mb-4">
-                    <label htmlFor="website" className="block text-sm font-medium text-gray-300 mb-1">
+                    <label
+                      htmlFor="website"
+                      className="block text-sm font-medium text-gray-300 mb-1"
+                    >
                       Website
                     </label>
                     {form.Field({
@@ -350,14 +368,16 @@ export default function CreatePool() {
                           placeholder="https://yourwebsite.com"
                           value={field.state.value}
                           onChange={(e) => field.handleChange(e.target.value)}
-                          disabled={formLocked}
                         />
                       ),
                     })}
                   </div>
 
                   <div className="mb-4">
-                    <label htmlFor="twitter" className="block text-sm font-medium text-gray-300 mb-1">
+                    <label
+                      htmlFor="twitter"
+                      className="block text-sm font-medium text-gray-300 mb-1"
+                    >
                       Twitter
                     </label>
                     {form.Field({
@@ -371,7 +391,6 @@ export default function CreatePool() {
                           placeholder="https://twitter.com/yourusername"
                           value={field.state.value}
                           onChange={(e) => field.handleChange(e.target.value)}
-                          disabled={formLocked}
                         />
                       ),
                     })}
@@ -379,7 +398,7 @@ export default function CreatePool() {
                 </div>
               </div>
 
-              {/* Dev Pre-Buy */}
+              {/* Dev Pre-Buy (Optional) */}
               <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
                 <h2 className="text-2xl font-bold mb-6">Dev Pre-Buy (Optional)</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -394,7 +413,6 @@ export default function CreatePool() {
                           className="h-5 w-5 accent-white/80"
                           checked={!!field.state.value}
                           onChange={(e) => field.handleChange(e.currentTarget.checked)}
-                          disabled={formLocked}
                         />
                       ),
                     })}
@@ -409,27 +427,24 @@ export default function CreatePool() {
                     </label>
                     {form.Field({
                       name: 'devAmountSol',
-                      children: (field) => {
-                        const disabled = !Boolean(form.state.values?.devPrebuy) || formLocked;
-                        return (
-                          <input
-                            key={disabled ? 'dev-off' : 'dev-on'}
-                            id="devAmountSol"
-                            name={field.name}
-                            type="text"
-                            inputMode="decimal"
-                            placeholder="0.25"
-                            className={`w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white ${
-                              disabled ? 'opacity-60' : ''
-                            }`}
-                            value={field.state.value}
-                            onChange={(e) => field.handleChange(e.target.value)}
-                            disabled={disabled}
-                          />
-                        );
-                      },
+                      children: (field) => (
+                        <input
+                          id="devAmountSol"
+                          name={field.name}
+                          type="number"
+                          min="0"
+                          step="0.001"
+                          placeholder="0.25"
+                          className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                          value={field.state.value}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                          disabled={!Boolean(form.state.values?.devPrebuy)}
+                        />
+                      ),
                     })}
-                    <p className="text-xs text-gray-400 mt-1">The buy will be bundled inside the same transaction.</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      We’ll execute a buy inside the same transaction.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -443,8 +458,8 @@ export default function CreatePool() {
                           {Array.isArray(value)
                             ? value.map((v: any) => v.message || v).join(', ')
                             : typeof value === 'string'
-                            ? value
-                            : String(value)}
+                              ? value
+                              : String(value)}
                         </p>
                       </div>
                     ))
@@ -453,7 +468,7 @@ export default function CreatePool() {
               )}
 
               <div className="flex justify-end">
-                <SubmitButton isSubmitting={isLoading || awaitingWallet} awaitingWallet={awaitingWallet} />
+                <SubmitButton isSubmitting={isLoading} />
               </div>
             </form>
           )}
@@ -463,7 +478,7 @@ export default function CreatePool() {
   );
 }
 
-const SubmitButton = ({ isSubmitting, awaitingWallet }: { isSubmitting: boolean; awaitingWallet: boolean }) => {
+const SubmitButton = ({ isSubmitting }: { isSubmitting: boolean }) => {
   const { publicKey } = useWallet();
   const { setShowModal } = useUnifiedWalletContext();
 
@@ -480,7 +495,7 @@ const SubmitButton = ({ isSubmitting, awaitingWallet }: { isSubmitting: boolean;
       {isSubmitting ? (
         <>
           <span className="iconify ph--spinner w-5 h-5 animate-spin" />
-          <span>{awaitingWallet ? 'Awaiting Wallet…' : 'Creating Pool...'}</span>
+          <span>Creating Pool...</span>
         </>
       ) : (
         <>
@@ -501,14 +516,20 @@ const PoolCreationSuccess = () => {
         </div>
         <h2 className="text-3xl font-bold mb-4">Pool Created Successfully!</h2>
         <p className="text-gray-300 mb-8 max-w-lg mx-auto">
-          Your token pool has been created and is now live on the Virtual Curve platform.
+          Your token pool has been created and is now live on the Virtual Curve platform. Users can
+          now buy and trade your tokens.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <Link href="/explore-pools" className="bg-white/10 px-6 py-3 rounded-xl font-medium hover:bg-white/20 transition">
+          <Link
+            href="/explore-pools"
+            className="bg-white/10 px-6 py-3 rounded-xl font-medium hover:bg-white/20 transition"
+          >
             Explore Pools
           </Link>
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              window.location.reload();
+            }}
             className="cursor-pointer bg-gradient-to-r from-pink-500 to-purple-500 px-6 py-3 rounded-xl font-medium hover:opacity-90 transition"
           >
             Create Another Pool
