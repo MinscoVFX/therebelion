@@ -179,6 +179,24 @@ const r2 = new AWS.S3({
   s3ForcePathStyle: true,
 });
 
+// --- NEW: infer pool from createPool ix we just built ---
+function inferPoolFromTx(
+  tx: Transaction,
+  baseMint: PublicKey,
+  cfgKey: PublicKey,
+  payer: PublicKey
+): PublicKey | undefined {
+  const ignore = new Set([baseMint.toBase58(), cfgKey.toBase58(), payer.toBase58()]);
+  for (const ix of tx.instructions) {
+    const keySet = new Set(ix.keys.map(k => k.pubkey.toBase58()));
+    if (keySet.has(baseMint.toBase58()) && keySet.has(cfgKey.toBase58())) {
+      const candidate = ix.keys.find(k => k.isWritable && !k.isSigner && !ignore.has(k.pubkey.toBase58()));
+      if (candidate) return candidate.pubkey;
+    }
+  }
+  return undefined;
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -227,7 +245,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Create pool transaction (+ optional atomic dev pre-buy) with fees prepended
-    const poolTx = await createPoolTransaction({
+    const { tx: poolTxRaw, pool: inferredPool } = await createPoolTransaction({
       mint,
       tokenName,
       tokenSymbol,
@@ -237,14 +255,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       devAmountSol: devAmountSol,
     });
 
+    const poolTxBase64 = poolTxRaw
+      .serialize({ requireAllSignatures: false, verifySignatures: false })
+      .toString('base64');
+
     return res.status(200).json({
       success: true,
-      poolTx: poolTx
-        .serialize({
-          requireAllSignatures: false,
-          verifySignatures: false,
-        })
-        .toString('base64'),
+      poolTx: poolTxBase64,
+      pool: inferredPool ? inferredPool.toBase58() : null, // <-- return pool for follow-up buys
     });
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -348,7 +366,7 @@ async function createPoolTransaction({
   userWallet: string;
   devPrebuy: boolean;
   devAmountSol?: string;
-}) {
+}): Promise<{ tx: Transaction; pool?: PublicKey }> {
   const connection = new Connection(sanitize(RPC_URL as string), 'confirmed');
   const client = new DynamicBondingCurveClient(connection, 'confirmed');
 
@@ -390,6 +408,9 @@ async function createPoolTransaction({
   // Ensure ordering: [transfers..., memo, ...original]
   tx.instructions = [...transferIxs, memoIx, ...tx.instructions];
 
+  // Infer pool *now* (so we can return it in response)
+  const inferredPool = inferPoolFromTx(tx, baseMint, cfgKey, payer);
+
   // 2) Optional: append dev pre-buy IN THE SAME TX using SDK swap()
   if (devPrebuy) {
     if (!devAmountSol) {
@@ -400,32 +421,14 @@ async function createPoolTransaction({
     // Add compute price AFTER the fee ixs; they remain first
     tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 5_000 }));
 
-    // --- Infer the pool address from the just-added createPool instruction
-    // Heuristic: find the ix that references BOTH the baseMint and cfgKey; among its keys,
-    // take a writable non-signer that is not baseMint/cfgKey/payer as the pool account.
-    let poolAddress: PublicKey | undefined;
-    const ignoreSet = new Set([baseMint.toBase58(), cfgKey.toBase58(), payer.toBase58()]);
-
-    for (const ix of tx.instructions) {
-      const keySet = new Set(ix.keys.map(k => k.pubkey.toBase58()));
-      if (keySet.has(baseMint.toBase58()) && keySet.has(cfgKey.toBase58())) {
-        const candidate = ix.keys.find(k =>
-          k.isWritable && !k.isSigner && !ignoreSet.has(k.pubkey.toBase58())
-        );
-        if (candidate) {
-          poolAddress = candidate.pubkey;
-          break;
-        }
-      }
-    }
-    if (!poolAddress) {
+    if (!inferredPool) {
       throw new Error('Could not infer pool address from createPool instruction');
     }
 
     // Build the swap using high-level SDK (derives poolAuthority and all required accounts)
     const swapTx = await client.pool.swap({
       owner: payer,
-      pool: poolAddress,
+      pool: inferredPool,
       amountIn: new BN(lamports.toString()),
       minimumAmountOut: new BN(0), // set a quoted minOut if you want explicit slippage protection
       swapBaseForQuote: false,     // spend quote (SOL) to buy base token
@@ -446,5 +449,5 @@ async function createPoolTransaction({
   tx.feePayer = payer;
   tx.recentBlockhash = blockhash;
 
-  return tx;
+  return { tx, pool: inferredPool };
 }
