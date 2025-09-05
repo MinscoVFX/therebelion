@@ -5,7 +5,6 @@ import BN from "bn.js";
 
 // --- Env & helpers ---
 const RPC_URL = process.env.RPC_URL as string | undefined;
-const POOL_CONFIG_KEY = process.env.POOL_CONFIG_KEY as string | undefined;
 
 function sanitize(s: string | undefined | null): string {
   return (s ?? "").trim().replace(/\u200B/g, "");
@@ -37,8 +36,8 @@ type BuildSwapRequest = {
   payer: string;
   /** SOL amount as string, e.g. "0.5" */
   amountSol: string;
-  /** Optional: pool address. Pass it to avoid any SDK lookup. */
-  pool?: string;
+  /** REQUIRED: pool address returned by /api/upload */
+  pool: string;
   /** Optional: slippage bps (default 100 = 1%) */
   slippageBps?: number;
 };
@@ -48,53 +47,29 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     if (!sanitize(RPC_URL)) throw new Error("RPC_URL not configured");
-    if (!sanitize(POOL_CONFIG_KEY)) throw new Error("POOL_CONFIG_KEY not configured");
 
     const { baseMint, payer, amountSol, pool, slippageBps } = req.body as BuildSwapRequest;
 
-    if (!baseMint || !payer || !amountSol) {
-      return res.status(400).json({ error: "Missing required fields (baseMint, payer, amountSol)" });
+    if (!baseMint || !payer || !amountSol || !pool) {
+      return res.status(400).json({ error: "Missing required fields (baseMint, payer, amountSol, pool)" });
     }
 
     const connection = new Connection(sanitize(RPC_URL as string), "confirmed");
     const client = new DynamicBondingCurveClient(connection, "confirmed");
 
-    const cfgKey = parsePubkey("POOL_CONFIG_KEY", POOL_CONFIG_KEY as string);
-    const base = parsePubkey("baseMint", baseMint);
+    // Parse inputs (kept same helper style)
+    parsePubkey("baseMint", baseMint); // not used directly by SDK here, but validated for sanity
     const owner = parsePubkey("payer", payer);
+    const poolAddress = parsePubkey("pool", pool);
     const lamports = parseSolToLamports("amountSol", amountSol);
     const slippage = Number.isFinite(slippageBps) && slippageBps! > 0 ? slippageBps! : 100;
 
-    // Resolve pool address
-    let poolAddress: PublicKey | undefined = pool ? parsePubkey("pool", pool) : undefined;
-
-    // Only attempt auto-derive if not provided (SDK helper may vary by version)
-    if (!poolAddress) {
-      const anyClient: any = client as any;
-      try {
-        if (anyClient?.state?.findPoolAddress) {
-          poolAddress = await anyClient.state.findPoolAddress({ baseMint: base, config: cfgKey });
-        } else if (anyClient?.pool?.findPoolAddress) {
-          poolAddress = await anyClient.pool.findPoolAddress({ baseMint: base, config: cfgKey });
-        }
-      } catch {
-        // noop; we'll error clearly if still missing
-      }
-    }
-
-    if (!poolAddress) {
-      return res.status(400).json({
-        error: "Pool address could not be resolved automatically",
-        hint: "Pass `pool` explicitly (you can include it in /api/upload response).",
-      });
-    }
-
-    // Build swap via SDK (derives required accounts)
+    // Build swap via SDK (we rely on the provided pool address)
     const swapTx: Transaction = await client.pool.swap({
       owner,
       pool: poolAddress,
       amountIn: new BN(lamports.toString()),
-      minimumAmountOut: new BN(0), // keep 0; or add a quote for strict slippage
+      minimumAmountOut: new BN(0), // keep 0; or set a quoted minOut for strict slippage
       swapBaseForQuote: false,     // spend quote (SOL) to buy base token
       referralTokenAccount: null,
       slippageBps: slippage,
