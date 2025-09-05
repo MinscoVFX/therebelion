@@ -73,7 +73,7 @@ export default function CreatePool() {
   const address = useMemo(() => publicKey?.toBase58(), [publicKey]);
 
   const [isLoading, setIsLoading] = useState(false);
-  const [awaitingWallet, setAwaitingWallet] = useState(false);
+  const [awaitingWallet, setAwaitingWallet] = useState(false); // lock while Phantom is open
   const [poolCreated, setPoolCreated] = useState(false);
   const devAmountSnapRef = useRef<string>(''); // snapshot at click/submit
 
@@ -89,12 +89,11 @@ export default function CreatePool() {
       devAmountSol: '',
     } as FormValues,
     onSubmit: async ({ value }) => {
-      // snapshot amount to avoid edits during wallet prompt
+      // snapshot the dev amount the moment we submit (prevents edits during wallet prompts)
       devAmountSnapRef.current = value.devAmountSol || '';
 
       try {
         setIsLoading(true);
-
         const { tokenLogo } = value;
         if (!tokenLogo) {
           toast.error('Token logo is required');
@@ -105,10 +104,9 @@ export default function CreatePool() {
           toast.error('Wallet not connected');
           return;
         }
-        const ownerPk = publicKey;
-        const owner = ownerPk.toBase58();
 
         const reader = new FileReader();
+        // Convert file to base64
         const base64File = await new Promise<string>((resolve) => {
           reader.onload = (e) => resolve(e.target?.result as string);
           reader.readAsDataURL(tokenLogo);
@@ -140,8 +138,8 @@ export default function CreatePool() {
           keyPair = Keypair.generate();
         }
 
-        // STEP 1: build create tx on backend (NO swap inside; bundle separately)
-        const uploadResponse = await fetch('/api/upload', {
+        // ------ STEP 1: ask backend to build CREATE-POOL tx ONLY (no swap) ------
+        const uploadRes = await fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -149,47 +147,44 @@ export default function CreatePool() {
             mint: keyPair.publicKey.toBase58(),
             tokenName: value.tokenName,
             tokenSymbol: value.tokenSymbol,
-            userWallet: owner,
+            userWallet: address,
             website: value.website || '',
             twitter: value.twitter || '',
+            // Important: force server to build ONLY the create tx.
             devPrebuy: false,
             devAmountSol: '',
           }),
         });
 
-        const uploadJson = await uploadResponse.json();
-        if (!uploadResponse.ok || !uploadJson?.poolTx) {
+        const uploadJson = await uploadRes.json();
+        if (!uploadRes.ok || !uploadJson?.poolTx) {
           throw new Error(uploadJson?.error || 'Upload/build failed');
         }
-
         const { poolTx, pool } = uploadJson as { poolTx: string; pool?: string };
 
-        // Decode create tx, sign with mint authority, then with wallet
+        // Decode create tx
         const createTx = Transaction.from(Buffer.from(poolTx, 'base64'));
+        // Sign with mint keypair (mint authority)
         createTx.sign(keyPair);
-        setAwaitingWallet(true);
-        const signedCreate = await signTransaction(createTx);
-        setAwaitingWallet(false);
 
-        const sharedBlockhash = signedCreate.recentBlockhash ?? createTx.recentBlockhash;
-        const signedCreateB64 = Buffer.from(signedCreate.serialize()).toString('base64');
-
-        // Optional: dev buy
-        let signedSwapB64: string | undefined = undefined;
+        // ------ STEP 2: If Dev Pre-Buy, build SWAP in PRELAUNCH mode ------
+        let signedSwapB64: string | undefined;
+        let usedBlockhash: string | undefined;
         const doDevBuy = !!value.devPrebuy && Number(devAmountSnapRef.current) > 0;
 
         if (doDevBuy) {
+          // Build the swap server-side without waiting for the pool.
           const buildSwapRes = await fetch('/api/build-swap', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               baseMint: keyPair.publicKey.toBase58(),
-              payer: owner,
+              payer: address,
               amountSol: devAmountSnapRef.current,
-              pool: pool || undefined,
+              pool: pool || '',            // pool PDA/address returned by upload
               slippageBps: 100,
-              prelaunch: true,
-              blockhash: sharedBlockhash || '',
+              prelaunch: true,             // <<< IMPORTANT
+              // omit blockhash so server picks one and returns it to us
             }),
           });
           const buildSwapJson = await buildSwapRes.json();
@@ -197,40 +192,48 @@ export default function CreatePool() {
             throw new Error(buildSwapJson?.error || 'Failed to build swap');
           }
 
-          const swapTx = Transaction.from(Buffer.from(buildSwapJson.swapTx, 'base64'));
-          if (sharedBlockhash) swapTx.recentBlockhash = sharedBlockhash;
-          swapTx.feePayer = ownerPk;
+          usedBlockhash = buildSwapJson.usedBlockhash as string | undefined;
 
-          // ---- Add a small Jito tip to this swap tx (so bundle has a tip) ----
+          // Decode the swap, add a tiny Jito tip (non-fatal if fetch fails), then sign
+          const swapTx = Transaction.from(Buffer.from(buildSwapJson.swapTx, 'base64'));
+          if (publicKey) swapTx.feePayer = publicKey;
+
           try {
-            const tipAccounts = await getJitoTipAccounts();
-            const tipToStr = (Array.isArray(tipAccounts) ? tipAccounts[0] : undefined) || '';
-            if (tipToStr) {
-              const tipTo = new PublicKey(tipToStr);
+            const tips = await getJitoTipAccounts();
+            if (Array.isArray(tips) && tips[0]) {
+              const tipTo = new PublicKey(tips[0]);
               const TIP_LAMPORTS = 10_000; // ~0.00001 SOL
               swapTx.add(
                 SystemProgram.transfer({
-                  fromPubkey: ownerPk,
+                  fromPubkey: publicKey!,
                   toPubkey: tipTo,
                   lamports: TIP_LAMPORTS,
                 })
               );
-            } else {
-              console.warn('Tip append skipped: no tip account string available');
             }
           } catch (e) {
-            console.warn('Tip append skipped:', e);
+            console.warn('Jito tip append skipped:', e);
           }
 
           setAwaitingWallet(true);
           const signedSwap = await signTransaction(swapTx);
           setAwaitingWallet(false);
-
           signedSwapB64 = Buffer.from(signedSwap.serialize()).toString('base64');
         }
 
-        // STEP 2: submit (bundle if dev-buy, else single)
+        // ------ STEP 3: Make CREATE tx share the same blockhash and sign with wallet ------
+        if (doDevBuy && usedBlockhash && usedBlockhash.trim()) {
+          createTx.recentBlockhash = usedBlockhash.trim();
+        }
+        // Payer (wallet) signs last
+        setAwaitingWallet(true);
+        const signedCreate = await signTransaction(createTx);
+        setAwaitingWallet(false);
+        const signedCreateB64 = Buffer.from(signedCreate.serialize()).toString('base64');
+
+        // ------ STEP 4: Submit ------
         if (doDevBuy && signedSwapB64) {
+          // Submit as a bundle so swap does not front-run create.
           const sendRes = await fetch('/api/send-transaction', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -245,6 +248,7 @@ export default function CreatePool() {
           }
           toast.success(`Bundle submitted${sendJson?.status ? `: ${sendJson.status}` : ''}`);
         } else {
+          // Single create tx path (server validates your fee-splits)
           const sendResponse = await fetch('/api/send-transaction', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -277,6 +281,7 @@ export default function CreatePool() {
     },
   });
 
+  // lock inputs while busy or wallet prompt open
   const formLocked = isLoading || awaitingWallet;
 
   return (
@@ -542,9 +547,7 @@ export default function CreatePool() {
                         );
                       },
                     })}
-                    <p className="text-xs text-gray-400 mt-1">
-                      We’ll execute a buy immediately after your pool is created.
-                    </p>
+                    <p className="text-xs text-gray-400 mt-1">We’ll execute a buy immediately after your pool is created.</p>
                   </div>
                 </div>
               </div>
