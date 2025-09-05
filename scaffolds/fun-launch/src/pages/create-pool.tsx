@@ -55,6 +55,7 @@ export default function CreatePool() {
   const [isLoading, setIsLoading] = useState(false);
   const [poolCreated, setPoolCreated] = useState(false);
 
+  // IMPORTANT: no generic on useForm — older TanStack version expects 10 type args
   const form = useForm({
     defaultValues: {
       tokenName: '',
@@ -66,7 +67,6 @@ export default function CreatePool() {
       devPrebuy: false,
       devAmountSol: '',
     },
-    // ---- FIX 1: explicitly type the destructured param to avoid TS7031
     onSubmit: async ({ value }: { value: any }) => {
       try {
         setIsLoading(true);
@@ -170,7 +170,6 @@ export default function CreatePool() {
       }
     },
     validators: {
-      // ---- FIX 2: explicitly type the destructured param to avoid TS7031
       onSubmit: ({ value }: { value: any }) => {
         const result = poolSchema.safeParse(value);
         if (!result.success) {
@@ -179,7 +178,7 @@ export default function CreatePool() {
         return undefined;
       },
     },
-  } as any); // keep loosened due to TanStack version & File field
+  } as any); // relaxed typing due to TanStack version & File field
 
   return (
     <>
