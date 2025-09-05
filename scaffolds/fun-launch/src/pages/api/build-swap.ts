@@ -52,7 +52,7 @@ type BuildSwapRequest = {
   /** Optional: slippage bps (default 100 = 1%) */
   slippageBps?: number;
 
-  /** --- New for bundle / prelaunch flow --- */
+  /** --- Bundle / prelaunch flow --- */
   /** If true, do NOT wait for pool existence (for create+buy bundle) */
   prelaunch?: boolean;
   /** If provided, use this recentBlockhash (must match the create-pool tx for bundle) */
@@ -122,8 +122,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       await waitForPoolAccount(connection, poolAddress, waitMs, checkIntervalMs);
     }
 
-    // Build swap via SDK. We set minimumAmountOut = 0 to avoid quoting before pool exists.
-    // swapBaseForQuote = false means we spend quote (SOL) to buy base token.
+    // Build swap via SDK. minimumAmountOut = 0 avoids pre-quoting.
+    // swapBaseForQuote = false means spend quote (SOL) to buy base token.
     const swapTx: Transaction = await (dbc as any).pool.swap({
       owner,
       pool: poolAddress,
