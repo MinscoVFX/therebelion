@@ -27,18 +27,6 @@ const poolSchema = z.object({
   devAmountSol: z.string().optional().or(z.literal('')),
 });
 
-// ---------------- Types ----------------
-interface FormValues {
-  tokenName: string;
-  tokenSymbol: string;
-  tokenLogo: File | undefined;
-  website?: string;
-  twitter?: string;
-  vanitySuffix?: string;
-  devPrebuy?: boolean;
-  devAmountSol?: string;
-}
-
 // ---------------- Helpers ----------------
 function isBase58(str: string) {
   return /^[1-9A-HJ-NP-Za-km-z]+$/.test(str);
@@ -67,12 +55,14 @@ export default function CreatePool() {
   const [isLoading, setIsLoading] = useState(false);
   const [poolCreated, setPoolCreated] = useState(false);
 
-  // IMPORTANT: Do NOT pass a generic to useForm (your TanStack version expects 0 or many generics)
+  // IMPORTANT:
+  // - No generic on useForm (your TanStack version balks at <T> -> TS2558)
+  // - We cast the created form to `any` to allow a File-typed field ("tokenLogo") without fighting TanStack's Updater types.
   const form = useForm({
     defaultValues: {
       tokenName: '',
       tokenSymbol: '',
-      tokenLogo: undefined,
+      tokenLogo: undefined as File | undefined, // keep this in default values so the key exists
       website: '',
       twitter: '',
       vanitySuffix: '',
@@ -83,7 +73,7 @@ export default function CreatePool() {
       try {
         setIsLoading(true);
 
-        const { tokenLogo } = value;
+        const tokenLogo = (value as any).tokenLogo as File | undefined;
         if (!tokenLogo) {
           toast.error('Token logo is required');
           return;
@@ -102,7 +92,7 @@ export default function CreatePool() {
         });
 
         // Vanity mint (optional)
-        const rawSuffix = (value.vanitySuffix || '').trim();
+        const rawSuffix = ((value as any).vanitySuffix || '').trim();
         let keyPair: Keypair;
 
         if (rawSuffix.length > 0) {
@@ -134,14 +124,15 @@ export default function CreatePool() {
           body: JSON.stringify({
             tokenLogo: base64File,
             mint: keyPair.publicKey.toBase58(),
-            tokenName: value.tokenName,
-            tokenSymbol: value.tokenSymbol,
+            tokenName: (value as any).tokenName,
+            tokenSymbol: (value as any).tokenSymbol,
             userWallet: address,
-            website: value.website || '',
-            twitter: value.twitter || '',
-            // NOTE: devPrebuy/devAmountSol are ignored by /api/upload now (create-only)
-            devPrebuy: !!value.devPrebuy,
-            devAmountSol: value.devAmountSol || '',
+            website: (value as any).website || '',
+            twitter: (value as any).twitter || '',
+            // NOTE: devPrebuy/devAmountSol are ignored by /api/upload now (create-only),
+            // but we pass them to preserve your UI compatibility.
+            devPrebuy: !!(value as any).devPrebuy,
+            devAmountSol: (value as any).devAmountSol || '',
           }),
         });
 
@@ -183,7 +174,7 @@ export default function CreatePool() {
     },
     validators: {
       onSubmit: ({ value }) => {
-        // Keep your zod check but don’t force TanStack generics
+        // Keep your zod check
         const result = poolSchema.safeParse(value);
         if (!result.success) {
           return result.error.formErrors.fieldErrors as any;
@@ -191,7 +182,7 @@ export default function CreatePool() {
         return undefined;
       },
     },
-  });
+  } as any); // <= relaxed typing to avoid Field name/value generics issues on this TanStack version
 
   return (
     <>
@@ -241,7 +232,7 @@ export default function CreatePool() {
                       </label>
                       {form.Field({
                         name: 'tokenName',
-                        children: (field) => (
+                        children: (field: any) => (
                           <input
                             id="tokenName"
                             name={field.name}
@@ -266,7 +257,7 @@ export default function CreatePool() {
                       </label>
                       {form.Field({
                         name: 'tokenSymbol',
-                        children: (field) => (
+                        children: (field: any) => (
                           <input
                             id="tokenSymbol"
                             name={field.name}
@@ -291,7 +282,7 @@ export default function CreatePool() {
                       </label>
                       {form.Field({
                         name: 'vanitySuffix',
-                        children: (field) => (
+                        children: (field: any) => (
                           <input
                             id="vanitySuffix"
                             name={field.name}
@@ -317,9 +308,12 @@ export default function CreatePool() {
                     >
                       Token Logo*
                     </label>
+
+                    {/* NOTE: We don't rely on TanStack's strict typing for File here. */}
                     {form.Field({
-                      name: 'tokenLogo',
-                      children: (field) => (
+                      // Cast the name to any to avoid the string-literal union error
+                      name: 'tokenLogo' as any,
+                      children: (field: any) => (
                         <div className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center">
                           <span className="iconify w-6 h-6 mx-auto mb-2 text-gray-400 ph--upload-bold" />
                           <p className="text-gray-400 text-xs mb-2">PNG, JPG or SVG (max. 2MB)</p>
@@ -329,7 +323,10 @@ export default function CreatePool() {
                             className="hidden"
                             onChange={(e) => {
                               const file = e.target.files?.[0];
-                              if (file) field.handleChange(file);
+                              if (file) {
+                                // File -> loosen type with any to satisfy Updater typing of current TanStack version
+                                field.handleChange(file as any);
+                              }
                             }}
                           />
                           <label
@@ -359,7 +356,7 @@ export default function CreatePool() {
                     </label>
                     {form.Field({
                       name: 'website',
-                      children: (field) => (
+                      children: (field: any) => (
                         <input
                           id="website"
                           name={field.name}
@@ -382,7 +379,7 @@ export default function CreatePool() {
                     </label>
                     {form.Field({
                       name: 'twitter',
-                      children: (field) => (
+                      children: (field: any) => (
                         <input
                           id="twitter"
                           name={field.name}
@@ -405,7 +402,7 @@ export default function CreatePool() {
                   <div className="flex items-center gap-3">
                     {form.Field({
                       name: 'devPrebuy',
-                      children: (field) => (
+                      children: (field: any) => (
                         <input
                           id="devPrebuy"
                           name={field.name}
@@ -427,7 +424,7 @@ export default function CreatePool() {
                     </label>
                     {form.Field({
                       name: 'devAmountSol',
-                      children: (field) => (
+                      children: (field: any) => (
                         <input
                           id="devAmountSol"
                           name={field.name}
@@ -438,7 +435,7 @@ export default function CreatePool() {
                           className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
                           value={field.state.value}
                           onChange={(e) => field.handleChange(e.target.value)}
-                          disabled={!Boolean(form.state.values?.devPrebuy)}
+                          disabled={!Boolean((form as any).state?.values?.devPrebuy)}
                         />
                       ),
                     })}
@@ -449,14 +446,14 @@ export default function CreatePool() {
                 </div>
               </div>
 
-              {form.state.errors && form.state.errors.length > 0 && (
+              {(form as any).state?.errors && (form as any).state?.errors.length > 0 && (
                 <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 space-y-2">
-                  {form.state.errors.map((error, index) =>
+                  {(form as any).state.errors.map((error: any, index: number) =>
                     Object.entries(error || {}).map(([, value]) => (
                       <div key={index} className="flex items-start gap-2">
                         <p className="text-red-200">
                           {Array.isArray(value)
-                            ? value.map((v: any) => v.message || v).join(', ')
+                            ? (value as any[]).map((v) => (v as any).message || v).join(', ')
                             : typeof value === 'string'
                               ? value
                               : String(value)}
