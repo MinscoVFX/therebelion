@@ -141,13 +141,6 @@ function validateCreationFeeTransfers(tx: Transaction, expectedSplits: FeeSplit[
   }
 }
 
-// ——— helper to coerce header values to a plain string ———
-function headerAsString(v: unknown, fallback: string): string {
-  if (typeof v === "string") return v;
-  if (Array.isArray(v) && v.length > 0 && typeof v[0] === "string") return v[0];
-  return fallback;
-}
-
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -170,13 +163,9 @@ export default async function handler(
       const tx0 = decodeTransactionOrThrow(signedTransactions[0]);
       validateCreationFeeTransfers(tx0, expectedSplits);
 
-      // Forward bundle to our Jito forwarder route
-      const protoHeader = headerAsString(
-        req.headers["x-forwarded-proto"] ?? req.headers["x-forwarded-protocol"],
-        "https"
-      );
-      const hostHeader = headerAsString(req.headers.host, "localhost:3000");
-      const forwardUrl = `${protoHeader}://${hostHeader}/api/jito-bundle`;
+      // Build a guaranteed-plain-string URL for the local forwarder (no header unions)
+      const port = String(process.env.PORT ?? "3000");
+      const forwardUrl = `http://127.0.0.1:${port}/api/jito-bundle`;
 
       const r = await fetch(forwardUrl, {
         method: "POST",
@@ -193,6 +182,7 @@ export default async function handler(
           const err = await r.json();
           msg = (err && (err.error || err.message)) || msg;
         } catch {
+          // ignore JSON parse errors
         }
         return res.status(502).json({ error: String(msg) });
       }
