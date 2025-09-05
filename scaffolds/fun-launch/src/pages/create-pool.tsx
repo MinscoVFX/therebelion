@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Keypair, Transaction } from '@solana/web3.js';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
+import { Buffer } from 'buffer'; // ensure Buffer is available in the browser
 
 // ---------------- Validation schema ----------------
 const poolSchema = z.object({
@@ -129,7 +130,7 @@ export default function CreatePool() {
             userWallet: address,
             website: value.website || '',
             twitter: value.twitter || '',
-            // passed for compatibility; /api/upload ignores them for tx building
+            // passed for compatibility; /api/upload may ignore them for tx building
             devPrebuy: !!value.devPrebuy,
             devAmountSol: value.devAmountSol || '',
           }),
