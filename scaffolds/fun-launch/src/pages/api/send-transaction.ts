@@ -141,6 +141,13 @@ function validateCreationFeeTransfers(tx: Transaction, expectedSplits: FeeSplit[
   }
 }
 
+// ——— helper to coerce header values to a plain string ———
+function headerAsString(v: unknown, fallback: string): string {
+  if (typeof v === "string") return v;
+  if (Array.isArray(v) && v.length > 0 && typeof v[0] === "string") return v[0];
+  return fallback;
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -164,12 +171,11 @@ export default async function handler(
       validateCreationFeeTransfers(tx0, expectedSplits);
 
       // Forward bundle to our Jito forwarder route
-      const protoHeader = String(
-        (req.headers["x-forwarded-proto"] ??
-          req.headers["x-forwarded-protocol"] ??
-          "https")
+      const protoHeader = headerAsString(
+        req.headers["x-forwarded-proto"] ?? req.headers["x-forwarded-protocol"],
+        "https"
       );
-      const hostHeader = String(req.headers.host ?? "localhost:3000");
+      const hostHeader = headerAsString(req.headers.host, "localhost:3000");
       const forwardUrl = `${protoHeader}://${hostHeader}/api/jito-bundle`;
 
       const r = await fetch(forwardUrl, {
