@@ -40,7 +40,30 @@ type BuildSwapRequest = {
   pool: string;
   /** Optional: slippage bps (default 100 = 1%) */
   slippageBps?: number;
+  /** Optional: how long to wait for pool to exist (ms). Defaults 8000. */
+  waitMs?: number;
+  /** Optional: poll interval (ms). Defaults 150. */
+  checkIntervalMs?: number;
 };
+
+async function waitForPoolAccount(
+  connection: Connection,
+  pool: PublicKey,
+  waitMs = 8000,
+  checkIntervalMs = 150
+): Promise<void> {
+  const start = Date.now();
+  // quick first check
+  const first = await connection.getAccountInfo(pool, "processed");
+  if (first) return;
+
+  while (Date.now() - start < waitMs) {
+    await new Promise((r) => setTimeout(r, checkIntervalMs));
+    const info = await connection.getAccountInfo(pool, "processed");
+    if (info) return;
+  }
+  throw new Error(`Pool not found after waiting ${waitMs}ms: ${pool.toBase58()}`);
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -48,7 +71,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     if (!sanitize(RPC_URL)) throw new Error("RPC_URL not configured");
 
-    const { baseMint, payer, amountSol, pool, slippageBps } = req.body as BuildSwapRequest;
+    const {
+      baseMint,
+      payer,
+      amountSol,
+      pool,
+      slippageBps,
+      waitMs = 8000,
+      checkIntervalMs = 150,
+    } = req.body as BuildSwapRequest;
 
     if (!baseMint || !payer || !amountSol || !pool) {
       return res.status(400).json({ error: "Missing required fields (baseMint, payer, amountSol, pool)" });
@@ -57,19 +88,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const connection = new Connection(sanitize(RPC_URL as string), "confirmed");
     const client = new DynamicBondingCurveClient(connection, "confirmed");
 
-    // Parse inputs (kept same helper style)
-    parsePubkey("baseMint", baseMint); // not used directly by SDK here, but validated for sanity
+    // Validate inputs
+    parsePubkey("baseMint", baseMint); // sanity check
     const owner = parsePubkey("payer", payer);
     const poolAddress = parsePubkey("pool", pool);
     const lamports = parseSolToLamports("amountSol", amountSol);
     const slippage = Number.isFinite(slippageBps) && slippageBps! > 0 ? slippageBps! : 100;
 
-    // Build swap via SDK (we rely on the provided pool address)
+    // --- NEW: wait until the pool account exists on-chain (handles race with create tx)
+    await waitForPoolAccount(connection, poolAddress, waitMs, checkIntervalMs);
+
+    // Build swap via SDK
     const swapTx: Transaction = await client.pool.swap({
       owner,
       pool: poolAddress,
       amountIn: new BN(lamports.toString()),
-      minimumAmountOut: new BN(0), // keep 0; or set a quoted minOut for strict slippage
+      minimumAmountOut: new BN(0), // keep 0; or set a quote for strict slippage
       swapBaseForQuote: false,     // spend quote (SOL) to buy base token
       referralTokenAccount: null,
       slippageBps: slippage,
