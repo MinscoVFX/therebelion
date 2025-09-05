@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { z } from 'zod';
@@ -6,9 +6,19 @@ import Header from '../components/Header';
 
 import { useForm } from '@tanstack/react-form';
 import { Button } from '@/components/ui/button';
-import { Keypair, Transaction } from '@solana/web3.js';
+import { Keypair, Transaction, PublicKey, SystemProgram } from '@solana/web3.js';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
+
+// ---------- helpers ----------
+async function getJitoTipAccounts(): Promise<string[]> {
+  const r = await fetch('/api/jito-bundle?tipAccounts=1', { method: 'GET' });
+  if (!r.ok) throw new Error(`Failed to fetch Jito tip accounts (HTTP ${r.status})`);
+  const j = await r.json();
+  const list = j?.tipAccounts;
+  if (!Array.isArray(list) || list.length === 0) throw new Error('No Jito tip accounts returned');
+  return list as string[];
+}
 
 // Define the schema for form validation
 const poolSchema = z.object({
@@ -63,6 +73,7 @@ export default function CreatePool() {
   const address = useMemo(() => publicKey?.toBase58(), [publicKey]);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [awaitingWallet, setAwaitingWallet] = useState(false);
   const [poolCreated, setPoolCreated] = useState(false);
 
   const form = useForm({
@@ -79,19 +90,21 @@ export default function CreatePool() {
     onSubmit: async ({ value }) => {
       try {
         setIsLoading(true);
+
         const { tokenLogo } = value;
         if (!tokenLogo) {
           toast.error('Token logo is required');
           return;
         }
 
-        if (!signTransaction) {
+        if (!publicKey || !signTransaction) {
           toast.error('Wallet not connected');
           return;
         }
+        const ownerPk = publicKey; // non-null from guard above
+        const owner = ownerPk.toBase58();
 
         const reader = new FileReader();
-
         // Convert file to base64
         const base64File = await new Promise<string>((resolve) => {
           reader.onload = (e) => resolve(e.target?.result as string);
@@ -124,84 +137,126 @@ export default function CreatePool() {
           keyPair = Keypair.generate();
         }
 
-        // Step 1: Upload to R2 and get transaction(s)
+        // ------- STEP 1: ask the server to build ONLY the create-pool tx (no prebuy inside) -------
         const uploadResponse = await fetch('/api/upload', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             tokenLogo: base64File,
             mint: keyPair.publicKey.toBase58(),
             tokenName: value.tokenName,
             tokenSymbol: value.tokenSymbol,
-            userWallet: address || '',           // keep as string, even if not connected yet
+            userWallet: owner,
             website: value.website || '',
             twitter: value.twitter || '',
-            devPrebuy: !!value.devPrebuy,        // sent to backend (if backend supports building swapTx)
-            devAmountSol: value.devAmountSol || ''
+            // IMPORTANT: disable server-side prebuy here, we’ll bundle it separately
+            devPrebuy: false,
+            devAmountSol: '',
           }),
         });
 
-        if (!uploadResponse.ok) {
-          const error = await uploadResponse.json().catch(() => ({}));
-          throw new Error(error?.error || 'Upload failed');
+        const uploadJson = await uploadResponse.json();
+        if (!uploadResponse.ok || !uploadJson?.poolTx) {
+          throw new Error(uploadJson?.error || 'Upload/build failed');
         }
 
-        // The backend may return just { poolTx } OR { poolTx, swapTx }
-        const { poolTx, swapTx } = await uploadResponse.json() as { poolTx: string; swapTx?: string };
+        const { poolTx, pool } = uploadJson as { poolTx: string; pool?: string };
 
-        // Step 2: Decode + sign pool create tx with mint keypair first (mint authority)
+        // Decode create tx, sign with mint authority, then with wallet
         const createTx = Transaction.from(Buffer.from(poolTx, 'base64'));
         createTx.sign(keyPair);
-
-        // Step 3: Then sign with user's wallet (payer)
+        setAwaitingWallet(true);
         const signedCreate = await signTransaction(createTx);
+        setAwaitingWallet(false);
+        // Use the createTx blockhash for the swap (so the bundle shares one blockhash)
+        const sharedBlockhash = signedCreate.recentBlockhash ?? createTx.recentBlockhash;
+
+        // ------- Optional STEP 1.5: build swap tx in "prelaunch" mode (no pool fetch) -------
+        let signedSwapB64: string | undefined = undefined;
+        const doDevBuy =
+          !!value.devPrebuy && !!value.devAmountSol && Number(value.devAmountSol) > 0;
+
+        if (doDevBuy) {
+          const buildSwapRes = await fetch('/api/build-swap', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              baseMint: keyPair.publicKey.toBase58(),
+              payer: owner,
+              amountSol: value.devAmountSol,
+              pool: pool || undefined,         // use pool if server returned one
+              slippageBps: 100,                 // 1% — not used when prelaunch=true (minOut=0)
+              prelaunch: true,                  // <— CRITICAL: don’t fetch/quote the pool
+              blockhash: sharedBlockhash || '', // ask server to set this if provided
+            }),
+          });
+          const buildSwapJson = await buildSwapRes.json();
+          if (!buildSwapRes.ok || !buildSwapJson?.swapTx) {
+            throw new Error(buildSwapJson?.error || 'Failed to build swap');
+          }
+
+          const swapTx = Transaction.from(Buffer.from(buildSwapJson.swapTx, 'base64'));
+          // Use the same blockhash as create tx to satisfy bundle rules
+          if (sharedBlockhash) swapTx.recentBlockhash = sharedBlockhash;
+          swapTx.feePayer = ownerPk;
+
+          // Add a tiny Jito tip to the *swap* tx so the bundle has a tip
+          try {
+            const tipAccounts = await getJitoTipAccounts();
+            const tipTo = new PublicKey(tipAccounts[0]);
+            const TIP_LAMPORTS = 10_000; // ~0.00001 SOL
+            swapTx.add(
+              SystemProgram.transfer({
+                fromPubkey: ownerPk,
+                toPubkey: tipTo,
+                lamports: TIP_LAMPORTS,
+              })
+            );
+          } catch (e) {
+            console.warn('Tip append skipped:', e);
+          }
+
+          setAwaitingWallet(true);
+          const signedSwap = await signTransaction(swapTx);
+          setAwaitingWallet(false);
+          signedSwapB64 = Buffer.from(signedSwap.serialize()).toString('base64');
+        }
+
         const signedCreateB64 = Buffer.from(signedCreate.serialize()).toString('base64');
 
-        // If backend gave us a swapTx (dev pre-buy separated), sign it and bundle
-        if (swapTx && swapTx.length > 0) {
-          const swapTxObj = Transaction.from(Buffer.from(swapTx, 'base64'));
-          const signedSwap = await signTransaction(swapTxObj);
-          const signedSwapB64 = Buffer.from(signedSwap.serialize()).toString('base64');
-
-          // Step 4a: Submit as a bundle (create first, then swap)
-          const bundleRes = await fetch('/api/send-transaction', {
+        // ------- STEP 2: submit (bundle if dev-buy, else single) -------
+        if (doDevBuy && signedSwapB64) {
+          const sendRes = await fetch('/api/send-transaction', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               signedTransactions: [signedCreateB64, signedSwapB64],
-              waitForLanded: true
+              waitForLanded: true,
             }),
           });
-          if (!bundleRes.ok) {
-            const err = await bundleRes.json().catch(() => ({}));
-            throw new Error(err?.error || 'Bundle submission failed');
+          const sendJson = await sendRes.json();
+          if (!sendRes.ok || !sendJson?.success) {
+            throw new Error(sendJson?.error || 'Bundle submission failed');
           }
-          const out = await bundleRes.json().catch(() => ({}));
-          if (!out?.success) throw new Error(out?.error || 'Bundle not accepted');
+          toast.success(`Bundle submitted${sendJson?.status ? `: ${sendJson.status}` : ''}`);
         } else {
-          // Step 4b: Single send path (legacy/unchanged)
+          // Single create tx route (keeps your server-side creation fee checks)
           const sendResponse = await fetch('/api/send-transaction', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              signedTransaction: signedCreateB64
-            }),
+            body: JSON.stringify({ signedTransaction: signedCreateB64 }),
           });
-
-          if (!sendResponse.ok) {
-            const error = await sendResponse.json().catch(() => ({}));
-            throw new Error(error?.error || 'Send failed');
+          const sendJson = await sendResponse.json();
+          if (!sendResponse.ok || !sendJson?.success) {
+            throw new Error(sendJson?.error || 'Send failed');
           }
-          const { success } = await sendResponse.json().catch(() => ({}));
-          if (!success) throw new Error('Send rejected');
         }
 
         toast.success('Pool created successfully');
         setPoolCreated(true);
       } catch (error) {
         console.error('Error creating pool:', error);
+        setAwaitingWallet(false);
         toast.error(error instanceof Error ? error.message : 'Failed to create pool');
       } finally {
         setIsLoading(false);
@@ -217,6 +272,8 @@ export default function CreatePool() {
       },
     },
   });
+
+  const formLocked = isLoading || awaitingWallet;
 
   return (
     <>
@@ -241,42 +298,167 @@ export default function CreatePool() {
             </div>
           </div>
 
-        {poolCreated && !isLoading ? (
-          <PoolCreationSuccess />
-        ) : (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              form.handleSubmit();
-            }}
-            className="space-y-8"
-          >
-            {/* Token Details Section */}
-            <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
-              <h2 className="text-2xl font-bold mb-4">Token Details</h2>
+          {poolCreated && !isLoading ? (
+            <PoolCreationSuccess />
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (formLocked) return;
+                form.handleSubmit();
+              }}
+              className={`space-y-8 ${awaitingWallet ? 'pointer-events-none opacity-60' : ''}`}
+            >
+              {/* Token Details Section */}
+              <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
+                <h2 className="text-2xl font-bold mb-4">Token Details</h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <div className="mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <div className="mb-4">
+                      <label
+                        htmlFor="tokenName"
+                        className="block text-sm font-medium text-gray-300 mb-1"
+                      >
+                        Token Name*
+                      </label>
+                      {form.Field({
+                        name: 'tokenName',
+                        children: (field) => (
+                          <input
+                            id="tokenName"
+                            name={field.name}
+                            type="text"
+                            className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                            placeholder="e.g. Virtual Coin"
+                            value={field.state.value}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            required
+                            minLength={3}
+                            disabled={formLocked}
+                          />
+                        ),
+                      })}
+                    </div>
+
+                    <div className="mb-4">
+                      <label
+                        htmlFor="tokenSymbol"
+                        className="block text-sm font-medium text-gray-300 mb-1"
+                      >
+                        Token Symbol*
+                      </label>
+                      {form.Field({
+                        name: 'tokenSymbol',
+                        children: (field) => (
+                          <input
+                            id="tokenSymbol"
+                            name={field.name}
+                            type="text"
+                            className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                            placeholder="e.g. VRTL"
+                            value={field.state.value}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            required
+                            maxLength={10}
+                            disabled={formLocked}
+                          />
+                        ),
+                      })}
+                    </div>
+
+                    <div className="mb-4">
+                      <label
+                        htmlFor="vanitySuffix"
+                        className="block text-sm font-medium text-gray-300 mb-1"
+                      >
+                        Vanity Suffix (optional)
+                      </label>
+                      {form.Field({
+                        name: 'vanitySuffix',
+                        children: (field) => (
+                          <input
+                            id="vanitySuffix"
+                            name={field.name}
+                            type="text"
+                            className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                            placeholder="e.g. INU or AI"
+                            value={field.state.value}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            maxLength={4}
+                            disabled={formLocked}
+                          />
+                        ),
+                      })}
+                      <p className="text-xs text-gray-400 mt-1">
+                        1–4 base58 characters. We’ll search for a mint address ending with this.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
                     <label
-                      htmlFor="tokenName"
+                      htmlFor="tokenLogo"
                       className="block text-sm font-medium text-gray-300 mb-1"
                     >
-                      Token Name*
+                      Token Logo*
                     </label>
                     {form.Field({
-                      name: 'tokenName',
+                      name: 'tokenLogo',
+                      children: (field) => (
+                        <div className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center">
+                          <span className="iconify w-6 h-6 mx-auto mb-2 text-gray-400 ph--upload-bold" />
+                          <p className="text-gray-400 text-xs mb-2">PNG, JPG or SVG (max. 2MB)</p>
+                          <input
+                            type="file"
+                            id="tokenLogo"
+                            className="hidden"
+                            onChange={(e) => {
+                              if (formLocked) return;
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                field.handleChange(file);
+                              }
+                            }}
+                            disabled={formLocked}
+                          />
+                          <label
+                            htmlFor="tokenLogo"
+                            className={`bg-white/10 px-4 py-2 rounded-lg text-sm transition cursor-pointer ${formLocked ? 'opacity-60 pointer-events-none' : 'hover:bg-white/20'}`}
+                          >
+                            Browse Files
+                          </label>
+                        </div>
+                      ),
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Social Links Section */}
+              <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
+                <h2 className="text-2xl font-bold mb-6">Social Links (Optional)</h2>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="mb-4">
+                    <label
+                      htmlFor="website"
+                      className="block text-sm font-medium text-gray-300 mb-1"
+                    >
+                      Website
+                    </label>
+                    {form.Field({
+                      name: 'website',
                       children: (field) => (
                         <input
-                          id="tokenName"
+                          id="website"
                           name={field.name}
-                          type="text"
+                          type="url"
                           className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                          placeholder="e.g. Virtual Coin"
+                          placeholder="https://yourwebsite.com"
                           value={field.state.value}
                           onChange={(e) => field.handleChange(e.target.value)}
-                          required
-                          minLength={3}
+                          disabled={formLocked}
                         />
                       ),
                     })}
@@ -284,226 +466,115 @@ export default function CreatePool() {
 
                   <div className="mb-4">
                     <label
-                      htmlFor="tokenSymbol"
+                      htmlFor="twitter"
                       className="block text-sm font-medium text-gray-300 mb-1"
                     >
-                      Token Symbol*
+                      Twitter
                     </label>
                     {form.Field({
-                      name: 'tokenSymbol',
+                      name: 'twitter',
                       children: (field) => (
                         <input
-                          id="tokenSymbol"
+                          id="twitter"
                           name={field.name}
-                          type="text"
+                          type="url"
                           className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                          placeholder="e.g. VRTL"
+                          placeholder="https://twitter.com/yourusername"
                           value={field.state.value}
                           onChange={(e) => field.handleChange(e.target.value)}
-                          required
-                          maxLength={10}
+                          disabled={formLocked}
                         />
                       ),
                     })}
                   </div>
+                </div>
+              </div>
 
-                  <div className="mb-4">
-                    <label
-                      htmlFor="vanitySuffix"
-                      className="block text-sm font-medium text-gray-300 mb-1"
-                    >
-                      Vanity Suffix (optional)
-                    </label>
+              {/* Dev Pre-Buy (Optional) */}
+              <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
+                <h2 className="text-2xl font-bold mb-6">Dev Pre-Buy (Optional)</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="flex items-center gap-3">
                     {form.Field({
-                      name: 'vanitySuffix',
+                      name: 'devPrebuy',
                       children: (field) => (
                         <input
-                          id="vanitySuffix"
+                          id="devPrebuy"
                           name={field.name}
-                          type="text"
-                          className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                          placeholder="e.g. INU or AI"
-                          value={field.state.value}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                          maxLength={4}
+                          type="checkbox"
+                          className="h-5 w-5 accent-white/80"
+                          checked={!!field.state.value}
+                          onChange={(e) => field.handleChange(e.currentTarget.checked)}
+                          disabled={formLocked}
                         />
                       ),
+                    })}
+                    <label htmlFor="devPrebuy" className="text-sm text-gray-300">
+                      Buy with my wallet right after launch
+                    </label>
+                  </div>
+
+                  <div>
+                    <label htmlFor="devAmountSol" className="block text-sm font-medium text-gray-300 mb-1">
+                      Amount (SOL)
+                    </label>
+                    {form.Field({
+                      name: 'devAmountSol',
+                      children: (field) => {
+                        const disabled = !Boolean(form.state.values?.devPrebuy) || formLocked;
+                        return (
+                          <input
+                            key={disabled ? 'dev-off' : 'dev-on'}
+                            id="devAmountSol"
+                            name={field.name}
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0.25"
+                            className={`w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white ${disabled ? 'opacity-60' : ''}`}
+                            value={field.state.value}
+                            onChange={(e) => field.handleChange(e.target.value)}
+                            disabled={disabled}
+                          />
+                        );
+                      },
                     })}
                     <p className="text-xs text-gray-400 mt-1">
-                      1–4 base58 characters. We’ll search for a mint address ending with this.
+                      We’ll execute a buy immediately after your pool is created.
                     </p>
                   </div>
                 </div>
+              </div>
 
-                <div>
-                  <label
-                    htmlFor="tokenLogo"
-                    className="block text-sm font-medium text-gray-300 mb-1"
-                  >
-                    Token Logo*
-                  </label>
-                  {form.Field({
-                    name: 'tokenLogo',
-                    children: (field) => (
-                      <div className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center">
-                        <span className="iconify w-6 h-6 mx-auto mb-2 text-gray-400 ph--upload-bold" />
-                        <p className="text-gray-400 text-xs mb-2">PNG, JPG or SVG (max. 2MB)</p>
-                        <input
-                          type="file"
-                          id="tokenLogo"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              field.handleChange(file);
-                            }
-                          }}
-                        />
-                        <label
-                          htmlFor="tokenLogo"
-                          className="bg-white/10 px-4 py-2 rounded-lg text-sm hover:bg-white/20 transition cursor-pointer"
-                        >
-                          Browse Files
-                        </label>
+              {form.state.errors && form.state.errors.length > 0 && (
+                <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 space-y-2">
+                  {form.state.errors.map((error, index) =>
+                    Object.entries(error || {}).map(([, value]) => (
+                      <div key={index} className="flex items-start gap-2">
+                        <p className="text-red-200">
+                          {Array.isArray(value)
+                            ? value.map((v: any) => v.message || v).join(', ')
+                            : typeof value === 'string'
+                              ? value
+                              : String(value)}
+                        </p>
                       </div>
-                    ),
-                  })}
+                    ))
+                  )}
                 </div>
+              )}
+
+              <div className="flex justify-end">
+                <SubmitButton isSubmitting={isLoading || awaitingWallet} awaitingWallet={awaitingWallet} />
               </div>
-            </div>
-
-            {/* Social Links Section */}
-            <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
-              <h2 className="text-2xl font-bold mb-6">Social Links (Optional)</h2>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="mb-4">
-                  <label
-                    htmlFor="website"
-                    className="block text-sm font-medium text-gray-300 mb-1"
-                  >
-                    Website
-                  </label>
-                  {form.Field({
-                    name: 'website',
-                    children: (field) => (
-                      <input
-                        id="website"
-                        name={field.name}
-                        type="url"
-                        className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                        placeholder="https://yourwebsite.com"
-                        value={field.state.value}
-                        onChange={(e) => field.handleChange(e.target.value)}
-                      />
-                    ),
-                  })}
-                </div>
-
-                <div className="mb-4">
-                  <label
-                    htmlFor="twitter"
-                    className="block text-sm font-medium text-gray-300 mb-1"
-                  >
-                    Twitter
-                  </label>
-                  {form.Field({
-                    name: 'twitter',
-                    children: (field) => (
-                      <input
-                        id="twitter"
-                        name={field.name}
-                        type="url"
-                        className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                        placeholder="https://twitter.com/yourusername"
-                        value={field.state.value}
-                        onChange={(e) => field.handleChange(e.target.value)}
-                      />
-                    ),
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Dev Pre-Buy (Optional) */}
-            <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
-              <h2 className="text-2xl font-bold mb-6">Dev Pre-Buy (Optional)</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="flex items-center gap-3">
-                  {form.Field({
-                    name: 'devPrebuy',
-                    children: (field) => (
-                      <input
-                        id="devPrebuy"
-                        name={field.name}
-                        type="checkbox"
-                        className="h-5 w-5 accent-white/80"
-                        checked={!!field.state.value}
-                        onChange={(e) => field.handleChange(e.currentTarget.checked)}
-                      />
-                    ),
-                  })}
-                  <label htmlFor="devPrebuy" className="text-sm text-gray-300">
-                    Buy with my wallet right after launch
-                  </label>
-                </div>
-
-                <div>
-                  <label htmlFor="devAmountSol" className="block text-sm font-medium text-gray-300 mb-1">
-                    Amount (SOL)
-                  </label>
-                  {form.Field({
-                    name: 'devAmountSol',
-                    children: (field) => (
-                      <input
-                        id="devAmountSol"
-                        name={field.name}
-                        type="number"
-                        min="0"
-                        step="0.001"
-                        placeholder="0.25"
-                        className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                        value={field.state.value}
-                        onChange={(e) => field.handleChange(e.target.value)}
-                        disabled={!Boolean(form.state.values?.devPrebuy)}
-                      />
-                    ),
-                  })}
-                  <p className="text-xs text-gray-400 mt-1">We’ll execute a buy inside the same transaction.</p>
-                </div>
-              </div>
-            </div>
-
-            {form.state.errors && form.state.errors.length > 0 && (
-              <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 space-y-2">
-                {form.state.errors.map((error, index) =>
-                  Object.entries(error || {}).map(([, value]) => (
-                    <div key={index} className="flex items-start gap-2">
-                      <p className="text-red-200">
-                        {Array.isArray(value)
-                          ? value.map((v: any) => v.message || v).join(', ')
-                          : typeof value === 'string'
-                            ? value
-                            : String(value)}
-                      </p>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            <div className="flex justify-end">
-              <SubmitButton isSubmitting={isLoading} />
-            </div>
-          </form>
-        )}
+            </form>
+          )}
         </main>
       </div>
     </>
   );
 }
 
-const SubmitButton = ({ isSubmitting }: { isSubmitting: boolean }) => {
+const SubmitButton = ({ isSubmitting, awaitingWallet }: { isSubmitting: boolean; awaitingWallet: boolean }) => {
   const { publicKey } = useWallet();
   const { setShowModal } = useUnifiedWalletContext();
 
@@ -520,7 +591,7 @@ const SubmitButton = ({ isSubmitting }: { isSubmitting: boolean }) => {
       {isSubmitting ? (
         <>
           <span className="iconify ph--spinner w-5 h-5 animate-spin" />
-          <span>Creating Pool...</span>
+          <span>{awaitingWallet ? 'Awaiting Wallet…' : 'Creating Pool...'}</span>
         </>
       ) : (
         <>
