@@ -178,7 +178,7 @@ export default function CreatePool() {
               baseMint: keyPair.publicKey.toBase58(),
               payer: payerAddr,
               amountSol: value.devAmountSol,
-              pool: pool || '',          // empty okay; server waits & can derive
+              pool: pool || '',
               slippageBps: 100,
               waitMs: 8000,
               checkIntervalMs: 150,
@@ -190,12 +190,16 @@ export default function CreatePool() {
           }
 
           // Optionally add a tiny Jito tip to the swap tx (non-fatal if it fails)
-          let swapTx = Transaction.from(Buffer.from(buildSwapJson.swapTx, 'base64'));
+          const swapTx = Transaction.from(Buffer.from(buildSwapJson.swapTx, 'base64'));
           try {
             if (publicKey) {
-              const tips = await getJitoTipAccounts();
-              if (Array.isArray(tips) && tips.length > 0) {
-                const tipTo = new PublicKey(tips[0]);
+              const tipsRaw = await getJitoTipAccounts().catch(() => []);
+              const tips: string[] = Array.isArray(tipsRaw) ? tipsRaw : [];
+              const firstTip: string | undefined =
+                tips.find((t) => typeof t === 'string' && t.length > 0);
+
+              if (firstTip) {
+                const tipTo = new PublicKey(firstTip); // <-- type-safe (string guaranteed)
                 const TIP_LAMPORTS = 10_000; // ~0.00001 SOL
                 swapTx.add(
                   SystemProgram.transfer({
@@ -600,7 +604,7 @@ const PoolCreationSuccess = () => {
             onClick={() => {
               window.location.reload();
             }}
-            className="cursor-pointer bg-gradient-to-r from pink-500 to-purple-500 px-6 py-3 rounded-xl font-medium hover:opacity-90 transition"
+            className="cursor-pointer bg-gradient-to-r from-pink-500 to-purple-500 px-6 py-3 rounded-xl font-medium hover:opacity-90 transition"
           >
             Create Another Pool
           </button>
