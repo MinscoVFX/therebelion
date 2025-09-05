@@ -4,13 +4,13 @@ import Link from 'next/link';
 import { z } from 'zod';
 import Header from '../components/Header';
 
-import { useForm as useFormAny } from '@/lib/react-form-shim'; // ✅ use the shim
+import * as ReactForm from '@tanstack/react-form';
+const useFormAny = (ReactForm as any).useForm as any;
 
 import { Button } from '@/components/ui/button';
-import { Keypair, Transaction } from '@solana/web3.js';
+import { Keypair, Transaction, PublicKey, SystemProgram } from '@solana/web3.js';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
-import { Buffer } from 'buffer'; // ✅ ensure Buffer in browser
 
 // ---------------- Validation schema ----------------
 const poolSchema = z.object({
@@ -49,6 +49,16 @@ async function findVanityKeypair(suffix: string, maxSeconds = 30) {
   return { kp: null as any, addr: '', tries, timedOut: true };
 }
 
+// (optional) fetch Jito tip accounts so at least one tx in the bundle has a tip
+async function getJitoTipAccounts(): Promise<string[]> {
+  const r = await fetch('/api/jito-bundle?tipAccounts=1', { method: 'GET' });
+  if (!r.ok) throw new Error(`Failed to fetch Jito tip accounts (HTTP ${r.status})`);
+  const j = await r.json();
+  const list = j?.tipAccounts;
+  if (!Array.isArray(list) || list.length === 0) throw new Error('No Jito tip accounts returned');
+  return list as string[];
+}
+
 // ---------------- Page ----------------
 export default function CreatePool() {
   const { publicKey, signTransaction } = useWallet();
@@ -57,12 +67,11 @@ export default function CreatePool() {
   const [isLoading, setIsLoading] = useState(false);
   const [poolCreated, setPoolCreated] = useState(false);
 
-  // Use the any-aliased hook (NO generics)
   const form = useFormAny({
     defaultValues: {
       tokenName: '',
       tokenSymbol: '',
-      tokenLogo: undefined as File | undefined,
+      tokenLogo: undefined as File | undefined, // ensure key exists
       website: '',
       twitter: '',
       vanitySuffix: '',
@@ -78,7 +87,6 @@ export default function CreatePool() {
           toast.error('Token logo is required');
           return;
         }
-
         if (!signTransaction || !publicKey) {
           toast.error('Wallet not connected');
           return;
@@ -140,26 +148,96 @@ export default function CreatePool() {
           throw new Error(uploadJson?.error || 'Upload/build failed');
         }
 
-        const { poolTx } = uploadJson as { poolTx: string };
+        const { poolTx, pool } = uploadJson as { poolTx: string; pool?: string | null };
 
         // Step 2: Decode tx, sign with mint authority (keyPair), then user wallet
-        const transaction = Transaction.from(Buffer.from(poolTx, 'base64'));
-        transaction.sign(keyPair);
+        const createTx = Transaction.from(Buffer.from(poolTx, 'base64'));
+        createTx.sign(keyPair);
 
-        const signedTransaction = await signTransaction(transaction);
+        const signedCreate = await signTransaction(createTx);
+        const signedCreateB64 = Buffer.from(signedCreate.serialize()).toString('base64');
 
-        // Step 3: Send signed transaction (server validates creation fees)
-        const sendResponse = await fetch('/api/send-transaction', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            signedTransaction: signedTransaction.serialize().toString('base64'),
-          }),
-        });
+        // Should we dev pre-buy?
+        const doDevBuy =
+          !!value.devPrebuy &&
+          typeof value.devAmountSol === 'string' &&
+          Number(value.devAmountSol) > 0;
 
-        const sendJson = await sendResponse.json();
-        if (!sendResponse.ok || !sendJson?.success) {
-          throw new Error(sendJson?.error || 'Send failed');
+        if (doDevBuy) {
+          if (!pool) {
+            // Last-resort: if /api/upload didn’t infer a pool, we still try the bundle (the swap builder waits)
+            console.warn('No pool returned from /api/upload; swap builder will wait for pool.');
+          }
+
+          // Step 2.5: Build the swap (server waits for pool creation on-chain)
+          const payerAddr = address || publicKey.toBase58();
+          const buildSwapRes = await fetch('/api/build-swap', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              baseMint: keyPair.publicKey.toBase58(),
+              payer: payerAddr,
+              amountSol: value.devAmountSol,
+              pool: pool || '',          // empty okay; server waits & can derive
+              slippageBps: 100,
+              waitMs: 8000,
+              checkIntervalMs: 150,
+            }),
+          });
+          const buildSwapJson = await buildSwapRes.json();
+          if (!buildSwapRes.ok || !buildSwapJson?.swapTx) {
+            throw new Error(buildSwapJson?.error || 'Failed to build swap');
+          }
+
+          // Optionally add a tiny Jito tip to the swap tx (non-fatal if it fails)
+          let swapTx = Transaction.from(Buffer.from(buildSwapJson.swapTx, 'base64'));
+          try {
+            if (publicKey) {
+              const tips = await getJitoTipAccounts();
+              if (Array.isArray(tips) && tips.length > 0) {
+                const tipTo = new PublicKey(tips[0]);
+                const TIP_LAMPORTS = 10_000; // ~0.00001 SOL
+                swapTx.add(
+                  SystemProgram.transfer({
+                    fromPubkey: publicKey,
+                    toPubkey: tipTo,
+                    lamports: TIP_LAMPORTS,
+                  })
+                );
+              }
+            }
+          } catch (e) {
+            console.warn('Skipping Jito tip append:', e);
+          }
+
+          const signedSwap = await signTransaction(swapTx);
+          const signedSwapB64 = Buffer.from(signedSwap.serialize()).toString('base64');
+
+          // Step 3: Submit both via bundle (server forwards to /api/jito-bundle)
+          const sendRes = await fetch('/api/send-transaction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              signedTransactions: [signedCreateB64, signedSwapB64],
+              waitForLanded: true,
+            }),
+          });
+          const sendJson = await sendRes.json();
+          if (!sendRes.ok || !sendJson?.success) {
+            throw new Error(sendJson?.error || 'Bundle submission failed');
+          }
+          toast.success(`Bundle submitted${sendJson?.status ? `: ${sendJson.status}` : ''}`);
+        } else {
+          // Single create tx path (preserves your creation-fee validation on server)
+          const sendResponse = await fetch('/api/send-transaction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ signedTransaction: signedCreateB64 }),
+          });
+          const sendJson = await sendResponse.json();
+          if (!sendResponse.ok || !sendJson?.success) {
+            throw new Error(sendJson?.error || 'Send failed');
+          }
         }
 
         toast.success('Pool created successfully');
@@ -180,7 +258,7 @@ export default function CreatePool() {
         return undefined;
       },
     },
-  });
+  } as any);
 
   return (
     <>
@@ -308,7 +386,7 @@ export default function CreatePool() {
                     </label>
 
                     {form.Field({
-                      name: 'tokenLogo' as any, // relax field name typing for File
+                      name: 'tokenLogo' as any,
                       children: (field: any) => (
                         <div className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center">
                           <span className="iconify w-6 h-6 mx-auto mb-2 text-gray-400 ph--upload-bold" />
@@ -414,10 +492,7 @@ export default function CreatePool() {
                   </div>
 
                   <div>
-                    <label
-                      htmlFor="devAmountSol"
-                      className="block text-sm font-medium text-gray-300 mb-1"
-                    >
+                    <label htmlFor="devAmountSol" className="block text-sm font-medium text-gray-300 mb-1">
                       Amount (SOL)
                     </label>
                     {form.Field({
@@ -438,7 +513,7 @@ export default function CreatePool() {
                       ),
                     })}
                     <p className="text-xs text-gray-400 mt-1">
-                      We’ll execute a buy inside the same transaction.
+                      We’ll execute a buy immediately after your pool is created (bundled).
                     </p>
                   </div>
                 </div>
@@ -525,7 +600,7 @@ const PoolCreationSuccess = () => {
             onClick={() => {
               window.location.reload();
             }}
-            className="cursor-pointer bg-gradient-to-r from-pink-500 to-purple-500 px-6 py-3 rounded-xl font-medium hover:opacity-90 transition"
+            className="cursor-pointer bg-gradient-to-r from pink-500 to-purple-500 px-6 py-3 rounded-xl font-medium hover:opacity-90 transition"
           >
             Create Another Pool
           </button>
