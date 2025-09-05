@@ -193,7 +193,6 @@ export default async function handler(
           const err = await r.json();
           msg = (err && (err.error || err.message)) || msg;
         } catch {
-          // ignore JSON parse errors
         }
         return res.status(502).json({ error: String(msg) });
       }
