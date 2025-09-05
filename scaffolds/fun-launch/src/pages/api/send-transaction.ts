@@ -52,7 +52,6 @@ function getFeeSplitsFromEnv(): FeeSplit[] {
   }
 
   if (rawSingle) {
-    // default single split = 0.035 SOL if you used that before
     return [
       {
         receiver: parsePubkey("NEXT_PUBLIC_CREATION_FEE_RECEIVER", rawSingle),
@@ -95,8 +94,7 @@ function decodeTransactionOrThrow(b64: string): Transaction {
  * Validate creation-fee SystemProgram.transfer instructions that must appear
  * immediately after any leading ComputeBudget ixs.
  *
- * We validate ONLY in the first transaction of the bundle (Tx 0) to keep
- * compatibility with the previous single-tx validator.
+ * We validate ONLY in the first transaction of the bundle (Tx 0).
  */
 function validateCreationFeeTransfers(tx: Transaction, expectedSplits: FeeSplit[]) {
   const ixs = tx.instructions ?? [];
@@ -167,11 +165,12 @@ export default async function handler(
       validateCreationFeeTransfers(tx0, expectedSplits);
 
       // Forward bundle to our Jito forwarder route
-      const protoHeader =
-        (req.headers["x-forwarded-proto"] as string) ||
-        (req.headers["x-forwarded-protocol"] as string) ||
-        "https";
-      const hostHeader = (req.headers.host as string) || "localhost:3000"; // safe fallback
+      const protoHeader = String(
+        (req.headers["x-forwarded-proto"] ??
+          req.headers["x-forwarded-protocol"] ??
+          "https")
+      );
+      const hostHeader = String(req.headers.host ?? "localhost:3000");
       const forwardUrl = `${protoHeader}://${hostHeader}/api/jito-bundle`;
 
       const r = await fetch(forwardUrl, {
