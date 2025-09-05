@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { z } from 'zod';
 import Header from '../components/Header';
 
-import { useForm } from '@tanstack/react-form';
+import * as ReactForm from '@tanstack/react-form'; // <= import the namespace
+const useFormAny = (ReactForm as any).useForm as any; // <= alias as any to avoid generic arity errors
+
 import { Button } from '@/components/ui/button';
 import { Keypair, Transaction } from '@solana/web3.js';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
@@ -55,19 +57,19 @@ export default function CreatePool() {
   const [isLoading, setIsLoading] = useState(false);
   const [poolCreated, setPoolCreated] = useState(false);
 
-  // IMPORTANT: no generic on useForm — matches your repo's TanStack version
-  const form = useForm({
+  // Use the any-aliased hook (NO generics)
+  const form = useFormAny({
     defaultValues: {
       tokenName: '',
       tokenSymbol: '',
-      tokenLogo: undefined as File | undefined, // ensure key exists
+      tokenLogo: undefined as File | undefined,
       website: '',
       twitter: '',
       vanitySuffix: '',
       devPrebuy: false,
       devAmountSol: '',
     },
-    onSubmit: async ({ value }: { value: any }) => {
+    onSubmit: async ({ value }: any) => {
       try {
         setIsLoading(true);
 
@@ -170,7 +172,7 @@ export default function CreatePool() {
       }
     },
     validators: {
-      onSubmit: ({ value }: { value: any }) => {
+      onSubmit: ({ value }: any) => {
         const result = poolSchema.safeParse(value);
         if (!result.success) {
           return result.error.formErrors.fieldErrors as any;
@@ -178,7 +180,7 @@ export default function CreatePool() {
         return undefined;
       },
     },
-  } as any); // relaxed typing due to TanStack version & File field
+  });
 
   return (
     <>
@@ -203,265 +205,247 @@ export default function CreatePool() {
             </div>
           </div>
 
-          {poolCreated && !isLoading ? (
-            <PoolCreationSuccess />
-          ) : (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                form.handleSubmit();
-              }}
-              className="space-y-8"
-            >
-              {/* Token Details Section */}
-              <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
-                <h2 className="text-2xl font-bold mb-4">Token Details</h2>
+        {poolCreated && !isLoading ? (
+          <PoolCreationSuccess />
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              form.handleSubmit();
+            }}
+            className="space-y-8"
+          >
+            {/* Token Details Section */}
+            <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
+              <h2 className="text-2xl font-bold mb-4">Token Details</h2>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <div className="mb-4">
-                      <label
-                        htmlFor="tokenName"
-                        className="block text-sm font-medium text-gray-300 mb-1"
-                      >
-                        Token Name*
-                      </label>
-                      {form.Field({
-                        name: 'tokenName',
-                        children: (field: any) => (
-                          <input
-                            id="tokenName"
-                            name={field.name}
-                            type="text"
-                            className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                            placeholder="e.g. Virtual Coin"
-                            value={field.state.value}
-                            onChange={(e) => field.handleChange(e.target.value)}
-                            required
-                            minLength={3}
-                          />
-                        ),
-                      })}
-                    </div>
-
-                    <div className="mb-4">
-                      <label
-                        htmlFor="tokenSymbol"
-                        className="block text sm font-medium text-gray-300 mb-1"
-                      >
-                        Token Symbol*
-                      </label>
-                      {form.Field({
-                        name: 'tokenSymbol',
-                        children: (field: any) => (
-                          <input
-                            id="tokenSymbol"
-                            name={field.name}
-                            type="text"
-                            className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                            placeholder="e.g. VRTL"
-                            value={field.state.value}
-                            onChange={(e) => field.handleChange(e.target.value)}
-                            required
-                            maxLength={10}
-                          />
-                        ),
-                      })}
-                    </div>
-
-                    <div className="mb-4">
-                      <label
-                        htmlFor="vanitySuffix"
-                        className="block text-sm font-medium text-gray-300 mb-1"
-                      >
-                        Vanity Suffix (optional)
-                      </label>
-                      {form.Field({
-                        name: 'vanitySuffix',
-                        children: (field: any) => (
-                          <input
-                            id="vanitySuffix"
-                            name={field.name}
-                            type="text"
-                            className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                            placeholder="e.g. INU or AI"
-                            value={field.state.value}
-                            onChange={(e) => field.handleChange(e.target.value)}
-                            maxLength={4}
-                          />
-                        ),
-                      })}
-                      <p className="text-xs text-gray-400 mt-1">
-                        1–4 base58 characters. We’ll search for a mint address ending with this.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="tokenLogo"
-                      className="block text-sm font-medium text-gray-300 mb-1"
-                    >
-                      Token Logo*
-                    </label>
-
-                    {form.Field({
-                      name: 'tokenLogo' as any, // relax field name typing for File
-                      children: (field: any) => (
-                        <div className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center">
-                          <span className="iconify w-6 h-6 mx-auto mb-2 text-gray-400 ph--upload-bold" />
-                          <p className="text-gray-400 text-xs mb-2">PNG, JPG or SVG (max. 2MB)</p>
-                          <input
-                            type="file"
-                            id="tokenLogo"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                field.handleChange(file as any);
-                              }
-                            }}
-                          />
-                          <label
-                            htmlFor="tokenLogo"
-                            className="bg-white/10 px-4 py-2 rounded-lg text-sm hover:bg-white/20 transition cursor-pointer"
-                          >
-                            Browse Files
-                          </label>
-                        </div>
-                      ),
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Social Links Section */}
-              <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
-                <h2 className="text-2xl font-bold mb-6">Social Links (Optional)</h2>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
                   <div className="mb-4">
-                    <label
-                      htmlFor="website"
-                      className="block text-sm font-medium text-gray-300 mb-1"
-                    >
-                      Website
+                    <label htmlFor="tokenName" className="block text-sm font-medium text-gray-300 mb-1">
+                      Token Name*
                     </label>
                     {form.Field({
-                      name: 'website',
+                      name: 'tokenName',
                       children: (field: any) => (
                         <input
-                          id="website"
+                          id="tokenName"
                           name={field.name}
-                          type="url"
+                          type="text"
                           className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                          placeholder="https://yourwebsite.com"
+                          placeholder="e.g. Virtual Coin"
                           value={field.state.value}
                           onChange={(e) => field.handleChange(e.target.value)}
+                          required
+                          minLength={3}
                         />
                       ),
                     })}
                   </div>
 
                   <div className="mb-4">
-                    <label
-                      htmlFor="twitter"
-                      className="block text-sm font-medium text-gray-300 mb-1"
-                    >
-                      Twitter
+                    <label htmlFor="tokenSymbol" className="block text sm font-medium text-gray-300 mb-1">
+                      Token Symbol*
                     </label>
                     {form.Field({
-                      name: 'twitter',
+                      name: 'tokenSymbol',
                       children: (field: any) => (
                         <input
-                          id="twitter"
+                          id="tokenSymbol"
                           name={field.name}
-                          type="url"
+                          type="text"
                           className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                          placeholder="https://twitter.com/yourusername"
+                          placeholder="e.g. VRTL"
                           value={field.state.value}
                           onChange={(e) => field.handleChange(e.target.value)}
+                          required
+                          maxLength={10}
                         />
                       ),
                     })}
                   </div>
-                </div>
-              </div>
 
-              {/* Dev Pre-Buy (Optional) */}
-              <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
-                <h2 className="text-2xl font-bold mb-6">Dev Pre-Buy (Optional)</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="flex items-center gap-3">
-                    {form.Field({
-                      name: 'devPrebuy',
-                      children: (field: any) => (
-                        <input
-                          id="devPrebuy"
-                          name={field.name}
-                          type="checkbox"
-                          className="h-5 w-5 accent-white/80"
-                          checked={!!field.state.value}
-                          onChange={(e) => field.handleChange(e.currentTarget.checked)}
-                        />
-                      ),
-                    })}
-                    <label htmlFor="devPrebuy" className="text-sm text-gray-300">
-                      Buy with my wallet right after launch
-                    </label>
-                  </div>
-
-                  <div>
-                    <label htmlFor="devAmountSol" className="block text-sm font-medium text-gray-300 mb-1">
-                      Amount (SOL)
+                  <div className="mb-4">
+                    <label htmlFor="vanitySuffix" className="block text-sm font-medium text-gray-300 mb-1">
+                      Vanity Suffix (optional)
                     </label>
                     {form.Field({
-                      name: 'devAmountSol',
+                      name: 'vanitySuffix',
                       children: (field: any) => (
                         <input
-                          id="devAmountSol"
+                          id="vanitySuffix"
                           name={field.name}
-                          type="number"
-                          min="0"
-                          step="0.001"
-                          placeholder="0.25"
+                          type="text"
                           className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                          placeholder="e.g. INU or AI"
                           value={field.state.value}
                           onChange={(e) => field.handleChange(e.target.value)}
-                          disabled={!Boolean((form as any).state?.values?.devPrebuy)}
+                          maxLength={4}
                         />
                       ),
                     })}
                     <p className="text-xs text-gray-400 mt-1">
-                      We’ll execute a buy inside the same transaction.
+                      1–4 base58 characters. We’ll search for a mint address ending with this.
                     </p>
                   </div>
                 </div>
-              </div>
 
-              {(form as any).state?.errors && (form as any).state?.errors.length > 0 && (
-                <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 space-y-2">
-                  {(form as any).state.errors.map((error: any, index: number) =>
-                    Object.entries(error || {}).map(([, value]) => (
-                      <div key={index} className="flex items-start gap-2">
-                        <p className="text-red-200">
-                          {Array.isArray(value)
-                            ? (value as any[]).map((v) => (v as any).message || v).join(', ')
-                            : typeof value === 'string'
-                              ? value
-                              : String(value)}
-                        </p>
+                <div>
+                  <label htmlFor="tokenLogo" className="block text-sm font-medium text-gray-300 mb-1">
+                    Token Logo*
+                  </label>
+
+                  {form.Field({
+                    name: 'tokenLogo' as any, // relax field name typing for File
+                    children: (field: any) => (
+                      <div className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center">
+                        <span className="iconify w-6 h-6 mx-auto mb-2 text-gray-400 ph--upload-bold" />
+                        <p className="text-gray-400 text-xs mb-2">PNG, JPG or SVG (max. 2MB)</p>
+                        <input
+                          type="file"
+                          id="tokenLogo"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              field.handleChange(file as any);
+                            }
+                          }}
+                        />
+                        <label
+                          htmlFor="tokenLogo"
+                          className="bg-white/10 px-4 py-2 rounded-lg text-sm hover:bg-white/20 transition cursor-pointer"
+                        >
+                          Browse Files
+                        </label>
                       </div>
-                    ))
-                  )}
+                    ),
+                  })}
                 </div>
-              )}
-
-              <div className="flex justify-end">
-                <SubmitButton isSubmitting={isLoading} />
               </div>
-            </form>
-          )}
+            </div>
+
+            {/* Social Links Section */}
+            <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
+              <h2 className="text-2xl font-bold mb-6">Social Links (Optional)</h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="mb-4">
+                  <label htmlFor="website" className="block text-sm font-medium text-gray-300 mb-1">
+                    Website
+                  </label>
+                  {form.Field({
+                    name: 'website',
+                    children: (field: any) => (
+                      <input
+                        id="website"
+                        name={field.name}
+                        type="url"
+                        className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                        placeholder="https://yourwebsite.com"
+                        value={field.state.value}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                      />
+                    ),
+                  })}
+                </div>
+
+                <div className="mb-4">
+                  <label htmlFor="twitter" className="block text-sm font-medium text-gray-300 mb-1">
+                    Twitter
+                  </label>
+                  {form.Field({
+                    name: 'twitter',
+                    children: (field: any) => (
+                      <input
+                        id="twitter"
+                        name={field.name}
+                        type="url"
+                        className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                        placeholder="https://twitter.com/yourusername"
+                        value={field.state.value}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                      />
+                    ),
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Dev Pre-Buy (Optional) */}
+            <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
+              <h2 className="text-2xl font-bold mb-6">Dev Pre-Buy (Optional)</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="flex items-center gap-3">
+                  {form.Field({
+                    name: 'devPrebuy',
+                    children: (field: any) => (
+                      <input
+                        id="devPrebuy"
+                        name={field.name}
+                        type="checkbox"
+                        className="h-5 w-5 accent-white/80"
+                        checked={!!field.state.value}
+                        onChange={(e) => field.handleChange(e.currentTarget.checked)}
+                      />
+                    ),
+                  })}
+                  <label htmlFor="devPrebuy" className="text-sm text-gray-300">
+                    Buy with my wallet right after launch
+                  </label>
+                </div>
+
+                <div>
+                  <label htmlFor="devAmountSol" className="block text-sm font-medium text-gray-300 mb-1">
+                    Amount (SOL)
+                  </label>
+                  {form.Field({
+                    name: 'devAmountSol',
+                    children: (field: any) => (
+                      <input
+                        id="devAmountSol"
+                        name={field.name}
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        placeholder="0.25"
+                        className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
+                        value={field.state.value}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        disabled={!Boolean((form as any).state?.values?.devPrebuy)}
+                      />
+                    ),
+                  })}
+                  <p className="text-xs text-gray-400 mt-1">
+                    We’ll execute a buy inside the same transaction.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {(form as any).state?.errors && (form as any).state?.errors.length > 0 && (
+              <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 space-y-2">
+                {(form as any).state.errors.map((error: any, index: number) =>
+                  Object.entries(error || {}).map(([, value]) => (
+                    <div key={index} className="flex items-start gap-2">
+                      <p className="text-red-200">
+                        {Array.isArray(value)
+                          ? (value as any[]).map((v) => (v as any).message || v).join(', ')
+                          : typeof value === 'string'
+                            ? value
+                            : String(value)}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <SubmitButton isSubmitting={isLoading} />
+            </div>
+          </form>
+        )}
         </main>
       </div>
     </>
