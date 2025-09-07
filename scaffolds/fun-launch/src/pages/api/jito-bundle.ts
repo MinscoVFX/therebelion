@@ -11,13 +11,17 @@ import bs58 from "bs58";
  * NOTE: New code should POST directly to /api/dbc/send-bundle with { base58Bundle }.
  */
 
-function bad(res: NextApiResponse, code: number, msg: string, extra?: Record<string, unknown>) {
-  return res.status(code).json({ ok: false, error: msg, ...extra });
+function bad(
+  res: NextApiResponse,
+  code: number,
+  msg: string,
+  extra?: Record<string, unknown>
+) {
+  return res.status(code).json({ ok: false, error: msg, where: "jito-bundle", ...extra });
 }
 
 const DEFAULT_TIP_ACCOUNTS = [
-  // This list mirrors common public tip accounts (rotate as you wish).
-  // You can update/expand this safely — sender.helius-rpc.com/fast accepts any of these.
+  // Public tip accounts (rotate/update as desired)
   "4ACfpUFoa5D9bfPdeu6DBt89gB6ENteHBXCAi87hNDEE",
   "7Z1C7h7CmxLQzW5fF8E8soQwQy6uTSZgkzcoUqk8sSxh",
   "6yV16Lw9h1z6w8Q2i2qQ4y2sP9udYw9a7iWQeBnU4qvf",
@@ -53,19 +57,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         body: JSON.stringify({ base58Bundle }),
       });
 
-      let json: any = null;
+      // Read once as text, then parse (lint-friendly; avoids let-reassignment)
+      const raw = await r.text();
       try {
-        json = await r.json();
+        const parsed: any = JSON.parse(raw);
+
+        if (!r.ok || parsed?.error || parsed?.ok === false) {
+          return bad(res, 502, "Bundle forward failed", { forwarderResponse: parsed });
+        }
+        return res.status(200).json({ ok: true, bundleId: parsed?.bundleId ?? null });
       } catch {
-        const text = await r.text();
-        return bad(res, 502, "Forwarder returned non-JSON", { forwarderText: text });
+        return bad(res, 502, "Forwarder returned non-JSON", { forwarderText: raw });
       }
-
-      if (!r.ok || json?.error || json?.ok === false) {
-        return bad(res, 502, "Bundle forward failed", { forwarderResponse: json });
-      }
-
-      return res.status(200).json({ ok: true, bundleId: json?.bundleId ?? null });
     }
 
     res.setHeader("Allow", "GET, POST");
