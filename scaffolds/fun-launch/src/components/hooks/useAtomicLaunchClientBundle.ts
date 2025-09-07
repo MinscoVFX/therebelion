@@ -6,6 +6,7 @@ import {
   ComputeBudgetProgram,
   Connection,
   PublicKey,
+  SystemProgram,               // ✅ added
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
@@ -92,10 +93,23 @@ export function useAtomicLaunchClientBundle() {
       referralTokenAccount: referralTokenAccount ?? null,
     });
 
+    // ✅ Helius Sender requires a tip transfer (>= 0.001 SOL) to a listed tip account.
+    // You can move these to env (NEXT_PUBLIC_SENDER_TIP_ACCOUNT / NEXT_PUBLIC_SENDER_TIP_LAMPORTS) if you prefer.
+    const TIP_ACCOUNT = new PublicKey("4ACfpUFoa5D9bfPdeu6DBt89gB6ENteHBXCAi87hNDEE");
+    const TIP_LAMPORTS = 1_000_000; // 0.001 SOL (number, not bigint)
+
+    const tipIxn = SystemProgram.transfer({
+      fromPubkey: walletPublicKey,
+      toPubkey: TIP_ACCOUNT,
+      lamports: TIP_LAMPORTS,
+    });
+
     const buyIxsWithCU = [
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Number(buyPriorityMicroLamports) }),
       ...swapTx.instructions,
+      tipIxn, // ✅ tip last so you only tip if swap executes
     ];
+
     const buyMsg = new TransactionMessage({
       payerKey: walletPublicKey,
       recentBlockhash: blockhash,
