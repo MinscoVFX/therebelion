@@ -2,20 +2,19 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 
 /**
- * ENV:
- *  - JITO_RELAY_URL : your provider's Jito-enabled JSON-RPC endpoint that supports sendBundle
+ * Forwards a client-signed bundle to a Jito/Sender relay.
  *
- * This endpoint only forwards a client-signed bundle to the relay (avoids CORS in the browser).
- * It does NOT sign or mutate any transactions.
+ * ENV REQUIRED:
+ *   JITO_RELAY_URL = https://sender.helius-rpc.com/fast
+ *
+ * Request JSON:
+ *   { "base58Bundle": ["<tx0_base58>", "<tx1_base58>"] }
+ *
+ * Response JSON:
+ *   { "ok": true, "bundleId": "<id>" }
  */
 
-const JITO_RELAY_URL = (process.env.JITO_RELAY_URL || "").trim();
-
-type ReqBody = {
-  // Base58-encoded transactions, in order (CREATE first, then DEV-BUY)
-  // Each element is a base58-encoded serialized VersionedTransaction
-  base58Bundle: string[];
-};
+const RELAY = (process.env.JITO_RELAY_URL || "").trim();
 
 function bad(res: NextApiResponse, code: number, msg: string, extra?: Record<string, unknown>) {
   return res.status(code).json({ ok: false, error: msg, ...extra });
@@ -27,16 +26,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       res.setHeader("Allow", "POST");
       return bad(res, 405, "Method Not Allowed");
     }
-    if (!JITO_RELAY_URL) return bad(res, 500, "Missing JITO_RELAY_URL env");
+    if (!RELAY) return bad(res, 500, "Missing JITO_RELAY_URL env");
 
-    const { base58Bundle } = (req.body || {}) as ReqBody;
-    if (!Array.isArray(base58Bundle) || base58Bundle.length !== 2) {
-      return bad(res, 400, "base58Bundle must be an array of length 2 [createTx, devBuyTx]");
+    const { base58Bundle } = (req.body || {}) as { base58Bundle?: string[] };
+    if (!Array.isArray(base58Bundle) || base58Bundle.length < 2) {
+      return bad(res, 400, "base58Bundle must be an array with at least 2 items (create, buy)");
     }
     if (!base58Bundle.every((s) => typeof s === "string" && s.length > 0)) {
       return bad(res, 400, "Every bundle entry must be a non-empty base58 string");
     }
 
+    // JSON-RPC payload understood by Helius Sender/Jito relays.
     const payload = {
       jsonrpc: "2.0",
       id: 1,
@@ -44,18 +44,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       params: [base58Bundle],
     };
 
-    const r = await fetch(JITO_RELAY_URL, {
+    const r = await fetch(RELAY, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const json = await r.json().catch(() => null);
 
-    if (!r.ok || !json || json.error) {
-      return bad(res, 502, "sendBundle failed", { providerResponse: json || (await r.text()) });
+    // Try to parse JSON; if not JSON, capture text for diagnostics
+    let json: any = null;
+    try {
+      json = await r.json();
+    } catch {
+      const text = await r.text();
+      return bad(res, 502, "Relay returned non-JSON", { relayText: text });
     }
 
-    return res.status(200).json({ ok: true, bundleId: json.result });
+    if (!r.ok || json?.error) {
+      return bad(res, 502, "sendBundle failed", { providerResponse: json });
+    }
+
+    return res.status(200).json({ ok: true, bundleId: json.result || json?.bundleId || null });
   } catch (e: any) {
     return bad(res, 500, e?.message || "Unexpected error");
   }
