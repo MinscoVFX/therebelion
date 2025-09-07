@@ -53,7 +53,7 @@ export default function CreatePoolSubmit({
       console.error("❌ Atomic launch error:", err);
 
       // Try to surface server `where` tag
-      let msg = err?.message || String(err);
+      const msg = err?.message || String(err);
       let where = "";
       if (err?.where) {
         where = ` [from ${err.where}]`;
