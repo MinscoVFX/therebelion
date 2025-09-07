@@ -54,6 +54,14 @@ function validateBaseEnv(): string[] {
   if (!R2_PUBLIC_BASE) missing.push("R2_PUBLIC_BASE");
   return missing;
 }
+function bad(
+  res: NextApiResponse,
+  code: number,
+  msg: string,
+  extra?: Record<string, unknown>
+) {
+  return res.status(code).json({ error: msg, where: "upload", ...extra });
+}
 
 type FeeSplit = { receiver: PublicKey; lamports: number };
 function getFeeSplits(): FeeSplit[] {
@@ -156,11 +164,14 @@ function inferPoolFromTx(
 
 // ---------- handler ----------
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return bad(res, 405, "Method not allowed");
+  }
 
   const missing = validateBaseEnv();
   if (missing.length) {
-    return res.status(500).json({ error: `Missing environment variables: ${missing.join(", ")}` });
+    return bad(res, 500, `Missing environment variables: ${missing.join(", ")}`);
   }
 
   try {
@@ -175,12 +186,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } = req.body as UploadRequest;
 
     if (!tokenLogo || !tokenName || !tokenSymbol || !mint || !userWallet) {
-      return res.status(400).json({ error: "Missing required fields" });
+      return bad(res, 400, "Missing required fields");
     }
 
     // 1) Upload image
     const imageUrl = await uploadImage(tokenLogo, mint);
-    if (!imageUrl) return res.status(400).json({ error: "Failed to upload image" });
+    if (!imageUrl) return bad(res, 400, "Failed to upload image");
 
     // 2) Upload metadata JSON
     const metadataUrl = await uploadMetadata({
@@ -191,7 +202,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       website,
       twitter,
     });
-    if (!metadataUrl) return res.status(400).json({ error: "Failed to upload metadata" });
+    if (!metadataUrl) return bad(res, 400, "Failed to upload metadata");
 
     // 3) Build CREATE tx only (prepend fee transfers + memo + small CU bump)
     const { tx: poolTxRaw, pool: inferredPool } = await buildCreatePoolTxOnly({
@@ -214,7 +225,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (err: any) {
     // eslint-disable-next-line no-console
     console.error("Upload error:", err);
-    return res.status(500).json({ error: err?.message || "Unknown error" });
+    return bad(res, 500, err?.message || "Unknown error");
   }
 }
 
@@ -241,6 +252,7 @@ async function uploadImage(tokenLogo: string, mint: string): Promise<string | fa
     await uploadToR2(fileBuffer, contentType, fileName);
     return `${PUBLIC_R2_URL}/${fileName}`;
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.error("Error uploading image:", e);
     return false;
   }
@@ -270,6 +282,7 @@ async function uploadMetadata(params: MetadataUploadParams): Promise<string | fa
     await uploadToR2(Buffer.from(JSON.stringify(metadata, null, 2)), "application/json", fileName);
     return `${PUBLIC_R2_URL}/${fileName}`;
   } catch (e) {
+    // eslint-disable-next-line no-console
     console.error("Error uploading metadata:", e);
     return false;
   }
