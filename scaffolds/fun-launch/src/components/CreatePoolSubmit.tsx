@@ -29,19 +29,45 @@ export default function CreatePoolSubmit({
   const atomicLaunch = useAtomicLaunchClientBundle();
 
   async function onLaunch() {
-    if (!publicKey || !signTransaction) throw new Error("Connect Phantom first");
-    const res = await atomicLaunch({
-      connection,
-      walletPublicKey: publicKey,
-      signTransaction,
-      buildCreateIxs, // now matches the hook’s expected type (feePayer?: PublicKey)
-      poolAddress,
-      devBuyAmountSol,
-      createPriorityMicroLamports,
-      buyPriorityMicroLamports,
-      referralTokenAccount,
-    });
-    console.log("Bundle sent:", res.bundleId);
+    if (!publicKey || !signTransaction) {
+      alert("❌ Connect Phantom first");
+      throw new Error("Connect Phantom first");
+    }
+
+    try {
+      const res = await atomicLaunch({
+        connection,
+        walletPublicKey: publicKey,
+        signTransaction,
+        buildCreateIxs, // matches hook’s expected type (feePayer?: PublicKey)
+        poolAddress,
+        devBuyAmountSol,
+        createPriorityMicroLamports,
+        buyPriorityMicroLamports,
+        referralTokenAccount,
+      });
+
+      console.log("✅ Bundle sent:", res.bundleId);
+      alert(`✅ Bundle sent!\nBundle ID: ${res.bundleId}`);
+    } catch (err: any) {
+      console.error("❌ Atomic launch error:", err);
+
+      // Try to surface server `where` tag
+      let msg = err?.message || String(err);
+      let where = "";
+      if (err?.where) {
+        where = ` [from ${err.where}]`;
+      } else {
+        try {
+          const m = msg.match(/"where"\s*:\s*"([^"]+)"/);
+          if (m) where = ` [from ${m[1]}]`;
+        } catch {
+          /* ignore */
+        }
+      }
+
+      alert(`❌ Atomic launch failed: ${msg}${where}`);
+    }
   }
 
   return (
