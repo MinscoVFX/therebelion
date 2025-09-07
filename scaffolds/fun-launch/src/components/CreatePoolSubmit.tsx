@@ -9,6 +9,7 @@ type Props = {
   connection: Connection;                 // same RPC as app
   poolAddress: string;                    // DBC virtual pool (NOT mint/config)
   devBuyAmountSol: number;                // from your existing input
+  // 🔧 feePayer is OPTIONAL here; hook falls back to walletPublicKey if omitted
   buildCreateIxs: () => Promise<{ ixs: TransactionInstruction[]; feePayer?: PublicKey }>;
   createPriorityMicroLamports?: number;   // optional
   buyPriorityMicroLamports?: number;      // optional
@@ -33,7 +34,7 @@ export default function CreatePoolSubmit({
       connection,
       walletPublicKey: publicKey,
       signTransaction,
-      buildCreateIxs,
+      buildCreateIxs, // now matches the hook’s expected type (feePayer?: PublicKey)
       poolAddress,
       devBuyAmountSol,
       createPriorityMicroLamports,
