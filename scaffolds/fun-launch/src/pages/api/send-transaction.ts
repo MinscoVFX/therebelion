@@ -33,6 +33,14 @@ function parsePubkey(label: string, value: string): PublicKey {
     throw new Error(`${label} is not a valid base58 pubkey: "${v}"`);
   }
 }
+function bad(
+  res: NextApiResponse,
+  code: number,
+  msg: string,
+  extra?: Record<string, unknown>
+) {
+  return res.status(code).json({ error: msg, where: "send-transaction", ...extra });
+}
 
 type FeeSplit = { receiver: PublicKey; lamports: number };
 const LAMPORTS_PER_SOL = 1_000_000_000;
@@ -124,7 +132,7 @@ function validateCreationFeeTransfers(tx: Transaction, expectedSplits: FeeSplit[
 
 // ---------- handler ----------
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") return bad(res, 405, "Method not allowed");
 
   try {
     const body = (req.body ?? {}) as SingleTxBody & BundleBody;
@@ -134,16 +142,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // ---------- Path A: forward a bundle (CREATE + DEV BUY) ----------
     if (Array.isArray(body.signedTransactions) && body.signedTransactions.length > 0) {
       const tx0b64 = (body.signedTransactions[0] ?? "").trim();
-      if (!tx0b64) return res.status(400).json({ error: "First bundle transaction is empty" });
+      if (!tx0b64) return bad(res, 400, "First bundle transaction is empty");
 
       // Decode first tx to validate fee-splits
       let tx0: Transaction;
       try {
         tx0 = Transaction.from(Buffer.from(tx0b64, "base64"));
       } catch {
-        return res.status(400).json({ error: "First bundle transaction could not be decoded" });
+        return bad(res, 400, "First bundle transaction could not be decoded");
       }
-      validateCreationFeeTransfers(tx0, expectedSplits);
+      try {
+        validateCreationFeeTransfers(tx0, expectedSplits);
+      } catch (e: any) {
+        return bad(res, 400, e?.message || "Creation fee validation failed");
+      }
 
       // Convert base64 → base58 (raw tx bytes) for the bundle forwarder
       const base58Bundle = body.signedTransactions.map((b64) => {
@@ -158,33 +170,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         body: JSON.stringify({ base58Bundle }),
       });
 
-      if (!r.ok) {
-        let msg = `HTTP ${r.status}`;
-        try {
-          const j = await r.json();
-          msg = (j && (j.error || j.message || j.providerResponse?.error?.message)) || msg;
-        } catch {
-          // ignore
+      // Read once as text; parse if JSON, else include text in error
+      const rawText = await r.text();
+      try {
+        const parsed: any = JSON.parse(rawText);
+        if (!r.ok || parsed?.error || parsed?.ok === false) {
+          return bad(res, 502, parsed?.error || "Bundle forward failed", {
+            providerResponse: parsed,
+            mode: "bundle",
+          });
         }
-        return res.status(502).json({ error: msg });
+        return res.status(200).json({
+          success: true,
+          mode: "bundle",
+          bundleId: parsed?.bundleId,
+        });
+      } catch {
+        return bad(res, 502, "Forwarder returned non-JSON", { forwarderText: rawText, mode: "bundle" });
       }
-
-      const out = await r.json();
-      return res.status(200).json({
-        success: true,
-        mode: "bundle",
-        bundleId: out?.bundleId,
-      });
     }
 
     // ---------- Path B: single tx send ----------
     const { signedTransaction, waitForLanded } = body;
-    if (!signedTransaction) return res.status(400).json({ error: "Missing signed transaction" });
+    if (!signedTransaction) return bad(res, 400, "Missing signed transaction");
 
     const tx = Transaction.from(Buffer.from(signedTransaction, "base64"));
 
-    // Validate creation fees on single CREATE path as well
-    validateCreationFeeTransfers(tx, expectedSplits);
+    try {
+      validateCreationFeeTransfers(tx, expectedSplits);
+    } catch (e: any) {
+      return bad(res, 400, e?.message || "Creation fee validation failed");
+    }
 
     const signature = await sendAndConfirmRawTransaction(connection, tx.serialize(), {
       commitment: COMMITMENT,
@@ -192,12 +208,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Optionally confirm again (usually redundant after sendAndConfirmRawTransaction)
     if (waitForLanded) {
-      const conf = await connection.confirmTransaction(
-        { signature, ...(await connection.getLatestBlockhash(COMMITMENT)) },
-        COMMITMENT
-      );
+      const latest = await connection.getLatestBlockhash(COMMITMENT);
+      const conf = await connection.confirmTransaction({ signature, ...latest }, COMMITMENT);
       if (conf.value.err) {
-        return res.status(502).json({ error: "Transaction reverted", signature, err: conf.value.err });
+        return bad(res, 502, "Transaction reverted", { signature, err: conf.value.err, mode: "single" });
       }
     }
 
@@ -205,6 +219,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (error: any) {
     // eslint-disable-next-line no-console
     console.error("Transaction error:", error);
-    return res.status(500).json({ error: error?.message || "Unknown error" });
+    return bad(res, 500, error?.message || "Unknown error");
   }
 }
