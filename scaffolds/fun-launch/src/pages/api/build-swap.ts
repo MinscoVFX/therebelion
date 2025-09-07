@@ -82,14 +82,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     if (req.method !== "POST") {
       res.setHeader("Allow", "POST");
-      return bad(res, 405, "Method Not Allowed");
+      return bad(res, 405, "Method Not Allowed", { where: "build-swap" });
     }
 
     const { baseMint, payer, amountSol, pool, blockhash } = (req.body ?? {}) as BuildSwapRequest;
 
     // ---- validate inputs (do NOT read on-chain) ----
     if (!baseMint || !payer || amountSol === undefined || amountSol === null || !pool) {
-      return bad(res, 400, "Missing required fields (baseMint, payer, amountSol, pool)");
+      return bad(res, 400, "Missing required fields (baseMint, payer, amountSol, pool)", {
+        where: "build-swap",
+      });
     }
 
     // Validate pubkeys (baseMint not used in build, but we still sanity-check it)
@@ -101,43 +103,57 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const connection = new Connection(RPC_ENDPOINT, "confirmed");
     const dbc = new DynamicBondingCurveClient(connection, "confirmed");
 
-    // ---- Build swap WITHOUT reading pool state (no getPool/getConfig/quote) ----
-    const swapBuild = await dbc.pool.swap({
-      owner,
-      pool: poolAddress,
-      amountIn: new BN(lamportsIn.toString()),
-      minimumAmountOut: new BN(1), // atomic with create; avoid pre-quote
-      swapBaseForQuote: false,     // buy base token with SOL
-      referralTokenAccount: null,
-    });
+    let swapTxInstrs: Transaction;
+    try {
+      // ---- Build swap WITHOUT reading pool state (no getPool/getConfig/quote) ----
+      const swapBuild = await dbc.pool.swap({
+        owner,
+        pool: poolAddress,
+        amountIn: new BN(lamportsIn.toString()),
+        minimumAmountOut: new BN(1), // atomic with create; avoid pre-quote
+        swapBaseForQuote: false,     // buy base token with SOL
+        referralTokenAccount: null,
+      });
 
-    // Assemble a legacy transaction from returned instructions
-    const tx = new Transaction();
-    tx.feePayer = owner;
+      // Assemble a legacy transaction from returned instructions
+      const tx = new Transaction();
+      tx.feePayer = owner;
 
-    // Set recentBlockhash: use provided shared one if present (better for bundles)
-    if (blockhash && blockhash.trim().length > 0) {
-      tx.recentBlockhash = blockhash.trim();
-    } else {
-      const { blockhash: fresh } = await connection.getLatestBlockhash("confirmed");
-      tx.recentBlockhash = fresh;
+      // Set recentBlockhash: use provided shared one if present (better for bundles)
+      if (blockhash && blockhash.trim().length > 0) {
+        tx.recentBlockhash = blockhash.trim();
+      } else {
+        const { blockhash: fresh } = await connection.getLatestBlockhash("confirmed");
+        tx.recentBlockhash = fresh;
+      }
+
+      for (const ix of swapBuild.instructions) {
+        tx.add(ix);
+      }
+      swapTxInstrs = tx;
+    } catch (inner: any) {
+      // Surface SDK-originated errors explicitly (this is where "Pool not found" would come from)
+      const msg = inner?.message || String(inner);
+      return bad(res, 500, msg, {
+        where: "build-swap",
+        hint:
+          "If this says 'Pool not found', something in the SDK call is still reading before create lands.",
+      });
     }
 
-    for (const ix of swapBuild.instructions) {
-      tx.add(ix);
-    }
-
-    const b64 = tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+    const b64 = swapTxInstrs
+      .serialize({ requireAllSignatures: false, verifySignatures: false })
+      .toString("base64");
 
     return res.status(200).json({
       ok: true,
       swapTx: b64,
       pool: poolAddress.toBase58(),
-      usedBlockhash: tx.recentBlockhash,
+      usedBlockhash: swapTxInstrs.recentBlockhash,
     });
   } catch (e: any) {
     // eslint-disable-next-line no-console
     console.error("build-swap error:", e);
-    return bad(res, 500, e?.message || "Unexpected error");
+    return bad(res, 500, e?.message || "Unexpected error", { where: "build-swap" });
   }
 }
