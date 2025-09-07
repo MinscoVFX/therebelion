@@ -6,7 +6,7 @@ import {
   ComputeBudgetProgram,
   Connection,
   PublicKey,
-  SystemProgram,               // ✅ added
+  SystemProgram,
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
@@ -16,9 +16,9 @@ import BN from "bn.js";
 import bs58 from "bs58";
 
 type BuildCreateIxsArgs = {
-  // YOU ALREADY HAVE THIS in your flow (whatever you currently do to build create)
   // Return create instructions (NOT sent or signed yet).
-  buildCreateIxs: () => Promise<{ ixs: TransactionInstruction[]; feePayer: PublicKey }>;
+  // feePayer is optional; we’ll fallback to walletPublicKey if omitted.
+  buildCreateIxs: () => Promise<{ ixs: TransactionInstruction[]; feePayer?: PublicKey }>;
 };
 
 type AtomicArgs = BuildCreateIxsArgs & {
@@ -44,7 +44,7 @@ type AtomicArgs = BuildCreateIxsArgs & {
  * Pump-style atomic launch:
  *  - create-pool tx signed by Phantom
  *  - dev-buy tx signed by Phantom
- *  - forward both as a Jito bundle (same block, ordered, all-or-nothing)
+ *  - forward both as a Jito/Helius Sender bundle (same block, ordered, all-or-nothing)
  */
 export function useAtomicLaunchClientBundle() {
   return useCallback(async (args: AtomicArgs) => {
@@ -93,11 +93,9 @@ export function useAtomicLaunchClientBundle() {
       referralTokenAccount: referralTokenAccount ?? null,
     });
 
-    // ✅ Helius Sender requires a tip transfer (>= 0.001 SOL) to a listed tip account.
-    // You can move these to env (NEXT_PUBLIC_SENDER_TIP_ACCOUNT / NEXT_PUBLIC_SENDER_TIP_LAMPORTS) if you prefer.
+    // Helius Sender tip (>= 0.001 SOL) — put last so you only tip if swap executes
     const TIP_ACCOUNT = new PublicKey("4ACfpUFoa5D9bfPdeu6DBt89gB6ENteHBXCAi87hNDEE");
-    const TIP_LAMPORTS = 1_000_000; // 0.001 SOL (number, not bigint)
-
+    const TIP_LAMPORTS = 1_000_000; // 0.001 SOL
     const tipIxn = SystemProgram.transfer({
       fromPubkey: walletPublicKey,
       toPubkey: TIP_ACCOUNT,
@@ -107,7 +105,7 @@ export function useAtomicLaunchClientBundle() {
     const buyIxsWithCU = [
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Number(buyPriorityMicroLamports) }),
       ...swapTx.instructions,
-      tipIxn, // ✅ tip last so you only tip if swap executes
+      tipIxn,
     ];
 
     const buyMsg = new TransactionMessage({
