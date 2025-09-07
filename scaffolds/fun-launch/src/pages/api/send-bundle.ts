@@ -8,7 +8,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
  *   JITO_RELAY_URL = https://sender.helius-rpc.com/fast
  *
  * Request JSON:
- *   { "base58Bundle": ["<tx0_base58>", "<tx1_base58>"] }
+ *   { "base58Bundle": ["<tx0_base58>", "<tx1_base58>", ...] }
  *
  * Response JSON:
  *   { "ok": true, "bundleId": "<id>" }
@@ -16,8 +16,13 @@ import type { NextApiRequest, NextApiResponse } from "next";
 
 const RELAY = (process.env.JITO_RELAY_URL || "").trim();
 
-function bad(res: NextApiResponse, code: number, msg: string, extra?: Record<string, unknown>) {
-  return res.status(code).json({ ok: false, error: msg, ...extra });
+function bad(
+  res: NextApiResponse,
+  code: number,
+  msg: string,
+  extra?: Record<string, unknown>
+) {
+  return res.status(code).json({ ok: false, error: msg, where: "send-bundle", ...extra });
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -63,7 +68,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return bad(res, 502, "sendBundle failed", { providerResponse: json });
     }
 
-    return res.status(200).json({ ok: true, bundleId: json.result || json?.bundleId || null });
+    // Some relays return { result: "<bundleId>" }, others may nest it differently
+    const bundleId = json?.result ?? json?.bundleId ?? null;
+
+    return res.status(200).json({ ok: true, bundleId });
   } catch (e: any) {
     return bad(res, 500, e?.message || "Unexpected error");
   }
