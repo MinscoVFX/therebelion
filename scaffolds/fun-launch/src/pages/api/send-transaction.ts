@@ -6,9 +6,9 @@ import {
   PublicKey,
   SystemProgram,
   SystemInstruction,
-  sendAndConfirmRawTransaction,
   ComputeBudgetProgram,
   Commitment,
+  SendTransactionError,
 } from "@solana/web3.js";
 import bs58 from "bs58";
 
@@ -59,17 +59,24 @@ function getFeeSplitsFromEnv(): FeeSplit[] {
         const [addrRaw, solRaw] = pair.split(":");
         const addr = sanitize(addrRaw);
         const solStr = sanitize(solRaw);
-        if (!addr || !solStr) throw new Error(`Invalid fee split format: "${pair}". Use "Wallet:0.020"`);
+        if (!addr || !solStr)
+          throw new Error(`Invalid fee split format: "${pair}". Use "Wallet:0.020"`);
         const receiver = parsePubkey("Fee receiver", addr);
         const sol = parseFloat(solStr);
-        if (!Number.isFinite(sol) || sol <= 0) throw new Error(`Invalid SOL amount in split "${pair}"`);
+        if (!Number.isFinite(sol) || sol <= 0)
+          throw new Error(`Invalid SOL amount in split "${pair}"`);
         return { receiver, lamports: Math.floor(sol * LAMPORTS_PER_SOL) };
       });
   }
 
   if (rawSingle) {
     // Default 0.035 SOL if a single receiver is provided (matches your previous behavior)
-    return [{ receiver: parsePubkey("NEXT_PUBLIC_CREATION_FEE_RECEIVER", rawSingle), lamports: 35_000_000 }];
+    return [
+      {
+        receiver: parsePubkey("NEXT_PUBLIC_CREATION_FEE_RECEIVER", rawSingle),
+        lamports: 35_000_000,
+      },
+    ];
   }
 
   throw new Error(
@@ -130,6 +137,15 @@ function validateCreationFeeTransfers(tx: Transaction, expectedSplits: FeeSplit[
   }
 }
 
+// ---------- helpers ----------
+async function absoluteApiUrl(req: NextApiRequest, path: string): Promise<string> {
+  const proto =
+    (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0]?.trim() ||
+    "https";
+  const host = (req.headers.host as string | undefined) || "localhost:3000";
+  return `${proto}://${host}${path}`;
+}
+
 // ---------- handler ----------
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return bad(res, 405, "Method not allowed");
@@ -163,8 +179,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return bs58.encode(raw);
       });
 
-      // Forward to our local proxy (no need to compute host headers)
-      const r = await fetch("/api/dbc/send-bundle", {
+      // Use an absolute URL (relative fetch inside an API route is unreliable)
+      const url = await absoluteApiUrl(req, "/api/dbc/send-bundle");
+      const r = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ base58Bundle }),
@@ -186,7 +203,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           bundleId: parsed?.bundleId,
         });
       } catch {
-        return bad(res, 502, "Forwarder returned non-JSON", { forwarderText: rawText, mode: "bundle" });
+        return bad(res, 502, "Forwarder returned non-JSON", {
+          forwarderText: rawText,
+          mode: "bundle",
+        });
       }
     }
 
@@ -202,16 +222,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return bad(res, 400, e?.message || "Creation fee validation failed");
     }
 
-    const signature = await sendAndConfirmRawTransaction(connection, tx.serialize(), {
-      commitment: COMMITMENT,
-    });
+    // Send with preflight ON so we can capture helpful logs
+    let signature: string;
+    try {
+      signature = await connection.sendRawTransaction(tx.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: COMMITMENT,
+        maxRetries: 3,
+      });
+    } catch (e: any) {
+      // Try to surface preflight logs
+      try {
+        if (e instanceof SendTransactionError && typeof e.getLogs === "function") {
+          const logs = await e.getLogs();
+          if (logs?.length) {
+            // eslint-disable-next-line no-console
+            console.error("Preflight logs:", logs);
+            return bad(res, 502, "Preflight failed", { logs, mode: "single" });
+          }
+        }
+      } catch {}
+      // Fallback: simulate to dump logs
+      try {
+        const sim = await connection.simulateTransaction(tx, {
+          sigVerify: false,
+          replaceRecentBlockhash: true,
+        });
+        // eslint-disable-next-line no-console
+        console.error("Sim logs:", sim.value.logs);
+        return bad(res, 502, "Preflight failed (simulated)", {
+          logs: sim.value.logs,
+          simErr: sim.value.err,
+          mode: "single",
+        });
+      } catch (simErr: any) {
+        // eslint-disable-next-line no-console
+        console.error("Simulation failed:", simErr);
+        return bad(res, 502, "Preflight failed (no logs)", { mode: "single" });
+      }
+    }
 
-    // Optionally confirm again (usually redundant after sendAndConfirmRawTransaction)
     if (waitForLanded) {
-      const latest = await connection.getLatestBlockhash(COMMITMENT);
-      const conf = await connection.confirmTransaction({ signature, ...latest }, COMMITMENT);
+      // Confirm by signature (don’t mix blockhash if tx was pre-signed elsewhere)
+      const conf = await connection.confirmTransaction(signature, COMMITMENT);
       if (conf.value.err) {
-        return bad(res, 502, "Transaction reverted", { signature, err: conf.value.err, mode: "single" });
+        return bad(res, 502, "Transaction reverted", {
+          signature,
+          err: conf.value.err,
+          mode: "single",
+        });
       }
     }
 
