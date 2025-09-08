@@ -231,10 +231,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         maxRetries: 3,
       });
     } catch (e: any) {
-      // Try to surface preflight logs
+      // Try to surface preflight logs (needs connection param in this web3.js version)
       try {
-        if (e instanceof SendTransactionError && typeof e.getLogs === "function") {
-          const logs = await e.getLogs();
+        if (e instanceof SendTransactionError && typeof (e as any).getLogs === "function") {
+          const logs = await (e as any).getLogs(connection);
           if (logs?.length) {
             // eslint-disable-next-line no-console
             console.error("Preflight logs:", logs);
@@ -242,12 +242,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         }
       } catch {}
-      // Fallback: simulate to dump logs
+      // Fallback: simulate to dump logs (legacy overload — no config arg)
       try {
-        const sim = await connection.simulateTransaction(tx, {
-          sigVerify: false,
-          replaceRecentBlockhash: true,
-        });
+        const sim = await connection.simulateTransaction(tx);
         // eslint-disable-next-line no-console
         console.error("Sim logs:", sim.value.logs);
         return bad(res, 502, "Preflight failed (simulated)", {
