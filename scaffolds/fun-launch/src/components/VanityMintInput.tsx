@@ -25,8 +25,9 @@ export function VanityMintInput({
   errorText,
   required,
 }: Props) {
-  const showInvalid = value && !base58Regex.test(value);
-  const showError = !!errorText || showInvalid;
+  // Force booleans so aria-invalid is strictly boolean (not string | boolean)
+  const showInvalid: boolean = !!value && !base58Regex.test(value);
+  const showError: boolean = Boolean(errorText) || showInvalid;
 
   return (
     <div className={className}>
