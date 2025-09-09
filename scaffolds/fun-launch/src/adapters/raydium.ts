@@ -52,11 +52,13 @@ export function buildCreationFeeIx(
   });
 }
 
-// Lazy loader for the Raydium SDK. Typed as any on purpose to avoid build-time dependency.
+// Lazy loader for the Raydium SDK without triggering TS module resolution.
+// Uses an eval-style dynamic import so typecheck passes even if the package isn't installed.
 async function loadRaydiumSdk(): Promise<any> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const mod = await import('@raydium-io/raydium-sdk-v2');
+    // Avoid static import() so TS doesn't try to resolve types
+    const dynamicImport = new Function('m', 'return import(m)') as (m: string) => Promise<any>;
+    const mod = await dynamicImport('@raydium-io/raydium-sdk-v2');
     return mod;
   } catch {
     // SDK not installed or cannot be resolved at runtime.
