@@ -12,8 +12,14 @@ import { Keypair, Transaction, PublicKey, SystemProgram } from '@solana/web3.js'
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
 
+// 🔽 NEW: provider picker UI
+import { LaunchProviderPicker } from '@/components/LaunchProviderPicker';
+
 // ---------------- Validation schema ----------------
 const poolSchema = z.object({
+  // 🔽 NEW: which launch stack to use; default is 'meteora' (keeps current behavior)
+  provider: z.enum(['meteora', 'raydium']).default('meteora'),
+
   tokenName: z.string().min(3, 'Token name must be at least 3 characters'),
   tokenSymbol: z.string().min(1, 'Token symbol is required'),
   tokenLogo: z.instanceof(File, { message: 'Token logo is required' }).optional(),
@@ -69,6 +75,9 @@ export default function CreatePool() {
 
   const form = useFormAny({
     defaultValues: {
+      // 🔽 NEW: default to Meteora (keeps your current behavior unchanged)
+      provider: 'meteora',
+
       tokenName: '',
       tokenSymbol: '',
       tokenLogo: undefined as File | undefined, // ensure key exists
@@ -99,7 +108,7 @@ export default function CreatePool() {
           reader.readAsDataURL(tokenLogo);
         });
 
-        // Vanity mint (optional)
+        // Vanity mint (optional) — we still generate a local keypair so we can sign mint authority
         const rawSuffix = (value.vanitySuffix || '').trim();
         let keyPair: Keypair;
 
@@ -124,6 +133,10 @@ export default function CreatePool() {
         } else {
           keyPair = Keypair.generate();
         }
+
+        // NOTE: For now we keep existing DBC path regardless of provider;
+        // we'll branch to Raydium in a following step once we add the extra fields Raydium needs.
+        // (This ensures no behavioral change or runtime errors right now.)
 
         // Step 1: Ask backend to upload assets and build CREATE-ONLY tx (fees + memo inside)
         const uploadResponse = await fetch('/api/upload', {
@@ -297,6 +310,19 @@ export default function CreatePool() {
               }}
               className="space-y-8"
             >
+              {/* 🔽 NEW: Provider selection (Meteora / Raydium) */}
+              <div className="bg-white/5 rounded-xl p-6 backdrop-blur-sm border border-white/10">
+                {form.Field({
+                  name: 'provider',
+                  children: (field: any) => (
+                    <LaunchProviderPicker
+                      value={field.state.value}
+                      onChange={(p) => field.handleChange(p)}
+                    />
+                  ),
+                })}
+              </div>
+
               {/* Token Details Section */}
               <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
                 <h2 className="text-2xl font-bold mb-4">Token Details</h2>
