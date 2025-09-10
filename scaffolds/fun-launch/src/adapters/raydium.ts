@@ -37,6 +37,9 @@ export interface RaydiumCreateArgs {
 
   // vanity (optional): bring-your-own mint
   existingMint?: PublicKey;
+
+  // LP lock behavior on migration (optional; respected if SDK supports it)
+  lockLp?: boolean;
 }
 
 /** Build a simple SystemProgram transfer for your one-time creation fee. */
@@ -138,6 +141,7 @@ export async function buildCreateLaunchpadTx(args: RaydiumCreateArgs): Promise<T
       totalSellTokens: args.supplyTokens,
       totalFundRaisingLamports: args.raiseTargetLamports,
       migrateType: args.migrateType,
+      ...(typeof args.lockLp === 'boolean' ? { lockLp: args.lockLp } : {}), // pass through if provided
     };
 
     try {
