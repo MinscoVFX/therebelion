@@ -15,44 +15,31 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: 'pnpm'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9
+          run_install: true   # install deps right after pnpm is set up
 
-      - name: Install deps
-        run: pnpm install
-
-      # (Optional) Build if your repo requires it; safe to skip for the script
-      # - name: Build
-      #   run: pnpm build
+      # If your repo has a lockfile and you want to ensure install anyway:
+      # - name: Install deps
+      #   run: pnpm install
 
       - name: Run create-platform script
         env:
-          # --- Required secrets ---
-          RPC_URL: ${{ secrets.RPC_URL }} # e.g., https://api.devnet.solana.com (or your Helius RPC)
-          RAYDIUM_PLATFORM_AUTHORITY_SECRET: ${{ secrets.RAYDIUM_PLATFORM_AUTHORITY_SECRET }} # base58 private key
+          RPC_URL: ${{ secrets.RPC_URL }}
+          RAYDIUM_PLATFORM_AUTHORITY_SECRET: ${{ secrets.RAYDIUM_PLATFORM_AUTHORITY_SECRET }}
 
           # --- Fees ---
-          # Your platform cut on the bonding curve (basis points). 175 = 1.75%
           RAYDIUM_SHARE_FEE_BPS: "175"
-          # One-time creation fee you charge in lamports (25_000_000 = 0.025 SOL)
           RAYDIUM_CREATION_FEE_LAMPORTS: "25000000"
 
-          # --- Migration LP split (must sum to 10000 bps = 100%) ---
-          # Send 100% of LP to the creator (unlocked intent), no burn, no platform
+          # --- Migration LP split (must total 10000 bps) ---
           RAYDIUM_MIGRATE_SPLIT_PLATFORM_BPS: "0"
           RAYDIUM_MIGRATE_SPLIT_CREATOR_BPS: "10000"
           RAYDIUM_MIGRATE_SPLIT_BURN_BPS: "0"
 
-          # Prefer unlocked LP where SDK supports a switch (safe no-op if unsupported)
           RAYDIUM_LOCK_LP: "false"
-
-          # Optional branding (used by the script if present)
-          NEXT_PUBLIC_SITE_NAME: "Your LaunchPad"
-          PUBLIC_BUCKET_URL: ""
-          R2_PUBLIC_BASE: ""
         run: |
           pnpm dlx tsx scaffolds/fun-launch/scripts/raydium/create-platform.ts
