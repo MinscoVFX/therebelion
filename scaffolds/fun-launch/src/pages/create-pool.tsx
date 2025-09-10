@@ -103,8 +103,8 @@ export default function CreatePool() {
 
       // Raydium defaults
       decimals: 6,
-      supplyTokens: '0',
-      raiseTargetLamports: '0',
+      supplyTokens: '1_000_000_000',
+      raiseTargetLamports: '340_000_000_000',
       migrateType: 'amm',
     },
     onSubmit: async ({ value }: any) => {
