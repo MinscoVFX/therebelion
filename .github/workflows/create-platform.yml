@@ -13,16 +13,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: 'pnpm'
 
-      # ✅ This installs pnpm and adds it to PATH
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-          run_install: true   # runs "pnpm install" for you
+      # ✅ Enable pnpm bundled with Node via Corepack
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9 --activate
+          pnpm -v
 
-      - name: Show pnpm version (debug)
-        run: pnpm -v
+      - name: Install deps
+        run: pnpm install
 
       - name: Run create-platform script
         env:
