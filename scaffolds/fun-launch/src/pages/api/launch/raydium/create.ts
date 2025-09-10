@@ -58,6 +58,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     const existingMintPk = existingMint ? new PublicKey(existingMint) : undefined;
 
+    // LP lock toggle (default false = UNLOCKED). Safe pass-through; adapter/SDK may ignore if unsupported.
+    const lockLpEnv = String(process.env.RAYDIUM_LOCK_LP ?? 'false').toLowerCase();
+    const lockLp = lockLpEnv === 'true' || lockLpEnv === '1' || lockLpEnv === 'yes';
+
     // Build tx via adapter.
     // NOTE: The adapter will throw { code: 'RAYDIUM_SDK_MISSING' | 'RAYDIUM_NOT_WIRED', message: ... }
     // until we finish wiring the SDK. We convert those to 501 so your app doesn't crash.
@@ -76,6 +80,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       raiseTargetLamports: fundRaiseLamports,
       migrateType: migrate,
       existingMint: existingMintPk,
+      lockLp, // <-- pass through
     });
 
     const serialized = tx.serialize({ requireAllSignatures: false });
