@@ -12,15 +12,8 @@ import { Keypair, Transaction, PublicKey, SystemProgram } from '@solana/web3.js'
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
 
-// Provider picker
-import { LaunchProviderPicker } from '@/components/LaunchProviderPicker';
-
 // ---------------- Validation schema ----------------
-const integerString = z.string().regex(/^\d+$/, 'Enter a whole number');
-
 const poolSchema = z.object({
-  provider: z.enum(['meteora', 'raydium']).default('meteora'),
-
   tokenName: z.string().min(3, 'Token name must be at least 3 characters'),
   tokenSymbol: z.string().min(1, 'Token symbol is required'),
   tokenLogo: z.instanceof(File, { message: 'Token logo is required' }).optional(),
@@ -32,21 +25,8 @@ const poolSchema = z.object({
     .regex(/^[1-9A-HJ-NP-Za-km-z]*$/, 'Only base58 (no 0,O,I,l)')
     .optional()
     .or(z.literal('')),
-
-  // Dev prebuy (existing)
   devPrebuy: z.boolean().optional(),
   devAmountSol: z.string().optional().or(z.literal('')),
-
-  // Raydium-only fields (UI shows only when provider === 'raydium')
-  decimals: z
-    .number({ invalid_type_error: 'Decimals must be a number' })
-    .int('Decimals must be an integer')
-    .min(0)
-    .max(9)
-    .default(6),
-  supplyTokens: integerString.default('0'),
-  raiseTargetLamports: integerString.default('0'),
-  migrateType: z.enum(['amm', 'cpmm']).default('amm'),
 });
 
 // ---------------- Helpers ----------------
@@ -89,23 +69,14 @@ export default function CreatePool() {
 
   const form = useFormAny({
     defaultValues: {
-      provider: 'meteora',
-
       tokenName: '',
       tokenSymbol: '',
-      tokenLogo: undefined as File | undefined,
+      tokenLogo: undefined as File | undefined, // ensure key exists
       website: '',
       twitter: '',
       vanitySuffix: '',
-
       devPrebuy: false,
       devAmountSol: '',
-
-      // Raydium defaults
-      decimals: 6,
-      supplyTokens: '1_000_000_000',
-      raiseTargetLamports: '380_000_000_000',
-      migrateType: 'amm',
     },
     onSubmit: async ({ value }: any) => {
       try {
@@ -128,7 +99,7 @@ export default function CreatePool() {
           reader.readAsDataURL(tokenLogo);
         });
 
-        // Vanity mint (optional) — we generate a keypair regardless
+        // Vanity mint (optional)
         const rawSuffix = (value.vanitySuffix || '').trim();
         let keyPair: Keypair;
 
@@ -154,63 +125,7 @@ export default function CreatePool() {
           keyPair = Keypair.generate();
         }
 
-        // -------- Branch by provider --------
-        if (value.provider === 'raydium') {
-          // Build request to our Raydium route
-          const body = {
-            creator: address,
-            name: value.tokenName,
-            symbol: value.tokenSymbol,
-            decimals: Number(value.decimals) || 6,
-            imageUrl: '', // server can reuse R2 upload later if desired
-            description: '',
-            supplyTokens: String(value.supplyTokens || '0'),
-            raiseTargetLamports: String(value.raiseTargetLamports || '0'),
-            migrateType: value.migrateType === 'cpmm' ? 'cpmm' : 'amm',
-            existingMint: keyPair.publicKey.toBase58(), // vanity BYO mint
-            // include logo + metadata so server can pin/upload if needed
-            tokenLogo: base64File,
-            website: value.website || '',
-            twitter: value.twitter || '',
-          };
-
-          const res = await fetch('/api/launch/raydium/create', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          });
-
-          const j = await res.json();
-          if (res.status === 501) {
-            toast.info('Raydium LaunchLab is not wired yet (server placeholder). We’ll enable it next.');
-            return; // stop here to avoid confusion
-          }
-          if (!res.ok || !j?.tx) {
-            throw new Error(j?.error || 'Failed to build Raydium create transaction');
-          }
-
-          // Sign and send (same pattern as DBC)
-          const tx = Transaction.from(Buffer.from(j.tx, 'base64'));
-          tx.sign(keyPair);
-          const signed = await signTransaction(tx);
-          const signedB64 = Buffer.from(signed.serialize()).toString('base64');
-
-          const sendResp = await fetch('/api/send-transaction', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ signedTransaction: signedB64 }),
-          });
-          const sendJson = await sendResp.json();
-          if (!sendResp.ok || !sendJson?.success) {
-            throw new Error(sendJson?.error || 'Send failed');
-          }
-
-          toast.success('LaunchLab create submitted');
-          setPoolCreated(true);
-          return;
-        }
-
-        // ----- Existing Meteora DBC flow (unchanged) -----
+        // Step 1: Ask backend to upload assets and build CREATE-ONLY tx (fees + memo inside)
         const uploadResponse = await fetch('/api/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -222,6 +137,7 @@ export default function CreatePool() {
             userWallet: address,
             website: value.website || '',
             twitter: value.twitter || '',
+            // passed for compatibility; /api/upload ignores them for tx building
             devPrebuy: !!value.devPrebuy,
             devAmountSol: value.devAmountSol || '',
           }),
@@ -234,12 +150,14 @@ export default function CreatePool() {
 
         const { poolTx, pool } = uploadJson as { poolTx: string; pool?: string | null };
 
+        // Step 2: Decode tx, sign with mint authority (keyPair), then user wallet
         const createTx = Transaction.from(Buffer.from(poolTx, 'base64'));
         createTx.sign(keyPair);
 
         const signedCreate = await signTransaction(createTx);
         const signedCreateB64 = Buffer.from(signedCreate.serialize()).toString('base64');
 
+        // Should we dev pre-buy (bundled)?
         const doDevBuy =
           !!value.devPrebuy &&
           typeof value.devAmountSol === 'string' &&
@@ -250,6 +168,7 @@ export default function CreatePool() {
             console.warn('No pool returned from /api/upload; swap builder will still prelaunch-build.');
           }
 
+          // Step 2.5: Build the swap **in prelaunch mode** sharing the createTx blockhash
           const payerAddr = address || publicKey.toBase58();
           const buildSwapRes = await fetch('/api/build-swap', {
             method: 'POST',
@@ -260,8 +179,8 @@ export default function CreatePool() {
               amountSol: value.devAmountSol,
               pool: pool || '',
               slippageBps: 100,
-              prelaunch: true,
-              blockhash: String(createTx.recentBlockhash || ''),
+              prelaunch: true,                               // <-- IMPORTANT
+              blockhash: String(createTx.recentBlockhash || ''), // share blockhash
             }),
           });
           const buildSwapJson = await buildSwapRes.json();
@@ -271,6 +190,7 @@ export default function CreatePool() {
 
           const swapTx = Transaction.from(Buffer.from(buildSwapJson.swapTx, 'base64'));
 
+          // (Optional) add a tiny Jito tip to the swap tx
           try {
             const tips = await getJitoTipAccounts().catch(() => []);
             const firstTip: string | undefined = Array.isArray(tips)
@@ -296,6 +216,7 @@ export default function CreatePool() {
           const signedSwap = await signTransaction(swapTx);
           const signedSwapB64 = Buffer.from(signedSwap.serialize()).toString('base64');
 
+          // Step 3: Submit both via bundle
           const sendRes = await fetch('/api/send-transaction', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -310,6 +231,7 @@ export default function CreatePool() {
           }
           toast.success(`Bundle submitted${sendJson?.status ? `: ${sendJson.status}` : ''}`);
         } else {
+          // Single create tx path (server validates creation-fee transfers)
           const sendResponse = await fetch('/api/send-transaction', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -341,8 +263,6 @@ export default function CreatePool() {
     },
   } as any);
 
-  const provider = (form as any).state?.values?.provider as 'meteora' | 'raydium';
-
   return (
     <>
       <Head>
@@ -372,23 +292,11 @@ export default function CreatePool() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                // ✅ DO NOT call hooks inside callbacks. Just use the instance we already created.
                 form.handleSubmit();
               }}
               className="space-y-8"
             >
-              {/* Provider selection */}
-              <div className="bg-white/5 rounded-xl p-6 backdrop-blur-sm border border-white/10">
-                {form.Field({
-                  name: 'provider',
-                  children: (field: any) => (
-                    <LaunchProviderPicker
-                      value={field.state.value}
-                      onChange={(p) => field.handleChange(p)}
-                    />
-                  ),
-                })}
-              </div>
-
               {/* Token Details Section */}
               <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
                 <h2 className="text-2xl font-bold mb-4">Token Details</h2>
@@ -482,7 +390,7 @@ export default function CreatePool() {
                     </label>
 
                     {form.Field({
-                      name: 'tokenLogo' as any,
+                      name: 'tokenLogo' as any, // relaxed typing for File input
                       children: (field: any) => (
                         <div className="border-2 border-dashed border-white/20 rounded-lg p-8 text-center">
                           <span className="iconify w-6 h-6 mx-auto mb-2 text-gray-400 ph--upload-bold" />
@@ -510,111 +418,6 @@ export default function CreatePool() {
                   </div>
                 </div>
               </div>
-
-              {/* Curve Parameters (Raydium) */}
-              {provider === 'raydium' && (
-                <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
-                  <h2 className="text-2xl font-bold mb-4">Curve Parameters (Raydium)</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="mb-4">
-                      <label htmlFor="decimals" className="block text-sm font-medium text-gray-300 mb-1">
-                        Decimals
-                      </label>
-                      {form.Field({
-                        name: 'decimals',
-                        children: (field: any) => (
-                          <input
-                            id="decimals"
-                            name={field.name}
-                            type="number"
-                            min={0}
-                            max={9}
-                            className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                            value={field.state.value}
-                            onChange={(e) => field.handleChange(Number(e.target.value))}
-                          />
-                        ),
-                      })}
-                    </div>
-
-                    <div className="mb-4">
-                      <label htmlFor="supplyTokens" className="block text-sm font-medium text-gray-300 mb-1">
-                        Tokens for Sale on Curve (integer)
-                      </label>
-                      {form.Field({
-                        name: 'supplyTokens',
-                        children: (field: any) => (
-                          <input
-                            id="supplyTokens"
-                            name={field.name}
-                            type="text"
-                            className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                            placeholder="e.g. 1000000000"
-                            value={field.state.value}
-                            onChange={(e) => field.handleChange(e.target.value.replace(/[^\d]/g, ''))}
-                          />
-                        ),
-                      })}
-                    </div>
-
-                    <div className="mb-4">
-                      <label htmlFor="raiseTargetLamports" className="block text-sm font-medium text-gray-300 mb-1">
-                        Raise Target (lamports)
-                      </label>
-                      {form.Field({
-                        name: 'raiseTargetLamports',
-                        children: (field: any) => (
-                          <input
-                            id="raiseTargetLamports"
-                            name={field.name}
-                            type="text"
-                            className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
-                            placeholder="e.g. 100000000 (≈0.1 SOL)"
-                            value={field.state.value}
-                            onChange={(e) => field.handleChange(e.target.value.replace(/[^\d]/g, ''))}
-                          />
-                        ),
-                      })}
-                    </div>
-
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-300 mb-1">
-                        Migrate Type
-                      </label>
-                      {form.Field({
-                        name: 'migrateType',
-                        children: (field: any) => (
-                          <div className="flex items-center gap-6">
-                            <label className="inline-flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="radio"
-                                name={field.name}
-                                value="amm"
-                                checked={field.state.value === 'amm'}
-                                onChange={() => field.handleChange('amm')}
-                              />
-                              <span>AMM</span>
-                            </label>
-                            <label className="inline-flex items-center gap-2 cursor-pointer">
-                              <input
-                                type="radio"
-                                name={field.name}
-                                value="cpmm"
-                                checked={field.state.value === 'cpmm'}
-                                onChange={() => field.handleChange('cpmm')}
-                              />
-                              <span>CPMM</span>
-                            </label>
-                          </div>
-                        ),
-                      })}
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1">
-                    These parameters are required for Raydium LaunchLab. Your creation fee and platform fee still apply.
-                  </p>
-                </div>
-              )}
 
               {/* Social Links Section */}
               <div className="bg-white/5 rounded-xl p-8 backdrop-blur-sm border border-white/10">
