@@ -1,7 +1,8 @@
 import { Connection, PublicKey, TransactionInstruction } from '@solana/web3.js';
-import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from '@solana/spl-token';
+import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import path from 'path';
 import fs from 'fs';
+import { createRequire } from 'module';
 
 export type DammV2PoolKeys = {
   programId: PublicKey;
@@ -14,9 +15,12 @@ export type DammV2PoolKeys = {
   authorityPda: PublicKey;
 };
 
+const requireNode = createRequire(import.meta.url);
+
+/** Resolve a file inside @meteora-invent/studio/dist reliably in serverless. */
 function resolveStudioDist(subpath: string): string | null {
   try {
-    const pkg = require.resolve('@meteora-invent/studio/package.json');
+    const pkg = requireNode.resolve('@meteora-invent/studio/package.json');
     const base = path.dirname(pkg);
     const candidate = path.join(base, 'dist', subpath);
     return fs.existsSync(candidate) ? candidate : null;
@@ -24,18 +28,15 @@ function resolveStudioDist(subpath: string): string | null {
     return null;
   }
 }
-async function importStudioModule(subpath: string): Promise<any | null> {
+function requireStudioModule(subpath: string): any | null {
   const target = resolveStudioDist(subpath);
   if (!target) return null;
-  // @ts-ignore
-  const mod = await import(/* webpackIgnore: true */ target);
-  return mod ?? null;
+  return requireNode(target);
 }
 
-async function pickDammRemoveBuilder(): Promise<
-  (params: any) => Promise<TransactionInstruction | TransactionInstruction[]>
-> {
-  const mod = await importStudioModule('lib/damm_v2/index.js');
+/** Locate the remove-liquidity builder across supported export names. */
+function getDammRemoveBuilder(): (params: any) => Promise<TransactionInstruction | TransactionInstruction[]> {
+  const mod = requireStudioModule('lib/damm_v2/index.js');
   if (!mod) throw new Error('DAMM v2 runtime not found (studio dist missing).');
 
   const removeBuilder =
@@ -48,6 +49,7 @@ async function pickDammRemoveBuilder(): Promise<
   return removeBuilder;
 }
 
+/** Read base-units LP balance from owner’s ATA (0n if missing). */
 async function getUserLpAmount(conn: Connection, owner: PublicKey, lpMint: PublicKey): Promise<bigint> {
   const ata = getAssociatedTokenAddressSync(lpMint, owner, false);
   try {
@@ -59,17 +61,24 @@ async function getUserLpAmount(conn: Connection, owner: PublicKey, lpMint: Publi
   }
 }
 
+/**
+ * Build the full set of instructions to remove **100%** LP for the provided DAMM v2 pool.
+ */
 export async function buildDammV2RemoveAllLpIxs(args: {
   connection: Connection;
   owner: PublicKey;
   poolKeys: DammV2PoolKeys;
 }): Promise<TransactionInstruction[]> {
   const { connection, owner, poolKeys } = args;
-  const removeBuilder = await pickDammRemoveBuilder();
 
+  const removeBuilder = getDammRemoveBuilder();
+
+  // Determine 100% LP amount from user's LP ATA
   const userLpAta = getAssociatedTokenAddressSync(poolKeys.lpMint, owner, false);
   const lpAmount = await getUserLpAmount(connection, owner, poolKeys.lpMint);
-  if (lpAmount === 0n) throw new Error('No LP tokens found for this DAMM v2 pool.');
+  if (lpAmount === 0n) {
+    throw new Error('No LP tokens found for this DAMM v2 pool.');
+  }
 
   const ixs = await removeBuilder({
     programId: poolKeys.programId,
@@ -82,7 +91,7 @@ export async function buildDammV2RemoveAllLpIxs(args: {
     userLpAccount: userLpAta,
     userAToken: getAssociatedTokenAddressSync(poolKeys.tokenAMint, owner, false),
     userBToken: getAssociatedTokenAddressSync(poolKeys.tokenBMint, owner, false),
-    lpAmount,
+    lpAmount, // remove 100%
   });
 
   return Array.isArray(ixs) ? ixs : [ixs];
