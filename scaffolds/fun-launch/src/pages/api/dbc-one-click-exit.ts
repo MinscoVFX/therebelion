@@ -8,7 +8,6 @@ import {
   TransactionInstruction,
 } from '@solana/web3.js';
 import {
-  TOKEN_PROGRAM_ID,
   getAssociatedTokenAddressSync,
   createAssociatedTokenAccountIdempotentInstruction,
 } from '@solana/spl-token';
@@ -45,7 +44,7 @@ function resolveStudioDist(subpath: string): string | null {
 async function importStudioModule(subpath: string): Promise<any | null> {
   const target = resolveStudioDist(subpath);
   if (!target) return null;
-  // @ts-ignore
+  // @ts-expect-error - dynamic runtime import path; safe in Node API route
   const mod = await import(/* webpackIgnore: true */ target);
   return mod ?? null;
 }
