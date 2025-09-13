@@ -8,9 +8,6 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
 } from '@solana/spl-token';
 
-/**
- * Meteora DAMM v2 pool keys.
- */
 export type DammV2PoolKeys = {
   programId: PublicKey;
   pool: PublicKey;
@@ -22,9 +19,6 @@ export type DammV2PoolKeys = {
   authorityPda: PublicKey;
 };
 
-/**
- * Read user's LP balance (base units).
- */
 export async function getUserLpAmount(
   connection: Connection,
   owner: PublicKey,
@@ -40,15 +34,11 @@ export async function getUserLpAmount(
   }
 }
 
-/**
- * Safely import Studio DAMM v2 compiled JS at runtime (avoids bundling TS sources).
- * Returns null if not found.
- */
 async function importStudioDammRuntime(): Promise<any | null> {
   const path = ['../../../../studio', 'dist', 'lib', 'damm_v2', 'index.js'].join('/');
   try {
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore - runtime import only
+    // @ts-ignore
     const mod = await import(/* webpackIgnore: true */ path);
     return mod ?? null;
   } catch {
@@ -56,11 +46,6 @@ async function importStudioDammRuntime(): Promise<any | null> {
   }
 }
 
-/**
- * Build instructions to remove 100% of user's LP from DAMM v2.
- * If your Studio lib doesn't (yet) export a remove-liquidity builder,
- * we skip gracefully so the DBC fee-claim flow still works.
- */
 export async function buildDammV2RemoveAllLpIxs(args: {
   connection: Connection;
   owner: PublicKey;
@@ -68,36 +53,26 @@ export async function buildDammV2RemoveAllLpIxs(args: {
 }): Promise<TransactionInstruction[]> {
   const { connection, owner, poolKeys } = args;
 
-  // 1) Check user's LP balance
   const userLp = await getUserLpAmount(connection, owner, poolKeys.lpMint);
-  if (userLp === 0n) return []; // nothing to remove
+  if (userLp === 0n) return [];
 
-  // 2) Ensure user ATAs exist for receiving token A/B
   const userAToken = getAssociatedTokenAddressSync(poolKeys.tokenAMint, owner, false);
   const userBToken = getAssociatedTokenAddressSync(poolKeys.tokenBMint, owner, false);
 
   const ixs: TransactionInstruction[] = [];
   ixs.push(
     createAssociatedTokenAccountIdempotentInstruction(
-      owner,
-      userAToken,
-      owner,
-      poolKeys.tokenAMint
+      owner, userAToken, owner, poolKeys.tokenAMint
     )
   );
   ixs.push(
     createAssociatedTokenAccountIdempotentInstruction(
-      owner,
-      userBToken,
-      owner,
-      poolKeys.tokenBMint
+      owner, userBToken, owner, poolKeys.tokenBMint
     )
   );
 
-  // 3) Import Studio DAMM v2 runtime
   const damm = await importStudioDammRuntime();
 
-  // Try common export names on the compiled module
   const builder: any =
     damm &&
     (damm.buildRemoveLiquidityIx ||
@@ -106,7 +81,6 @@ export async function buildDammV2RemoveAllLpIxs(args: {
     null;
 
   if (!builder) {
-    // No exported remove-liquidity builder yet; skip gracefully.
     console.warn(
       '[dammv2-adapter] No remove-liquidity builder exported in studio/dist/lib/damm_v2. ' +
       'Skipping LP removal and proceeding with fee-claim-only.'
@@ -114,7 +88,6 @@ export async function buildDammV2RemoveAllLpIxs(args: {
     return ixs;
   }
 
-  // 4) Build remove-liquidity instruction(s) for 100% LP burn
   const removeIxs: TransactionInstruction | TransactionInstruction[] = await builder({
     programId: poolKeys.programId,
     pool: poolKeys.pool,
@@ -126,10 +99,7 @@ export async function buildDammV2RemoveAllLpIxs(args: {
     userLpAccount: getAssociatedTokenAddressSync(poolKeys.lpMint, owner, false),
     userAToken,
     userBToken,
-    lpAmount: userLp, // remove ALL LP
-    // Optional: min out / slippage if your builder supports them:
-    // minA: 0n,
-    // minB: 0n,
+    lpAmount: userLp,
   });
 
   return [...ixs, ...(Array.isArray(removeIxs) ? removeIxs : [removeIxs])];
