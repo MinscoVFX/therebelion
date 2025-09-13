@@ -9,22 +9,36 @@ export type DbcPoolKeys = {
 };
 
 /**
+ * Safely import Studio's compiled JS at runtime (avoids bundling TS sources).
+ * Returns null if not found (e.g., Studio not built yet).
+ */
+async function importStudioDbcRuntime(): Promise<any | null> {
+  // Build the path at runtime so bundlers don't statically resolve it.
+  const path = ['../../../../studio', 'dist', 'lib', 'dbc', 'index.js'].join('/');
+  try {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore - runtime import only
+    const mod = await import(/* webpackIgnore: true */ path);
+    return mod ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Build the DBC "claim trading fee" instruction for the creator/partner.
- * We use a dynamic import and explicitly ignore TS type resolution for the Studio path.
  */
 export async function buildDbcClaimTradingFeeIx(args: {
   connection: Connection;
   poolKeys: DbcPoolKeys;
   feeClaimer: PublicKey; // the connected wallet (creator/partner)
 }): Promise<TransactionInstruction> {
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore - resolve at runtime only; types provided via ambient .d.ts or bypassed
-  const DbcLib = await import('../../../studio/src/lib/dbc');
+  const DbcLib = await importStudioDbcRuntime();
 
-  if (!('buildClaimTradingFeeIx' in DbcLib)) {
+  if (!DbcLib || !('buildClaimTradingFeeIx' in DbcLib)) {
     throw new Error(
-      'Studio DBC lib is missing `buildClaimTradingFeeIx`. ' +
-      'Adjust the import path or export the builder from studio/src/lib/dbc.'
+      '[dbc-adapter] Could not load Studio DBC runtime (studio/dist/lib/dbc/index.js). ' +
+      'Make sure @meteora-invent/studio is built before building fun-launch.'
     );
   }
 
