@@ -42,7 +42,22 @@ export default function OneClickExitAutoButton(props: {
 
       const vtx = VersionedTransaction.deserialize(Buffer.from(data.tx, 'base64'));
       const sig = await sendTransaction(vtx, connection);
-      toast.success(`Submitted: ${sig}`, { duration: 4000 });
+
+      // ✅ Show success with clickable Solscan link
+      toast.success(
+        <div>
+          <p className="font-medium">Transaction submitted</p>
+          <a
+            href={`https://solscan.io/tx/${sig}`}
+            target="_blank"
+            rel="noreferrer"
+            className="underline text-blue-400"
+          >
+            View on Solscan
+          </a>
+        </div>,
+        { duration: 5000 }
+      );
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message ?? 'Failed');
