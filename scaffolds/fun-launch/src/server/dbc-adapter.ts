@@ -1,47 +1,69 @@
-import { Connection, PublicKey, TransactionInstruction } from '@solana/web3.js';
+import {
+  Connection,
+  PublicKey,
+  TransactionInstruction,
+} from '@solana/web3.js';
+import path from 'path';
 
 export type DbcPoolKeys = {
   pool: PublicKey;
   feeVault: PublicKey;
 };
 
-async function importStudioDbcRuntime(): Promise<any | null> {
-  // Build path dynamically so Webpack doesn't try to bundle TS sources.
-  const path = ['../../../../studio', 'dist', 'lib', 'dbc', 'index.js'].join('/');
+/** ----- Robust runtime resolution for Studio compiled JS (monorepo + Vercel) ----- */
+function resolveStudio(pathInDist: string): string | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    const mod = await import(/* webpackIgnore: true */ path);
-    return mod ?? null;
+    return require.resolve(`@meteora-invent/studio/dist/${pathInDist}`);
   } catch {
-    return null;
+    try {
+      return path.join(process.cwd(), `../../studio/dist/${pathInDist}`);
+    } catch {
+      return null;
+    }
   }
 }
 
+async function importStudioModule(pathInDist: string): Promise<any | null> {
+  const target = resolveStudio(pathInDist);
+  if (!target) return null;
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore - dynamic path; keep Next from bundling
+  const mod = await import(/* webpackIgnore: true */ target);
+  return mod ?? null;
+}
+
+/**
+ * Build the DBC "claim trading fee" instruction for a given pool.
+ * Finds the correct builder symbol across possible SDK versions/exports.
+ */
 export async function buildDbcClaimTradingFeeIx(args: {
   connection: Connection;
   poolKeys: DbcPoolKeys;
   feeClaimer: PublicKey;
 }): Promise<TransactionInstruction> {
-  const DbcLib = await importStudioDbcRuntime();
-  if (!DbcLib || !('buildClaimTradingFeeIx' in DbcLib)) {
-    throw new Error(
-      '[dbc-adapter] Could not load Studio DBC runtime (studio/dist/lib/dbc/index.js). ' +
-      'Ensure the Studio package builds to dist before building fun-launch.'
-    );
+  const mod = await importStudioModule('lib/dbc/index.js');
+  if (!mod) throw new Error('DBC runtime not found (studio dist missing).');
+
+  const builder =
+    mod.buildClaimTradingFeeIx ||
+    mod.claimTradingFeeIx ||
+    (mod.builders && (mod.builders.buildClaimTradingFeeIx || mod.builders.claimTradingFee)) ||
+    null;
+
+  if (!builder) {
+    throw new Error('DBC claim fee builder not found in Studio runtime.');
   }
 
-  const fn = (DbcLib as any).buildClaimTradingFeeIx as (p: {
-    connection: Connection;
-    pool: PublicKey;
-    feeVault: PublicKey;
-    feeClaimer: PublicKey;
-  }) => Promise<TransactionInstruction>;
-
-  return await fn({
-    connection: args.connection,
-    pool: args.poolKeys.pool,
-    feeVault: args.poolKeys.feeVault,
-    feeClaimer: args.feeClaimer,
-  });
+  // Support both object and positional arg styles (SDK variants)
+  try {
+    const ix: TransactionInstruction = await builder({
+      connection: args.connection,
+      poolKeys: { pool: args.poolKeys.pool, feeVault: args.poolKeys.feeVault },
+      feeClaimer: args.feeClaimer,
+    });
+    return ix;
+  } catch {
+    const ix: TransactionInstruction = await builder(args.connection, args.poolKeys, args.feeClaimer);
+    return ix;
+  }
 }
