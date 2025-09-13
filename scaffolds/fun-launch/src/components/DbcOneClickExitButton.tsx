@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useWallet } from '@jup-ag/wallet-adapter';
+import { useConnection } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import { toast } from 'sonner';
 
@@ -20,7 +21,6 @@ type DammV2PoolKeys = {
 
 export default function DbcOneClickExitButton(props: {
   dbcPoolKeys: DbcPoolKeys;
-  // Turn this on ONLY after you migrate DBC → DAMM v2
   includeDammV2Exit?: boolean;
   dammV2PoolKeys?: DammV2PoolKeys;
   priorityMicros?: number;
@@ -36,7 +36,8 @@ export default function DbcOneClickExitButton(props: {
     label = 'One-Click (Claim Fees + Exit)',
   } = props;
 
-  const { publicKey, sendTransaction, connected, connection } = useWallet();
+  const { publicKey, sendTransaction, connected } = useWallet();
+  const { connection } = useConnection();
   const [loading, setLoading] = useState(false);
 
   const onClick = async () => {
@@ -62,12 +63,8 @@ export default function DbcOneClickExitButton(props: {
       if (!res.ok) throw new Error(data?.error || 'Failed to build transaction');
 
       const vtx = VersionedTransaction.deserialize(Buffer.from(data.tx, 'base64'));
-
       const sig = await sendTransaction(vtx, connection);
       toast.success(`Submitted: ${sig}`, { duration: 4000 });
-
-      // Optionally poll for confirmation:
-      // await connection.confirmTransaction({ signature: sig, blockhash: data.blockhash, lastValidBlockHeight: data.lastValidBlockHeight }, 'confirmed');
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message ?? 'Failed');
