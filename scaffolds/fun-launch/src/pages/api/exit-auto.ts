@@ -36,7 +36,7 @@ function resolveStudioDist(subpath: string): string | null {
 async function importDammRuntime(): Promise<any | null> {
   const target = resolveStudioDist('lib/damm_v2/index.js');
   if (!target) return null;
-  // @ts-ignore
+  // @ts-expect-error - dynamic runtime import path; safe in Node API route
   const mod = await import(/* webpackIgnore: true */ target);
   return mod ?? null;
 }
