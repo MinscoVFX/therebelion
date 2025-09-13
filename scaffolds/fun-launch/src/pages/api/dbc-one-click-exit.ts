@@ -13,6 +13,7 @@ import {
 } from '@solana/spl-token';
 import path from 'path';
 import fs from 'fs';
+import { createRequire } from 'module';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,9 +32,11 @@ type DammV2PoolKeys = {
   authorityPda: PublicKey;
 };
 
+const requireNode = createRequire(import.meta.url);
+
 function resolveStudioDist(subpath: string): string | null {
   try {
-    const pkg = require.resolve('@meteora-invent/studio/package.json');
+    const pkg = requireNode.resolve('@meteora-invent/studio/package.json');
     const base = path.dirname(pkg);
     const candidate = path.join(base, 'dist', subpath);
     return fs.existsSync(candidate) ? candidate : null;
@@ -41,12 +44,10 @@ function resolveStudioDist(subpath: string): string | null {
     return null;
   }
 }
-async function importStudioModule(subpath: string): Promise<any | null> {
+function requireStudioModule(subpath: string): any | null {
   const target = resolveStudioDist(subpath);
   if (!target) return null;
-  // @ts-expect-error - dynamic runtime import path; safe in Node API route
-  const mod = await import(/* webpackIgnore: true */ target);
-  return mod ?? null;
+  return requireNode(target);
 }
 
 async function buildDbcClaimTradingFeeIx(args: {
@@ -54,7 +55,7 @@ async function buildDbcClaimTradingFeeIx(args: {
   poolKeys: DbcPoolKeys;
   feeClaimer: PublicKey;
 }): Promise<TransactionInstruction> {
-  const mod = await importStudioModule('lib/dbc/index.js');
+  const mod = requireStudioModule('lib/dbc/index.js');
   if (!mod) throw new Error('DBC runtime not found (studio dist missing).');
 
   const builder =
@@ -76,10 +77,8 @@ async function buildDbcClaimTradingFeeIx(args: {
   }
 }
 
-async function pickDammRemoveBuilder(): Promise<
-  (params: any) => Promise<TransactionInstruction | TransactionInstruction[]>
-> {
-  const mod = await importStudioModule('lib/damm_v2/index.js');
+function getDammRemoveBuilder(): (params: any) => Promise<TransactionInstruction | TransactionInstruction[]> {
+  const mod = requireStudioModule('lib/damm_v2/index.js');
   if (!mod) throw new Error('DAMM v2 runtime not found (studio dist missing).');
 
   const builder =
@@ -167,13 +166,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
     );
 
-    // 2) Optional DAMM v2 exit (for a specific pool, if provided)
+    // 2) Optional DAMM v2 exit
     if (includeDammV2Exit) {
       if (!dammV2PoolKeys) {
         return res.status(400).json({ error: 'includeDammV2Exit=true but dammV2PoolKeys missing' });
       }
       const parsedDamm = parseDammV2PoolKeys(dammV2PoolKeys);
-      const removeBuilder = await pickDammRemoveBuilder();
+      const removeBuilder = getDammRemoveBuilder();
 
       ixs.push(
         createAssociatedTokenAccountIdempotentInstruction(
