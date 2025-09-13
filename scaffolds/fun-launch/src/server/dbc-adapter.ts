@@ -10,19 +10,15 @@ export type DbcPoolKeys = {
 
 /**
  * Build the DBC "claim trading fee" instruction for the creator/partner.
- *
- * This wraps your Studio DBC lib so the Next.js app doesn’t need
- * to re-implement program layouts here.
- *
- * If your Studio export path/name differs, adjust the import below.
+ * We use a dynamic import and explicitly ignore TS type resolution for the Studio path.
  */
 export async function buildDbcClaimTradingFeeIx(args: {
   connection: Connection;
   poolKeys: DbcPoolKeys;
   feeClaimer: PublicKey; // the connected wallet (creator/partner)
 }): Promise<TransactionInstruction> {
-  // Lazy import so this only loads on the server (API route),
-  // and avoids pulling the whole Studio tree into client bundles.
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore - resolve at runtime only; types provided via ambient .d.ts or bypassed
   const DbcLib = await import('../../../studio/src/lib/dbc');
 
   if (!('buildClaimTradingFeeIx' in DbcLib)) {
