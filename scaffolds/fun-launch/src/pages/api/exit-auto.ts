@@ -12,24 +12,37 @@ import {
   getAssociatedTokenAddressSync,
   createAssociatedTokenAccountIdempotentInstruction,
 } from '@solana/spl-token';
+import path from 'path';
 
 const RPC_URL = process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com';
 const connection = new Connection(RPC_URL, 'confirmed');
 
-/** Runtime import of Studio DAMM v2 compiled JS (prevents Next bundling TS). */
-async function importDammRuntime(): Promise<any | null> {
-  const path = ['../../../../studio', 'dist', 'lib', 'damm_v2', 'index.js'].join('/');
+/** Resolve compiled Studio runtime path in a robust way (works in monorepo + Vercel). */
+function resolveStudioDammV2(): string | null {
   try {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    const mod = await import(/* webpackIgnore: true */ path);
-    return mod ?? null;
+    // Resolve the ENTRY js file via the workspace package name
+    const entry = require.resolve('@meteora-invent/studio/dist/lib/damm_v2/index.js');
+    return entry;
   } catch {
-    return null;
+    // Fallback: try relative path from fun-launch after Turbo build (monorepo)
+    try {
+      return path.join(process.cwd(), '../../studio/dist/lib/damm_v2/index.js');
+    } catch {
+      return null;
+    }
   }
 }
 
-/** Pick a resolver function by LP mint from the compiled Studio module (names vary slightly). */
+/** Runtime import of Studio DAMM v2 compiled JS (prevents Next bundling TS). */
+async function importDammRuntime(): Promise<any | null> {
+  const target = resolveStudioDammV2();
+  if (!target) return null;
+  // @ts-ignore
+  const mod = await import(/* webpackIgnore: true */ target);
+  return mod ?? null;
+}
+
+/** Pick helpers by common export names. */
 function pickPoolResolver(mod: any): ((args: any) => Promise<any>) | null {
   return (
     mod?.getPoolByLpMint ||
@@ -39,8 +52,6 @@ function pickPoolResolver(mod: any): ((args: any) => Promise<any>) | null {
     null
   );
 }
-
-/** Pick a remove-liquidity builder from the compiled Studio module (names vary slightly). */
 function pickRemoveBuilder(mod: any): ((args: any) => Promise<any>) | null {
   return (
     mod?.buildRemoveLiquidityIx ||
@@ -51,11 +62,7 @@ function pickRemoveBuilder(mod: any): ((args: any) => Promise<any>) | null {
 }
 
 /** Read base-units LP balance from owner’s ATA (0n if missing). */
-async function getUserLpAmount(
-  conn: Connection,
-  owner: PublicKey,
-  lpMint: PublicKey
-): Promise<bigint> {
+async function getUserLpAmount(conn: Connection, owner: PublicKey, lpMint: PublicKey): Promise<bigint> {
   const ata = getAssociatedTokenAddressSync(lpMint, owner, false);
   try {
     const bal = await conn.getTokenAccountBalance(ata);
@@ -72,15 +79,10 @@ async function findBestDammLpAndPool(
   owner: PublicKey
 ): Promise<{ lpMint: PublicKey; lpAmount: bigint; poolKeys: any } | null> {
   const damm = await importDammRuntime();
-  if (!damm) throw new Error('Studio DAMM v2 runtime not found (studio/dist/lib/damm_v2/index.js)');
+  if (!damm) throw new Error('Studio DAMM v2 runtime not found (studio dist missing).');
   const resolvePool = pickPoolResolver(damm);
-  if (!resolvePool) {
-    throw new Error(
-      'No pool resolver exported in studio/dist/lib/damm_v2 (expected getPoolByLpMint/resolvePoolByLpMint).'
-    );
-  }
+  if (!resolvePool) throw new Error('Missing pool resolver export in Studio DAMM v2 runtime.');
 
-  // Collect parsed SPL token accounts
   const candidates: Array<{ lpMint: PublicKey; amount: bigint }> = [];
   const parsed = await conn.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID });
   for (const it of parsed.value) {
@@ -92,15 +94,13 @@ async function findBestDammLpAndPool(
     if (amt === 0n) continue;
     candidates.push({ lpMint: new PublicKey(mintStr), amount: amt });
   }
-  if (candidates.length === 0) return null;
+  if (!candidates.length) return null;
 
-  // Probe each candidate with the Studio resolver, then re-fetch ATA balance
   const poolable: Array<{ lpMint: PublicKey; lpAmount: bigint; poolKeys: any }> = [];
   for (const c of candidates) {
     try {
       const pool: any = await resolvePool({ connection: conn, lpMint: c.lpMint });
       if (!pool) continue;
-
       const pk = {
         programId: new PublicKey(pool.programId),
         pool: new PublicKey(pool.pool),
@@ -111,18 +111,16 @@ async function findBestDammLpAndPool(
         tokenBVault: new PublicKey(pool.tokenBVault),
         authorityPda: new PublicKey(pool.authorityPda ?? pool.poolAuthority ?? pool.authority),
       };
-
       const amt = await getUserLpAmount(conn, owner, pk.lpMint);
       if (amt > 0n) poolable.push({ lpMint: pk.lpMint, lpAmount: amt, poolKeys: pk });
     } catch {
-      // not a DAMM v2 LP, or resolver threw – skip
+      // Not a DAMM v2 LP or resolver threw – skip
     }
   }
-  if (poolable.length === 0) return null;
+  if (!poolable.length) return null;
 
   poolable.sort((a, b) => (a.lpAmount < b.lpAmount ? 1 : a.lpAmount > b.lpAmount ? -1 : 0));
-  const best = poolable[0];
-  return best ?? null;
+  return poolable[0] ?? null;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -137,34 +135,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const owner = new PublicKey(ownerPubkey);
 
-    // 1) Pick the best (largest) DAMM v2 LP
     const best = await findBestDammLpAndPool(connection, owner);
     if (!best) return res.status(404).json({ error: 'No DAMM v2 LP found for this wallet.' });
 
-    // 2) Load remove builder
     const damm = await importDammRuntime();
-    if (!damm) throw new Error('Studio DAMM v2 runtime not found (studio/dist/lib/damm_v2/index.js)');
+    if (!damm) throw new Error('Studio DAMM v2 runtime not found (studio dist missing).');
     const removeBuilder = pickRemoveBuilder(damm);
-    if (!removeBuilder) {
-      return res.status(500).json({ error: 'Remove-liquidity builder missing in studio/dist/lib/damm_v2.' });
-    }
+    if (!removeBuilder) return res.status(500).json({ error: 'Remove-liquidity builder missing in Studio runtime.' });
 
-    // 3) Build the tx (priority fee + ensure ATAs + remove 100% LP)
     const ixs: TransactionInstruction[] = [];
     ixs.push(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Number(priorityMicros) || 0 }));
 
-    ixs.push(createAssociatedTokenAccountIdempotentInstruction(
-      owner,
-      getAssociatedTokenAddressSync(best.poolKeys.tokenAMint, owner, false),
-      owner,
-      best.poolKeys.tokenAMint
-    ));
-    ixs.push(createAssociatedTokenAccountIdempotentInstruction(
-      owner,
-      getAssociatedTokenAddressSync(best.poolKeys.tokenBMint, owner, false),
-      owner,
-      best.poolKeys.tokenBMint
-    ));
+    ixs.push(
+      createAssociatedTokenAccountIdempotentInstruction(
+        owner,
+        getAssociatedTokenAddressSync(best.poolKeys.tokenAMint, owner, false),
+        owner,
+        best.poolKeys.tokenAMint
+      )
+    );
+    ixs.push(
+      createAssociatedTokenAccountIdempotentInstruction(
+        owner,
+        getAssociatedTokenAddressSync(best.poolKeys.tokenBMint, owner, false),
+        owner,
+        best.poolKeys.tokenBMint
+      )
+    );
 
     const userLpAta = getAssociatedTokenAddressSync(best.poolKeys.lpMint, owner, false);
 
@@ -179,12 +176,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       userLpAccount: userLpAta,
       userAToken: getAssociatedTokenAddressSync(best.poolKeys.tokenAMint, owner, false),
       userBToken: getAssociatedTokenAddressSync(best.poolKeys.tokenBMint, owner, false),
-      lpAmount: best.lpAmount, // remove ALL LP
+      lpAmount: best.lpAmount, // 100%
     });
 
     ixs.push(...(Array.isArray(removeIxs) ? removeIxs : [removeIxs]));
 
-    // 4) Return a v0 transaction for wallet to sign
     const { blockhash } = await connection.getLatestBlockhash('finalized');
     const msg = new TransactionMessage({
       payerKey: owner,
