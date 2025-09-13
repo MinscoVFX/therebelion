@@ -1,5 +1,5 @@
 import React from 'react';
-// Use relative paths to avoid tsconfig path alias issues in CI
+// Use relative paths to avoid path-alias issues in CI
 import Page from '../../components/ui/Page/Page';
 import OneClickExitAutoButton from '../../components/OneClickExitAutoButton';
 
