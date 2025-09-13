@@ -35,7 +35,9 @@ function requireStudioModule(subpath: string): any | null {
 }
 
 /** Locate the remove-liquidity builder across supported export names. */
-function getDammRemoveBuilder(): (params: any) => Promise<TransactionInstruction | TransactionInstruction[]> {
+function getDammRemoveBuilder(): (
+  params: any
+) => Promise<TransactionInstruction | TransactionInstruction[]> {
   const mod = requireStudioModule('lib/damm_v2/index.js');
   if (!mod) throw new Error('DAMM v2 runtime not found (studio dist missing).');
 
@@ -50,7 +52,11 @@ function getDammRemoveBuilder(): (params: any) => Promise<TransactionInstruction
 }
 
 /** Read base-units LP balance from owner’s ATA (0n if missing). */
-async function getUserLpAmount(conn: Connection, owner: PublicKey, lpMint: PublicKey): Promise<bigint> {
+async function getUserLpAmount(
+  conn: Connection,
+  owner: PublicKey,
+  lpMint: PublicKey
+): Promise<bigint> {
   const ata = getAssociatedTokenAddressSync(lpMint, owner, false);
   try {
     const bal = await conn.getTokenAccountBalance(ata);

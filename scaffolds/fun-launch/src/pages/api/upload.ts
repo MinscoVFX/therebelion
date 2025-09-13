@@ -1,6 +1,6 @@
 // scaffolds/fun-launch/src/pages/api/upload.ts
-import { NextApiRequest, NextApiResponse } from "next";
-import AWS from "aws-sdk";
+import { NextApiRequest, NextApiResponse } from 'next';
+import AWS from 'aws-sdk';
 import {
   Connection,
   PublicKey,
@@ -9,14 +9,14 @@ import {
   LAMPORTS_PER_SOL,
   SystemProgram,
   TransactionInstruction,
-} from "@solana/web3.js";
-import { DynamicBondingCurveClient } from "@meteora-ag/dynamic-bonding-curve-sdk";
-import { Buffer } from "buffer";
+} from '@solana/web3.js';
+import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
+import { Buffer } from 'buffer';
 
 // Allow bigger base64 payloads (avoid 413 with large logos)
 export const config = {
   api: {
-    bodyParser: { sizeLimit: "25mb" },
+    bodyParser: { sizeLimit: '25mb' },
   },
 };
 
@@ -27,13 +27,13 @@ const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID as string | undefined;
 const R2_BUCKET = process.env.R2_BUCKET as string | undefined;
 const RPC_URL = process.env.RPC_URL as string | undefined;
 const POOL_CONFIG_KEY = process.env.POOL_CONFIG_KEY as string | undefined;
-const R2_PUBLIC_BASE = ((process.env.R2_PUBLIC_BASE as string) || "").replace(/\/+$/, "");
+const R2_PUBLIC_BASE = ((process.env.R2_PUBLIC_BASE as string) || '').replace(/\/+$/, '');
 
-const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 
 // ---------- helpers ----------
 function sanitize(s: string | undefined | null): string {
-  return (s ?? "").trim().replace(/\u200B/g, "");
+  return (s ?? '').trim().replace(/\u200B/g, '');
 }
 function parsePubkey(label: string, value: string): PublicKey {
   const v = sanitize(value);
@@ -45,22 +45,17 @@ function parsePubkey(label: string, value: string): PublicKey {
 }
 function validateBaseEnv(): string[] {
   const missing: string[] = [];
-  if (!R2_ACCESS_KEY_ID) missing.push("R2_ACCESS_KEY_ID");
-  if (!R2_SECRET_ACCESS_KEY) missing.push("R2_SECRET_ACCESS_KEY");
-  if (!R2_ACCOUNT_ID) missing.push("R2_ACCOUNT_ID");
-  if (!R2_BUCKET) missing.push("R2_BUCKET");
-  if (!RPC_URL) missing.push("RPC_URL");
-  if (!POOL_CONFIG_KEY) missing.push("POOL_CONFIG_KEY");
-  if (!R2_PUBLIC_BASE) missing.push("R2_PUBLIC_BASE");
+  if (!R2_ACCESS_KEY_ID) missing.push('R2_ACCESS_KEY_ID');
+  if (!R2_SECRET_ACCESS_KEY) missing.push('R2_SECRET_ACCESS_KEY');
+  if (!R2_ACCOUNT_ID) missing.push('R2_ACCOUNT_ID');
+  if (!R2_BUCKET) missing.push('R2_BUCKET');
+  if (!RPC_URL) missing.push('RPC_URL');
+  if (!POOL_CONFIG_KEY) missing.push('POOL_CONFIG_KEY');
+  if (!R2_PUBLIC_BASE) missing.push('R2_PUBLIC_BASE');
   return missing;
 }
-function bad(
-  res: NextApiResponse,
-  code: number,
-  msg: string,
-  extra?: Record<string, unknown>
-) {
-  return res.status(code).json({ error: msg, where: "upload", ...extra });
+function bad(res: NextApiResponse, code: number, msg: string, extra?: Record<string, unknown>) {
+  return res.status(code).json({ error: msg, where: 'upload', ...extra });
 }
 
 type FeeSplit = { receiver: PublicKey; lamports: number };
@@ -70,23 +65,25 @@ function getFeeSplits(): FeeSplit[] {
 
   if (rawMulti) {
     return rawMulti
-      .split(",")
+      .split(',')
       .map((entry) => sanitize(entry))
       .filter(Boolean)
       .map((pair) => {
-        const [addrRaw, solStrRaw] = pair.split(":");
+        const [addrRaw, solStrRaw] = pair.split(':');
         const addr = sanitize(addrRaw);
         const solStr = sanitize(solStrRaw);
-        if (!addr || !solStr) throw new Error(`Invalid fee split format: "${pair}". Use "Wallet:0.020"`);
-        const receiver = parsePubkey("Fee receiver", addr);
+        if (!addr || !solStr)
+          throw new Error(`Invalid fee split format: "${pair}". Use "Wallet:0.020"`);
+        const receiver = parsePubkey('Fee receiver', addr);
         const sol = parseFloat(solStr);
-        if (!Number.isFinite(sol) || sol <= 0) throw new Error(`Invalid SOL amount in split "${pair}"`);
+        if (!Number.isFinite(sol) || sol <= 0)
+          throw new Error(`Invalid SOL amount in split "${pair}"`);
         return { receiver, lamports: Math.floor(sol * LAMPORTS_PER_SOL) };
       });
   }
 
   if (rawSingle) {
-    const receiver = parsePubkey("NEXT_PUBLIC_CREATION_FEE_RECEIVER", rawSingle);
+    const receiver = parsePubkey('NEXT_PUBLIC_CREATION_FEE_RECEIVER', rawSingle);
     // default 0.035 SOL if only single receiver is set
     return [{ receiver, lamports: 35_000_000 }];
   }
@@ -136,8 +133,8 @@ const r2 = new AWS.S3({
   endpoint: PRIVATE_R2_URL,
   accessKeyId: R2_ACCESS_KEY_ID,
   secretAccessKey: R2_SECRET_ACCESS_KEY,
-  region: "auto",
-  signatureVersion: "v4",
+  region: 'auto',
+  signatureVersion: 'v4',
   s3ForcePathStyle: true,
 });
 
@@ -164,34 +161,27 @@ function inferPoolFromTx(
 
 // ---------- handler ----------
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return bad(res, 405, "Method not allowed");
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return bad(res, 405, 'Method not allowed');
   }
 
   const missing = validateBaseEnv();
   if (missing.length) {
-    return bad(res, 500, `Missing environment variables: ${missing.join(", ")}`);
+    return bad(res, 500, `Missing environment variables: ${missing.join(', ')}`);
   }
 
   try {
-    const {
-      tokenLogo,
-      tokenName,
-      tokenSymbol,
-      mint,
-      userWallet,
-      website,
-      twitter,
-    } = req.body as UploadRequest;
+    const { tokenLogo, tokenName, tokenSymbol, mint, userWallet, website, twitter } =
+      req.body as UploadRequest;
 
     if (!tokenLogo || !tokenName || !tokenSymbol || !mint || !userWallet) {
-      return bad(res, 400, "Missing required fields");
+      return bad(res, 400, 'Missing required fields');
     }
 
     // 1) Upload image
     const imageUrl = await uploadImage(tokenLogo, mint);
-    if (!imageUrl) return bad(res, 400, "Failed to upload image");
+    if (!imageUrl) return bad(res, 400, 'Failed to upload image');
 
     // 2) Upload metadata JSON
     const metadataUrl = await uploadMetadata({
@@ -202,7 +192,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       website,
       twitter,
     });
-    if (!metadataUrl) return bad(res, 400, "Failed to upload metadata");
+    if (!metadataUrl) return bad(res, 400, 'Failed to upload metadata');
 
     // 3) Build CREATE tx only (prepend fee transfers + memo + small CU bump)
     const { tx: poolTxRaw, pool: inferredPool } = await buildCreatePoolTxOnly({
@@ -215,7 +205,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const poolTxBase64 = poolTxRaw
       .serialize({ requireAllSignatures: false, verifySignatures: false })
-      .toString("base64");
+      .toString('base64');
 
     return res.status(200).json({
       success: true,
@@ -224,8 +214,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   } catch (err: any) {
     // eslint-disable-next-line no-console
-    console.error("Upload error:", err);
-    return bad(res, 500, err?.message || "Unknown error");
+    console.error('Upload error:', err);
+    return bad(res, 500, err?.message || 'Unknown error');
   }
 }
 
@@ -238,14 +228,14 @@ async function uploadImage(tokenLogo: string, mint: string): Promise<string | fa
   if (!contentType || !base64Data) return false;
 
   contentType = contentType.toLowerCase();
-  if (contentType === "image/jpg") contentType = "image/jpeg";
+  if (contentType === 'image/jpg') contentType = 'image/jpeg';
 
   // choose extension safely (support svg)
-  let ext = contentType.split("/")[1] || "png";
-  if (ext === "svg+xml") ext = "svg";
+  let ext = contentType.split('/')[1] || 'png';
+  if (ext === 'svg+xml') ext = 'svg';
 
-  base64Data = base64Data.replace(/ /g, "+");
-  const fileBuffer = Buffer.from(base64Data, "base64");
+  base64Data = base64Data.replace(/ /g, '+');
+  const fileBuffer = Buffer.from(base64Data, 'base64');
   const fileName = `images/${mint}.${ext}`;
 
   try {
@@ -253,19 +243,18 @@ async function uploadImage(tokenLogo: string, mint: string): Promise<string | fa
     return `${PUBLIC_R2_URL}/${fileName}`;
   } catch (e) {
     // eslint-disable-next-line no-console
-    console.error("Error uploading image:", e);
+    console.error('Error uploading image:', e);
     return false;
   }
 }
 
 async function uploadMetadata(params: MetadataUploadParams): Promise<string | false> {
   // detect mime for files[]
-  const fileType =
-    params.image.toLowerCase().endsWith(".png")
-      ? "image/png"
-      : params.image.toLowerCase().endsWith(".svg")
-      ? "image/svg+xml"
-      : "image/jpeg";
+  const fileType = params.image.toLowerCase().endsWith('.png')
+    ? 'image/png'
+    : params.image.toLowerCase().endsWith('.svg')
+      ? 'image/svg+xml'
+      : 'image/jpeg';
 
   const metadata: Metadata = {
     name: params.tokenName,
@@ -273,17 +262,17 @@ async function uploadMetadata(params: MetadataUploadParams): Promise<string | fa
     image: params.image,
     external_url: params.website || undefined,
     extensions: { twitter: params.twitter || undefined, website: params.website || undefined },
-    properties: { category: "image", files: [{ uri: params.image, type: fileType }] },
+    properties: { category: 'image', files: [{ uri: params.image, type: fileType }] },
   };
 
   const fileName = `metadata/${params.mint}.json`;
 
   try {
-    await uploadToR2(Buffer.from(JSON.stringify(metadata, null, 2)), "application/json", fileName);
+    await uploadToR2(Buffer.from(JSON.stringify(metadata, null, 2)), 'application/json', fileName);
     return `${PUBLIC_R2_URL}/${fileName}`;
   } catch (e) {
     // eslint-disable-next-line no-console
-    console.error("Error uploading metadata:", e);
+    console.error('Error uploading metadata:', e);
     return false;
   }
 }
@@ -315,12 +304,12 @@ async function buildCreatePoolTxOnly({
   metadataUrl: string;
   userWallet: string;
 }): Promise<{ tx: Transaction; pool?: PublicKey }> {
-  const connection = new Connection(sanitize(RPC_URL as string), "confirmed");
-  const client = new DynamicBondingCurveClient(connection, "confirmed");
+  const connection = new Connection(sanitize(RPC_URL as string), 'confirmed');
+  const client = new DynamicBondingCurveClient(connection, 'confirmed');
 
-  const cfgKey = parsePubkey("POOL_CONFIG_KEY", POOL_CONFIG_KEY as string);
-  const baseMint = parsePubkey("mint", mint);
-  const payer = parsePubkey("userWallet", userWallet);
+  const cfgKey = parsePubkey('POOL_CONFIG_KEY', POOL_CONFIG_KEY as string);
+  const baseMint = parsePubkey('mint', mint);
+  const payer = parsePubkey('userWallet', userWallet);
 
   // 1) Build pool create (SDK returns a legacy Transaction with instructions)
   const tx = await client.pool.createPool({
@@ -336,14 +325,18 @@ async function buildCreatePoolTxOnly({
   // 2) Prepend creation-fee splits FIRST (your fee validator expects this order)
   const splits = getFeeSplits();
   const transferIxs = splits.map((split) =>
-    SystemProgram.transfer({ fromPubkey: payer, toPubkey: split.receiver, lamports: split.lamports })
+    SystemProgram.transfer({
+      fromPubkey: payer,
+      toPubkey: split.receiver,
+      lamports: split.lamports,
+    })
   );
 
   // 3) Optional brand memo (after transfers)
   const memoIx = new TransactionInstruction({
     programId: MEMO_PROGRAM_ID,
     keys: [{ pubkey: payer, isSigner: true, isWritable: false }],
-    data: Buffer.from("Meteora Protocol Fees (fees can fluctuate)", "utf8"),
+    data: Buffer.from('Meteora Protocol Fees (fees can fluctuate)', 'utf8'),
   });
 
   // 4) Small compute price bump (AFTER transfers, BEFORE heavy create ixs)
@@ -356,7 +349,7 @@ async function buildCreatePoolTxOnly({
   const inferredPool = inferPoolFromTx(tx, baseMint, cfgKey, payer);
 
   // Fee payer + blockhash
-  const { blockhash } = await connection.getLatestBlockhash("confirmed");
+  const { blockhash } = await connection.getLatestBlockhash('confirmed');
   tx.feePayer = payer;
   tx.recentBlockhash = blockhash;
 

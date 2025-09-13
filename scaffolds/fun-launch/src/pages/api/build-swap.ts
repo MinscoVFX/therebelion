@@ -1,8 +1,8 @@
 // scaffolds/fun-launch/src/pages/api/build-swap.ts
-import type { NextApiRequest, NextApiResponse } from "next";
-import { Connection, PublicKey, Transaction } from "@solana/web3.js";
-import BN from "bn.js";
-import { DynamicBondingCurveClient } from "@meteora-ag/dynamic-bonding-curve-sdk";
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { Connection, PublicKey, Transaction } from '@solana/web3.js';
+import BN from 'bn.js';
+import { DynamicBondingCurveClient } from '@meteora-ag/dynamic-bonding-curve-sdk';
 
 /**
  * Stateless SWAP builder for prelaunch/atomic bundles.
@@ -32,12 +32,12 @@ import { DynamicBondingCurveClient } from "@meteora-ag/dynamic-bonding-curve-sdk
 
 // ---------- STRICT ENV ----------
 const RAW_RPC_URL = process.env.RPC_URL || process.env.NEXT_PUBLIC_RPC_URL;
-const RPC_ENDPOINT: string = typeof RAW_RPC_URL === "string" ? RAW_RPC_URL.trim() : "";
-if (!RPC_ENDPOINT) throw new Error("RPC_URL (or NEXT_PUBLIC_RPC_URL) not configured");
+const RPC_ENDPOINT: string = typeof RAW_RPC_URL === 'string' ? RAW_RPC_URL.trim() : '';
+if (!RPC_ENDPOINT) throw new Error('RPC_URL (or NEXT_PUBLIC_RPC_URL) not configured');
 
 // ---------- helpers ----------
 function sanitize(s?: string | null): string {
-  return (s ?? "").trim().replace(/\u200B/g, "");
+  return (s ?? '').trim().replace(/\u200B/g, '');
 }
 function parsePubkey(label: string, value: string): PublicKey {
   const v = sanitize(value);
@@ -48,18 +48,18 @@ function parsePubkey(label: string, value: string): PublicKey {
   }
 }
 function parseSolLamports(label: string, input: string | number): bigint {
-  const s = typeof input === "number" ? String(input) : sanitize(input);
+  const s = typeof input === 'number' ? String(input) : sanitize(input);
   if (!s) throw new Error(`${label} must be provided`);
-  const dot = s.indexOf(".");
+  const dot = s.indexOf('.');
   const intPartRaw = dot === -1 ? s : s.slice(0, dot);
-  const fracPartRaw = dot === -1 ? "" : s.slice(dot + 1);
-  const intPart = intPartRaw.replace(/^0+(?=\d)/, "") || "0";
-  const fracPart = (fracPartRaw + "000000000").slice(0, 9);
+  const fracPartRaw = dot === -1 ? '' : s.slice(dot + 1);
+  const intPart = intPartRaw.replace(/^0+(?=\d)/, '') || '0';
+  const fracPart = (fracPartRaw + '000000000').slice(0, 9);
   if (!/^\d+$/.test(intPart) || !/^\d{0,9}$/.test(fracPart)) {
     throw new Error(`${label} is not a valid number: "${s}"`);
   }
   const i = BigInt(intPart);
-  const f = BigInt(fracPart || "0");
+  const f = BigInt(fracPart || '0');
   const lamports = i * 1_000_000_000n + f;
   if (lamports <= 0n) throw new Error(`${label} must be greater than 0`);
   return lamports;
@@ -70,8 +70,8 @@ type BuildSwapRequest = {
   baseMint: string;
   payer: string;
   amountSol: string | number;
-  pool: string;              // DBC virtual pool address
-  blockhash?: string;        // optional shared blockhash (for bundles)
+  pool: string; // DBC virtual pool address
+  blockhash?: string; // optional shared blockhash (for bundles)
 };
 
 function bad(res: NextApiResponse, code: number, msg: string, extra?: Record<string, unknown>) {
@@ -80,28 +80,28 @@ function bad(res: NextApiResponse, code: number, msg: string, extra?: Record<str
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    if (req.method !== "POST") {
-      res.setHeader("Allow", "POST");
-      return bad(res, 405, "Method Not Allowed", { where: "build-swap" });
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', 'POST');
+      return bad(res, 405, 'Method Not Allowed', { where: 'build-swap' });
     }
 
     const { baseMint, payer, amountSol, pool, blockhash } = (req.body ?? {}) as BuildSwapRequest;
 
     // ---- validate inputs (do NOT read on-chain) ----
     if (!baseMint || !payer || amountSol === undefined || amountSol === null || !pool) {
-      return bad(res, 400, "Missing required fields (baseMint, payer, amountSol, pool)", {
-        where: "build-swap",
+      return bad(res, 400, 'Missing required fields (baseMint, payer, amountSol, pool)', {
+        where: 'build-swap',
       });
     }
 
     // Validate pubkeys (baseMint not used in build, but we still sanity-check it)
-    parsePubkey("baseMint", baseMint);
-    const owner = parsePubkey("payer", payer);
-    const poolAddress = parsePubkey("pool", pool);
-    const lamportsIn = parseSolLamports("amountSol", amountSol);
+    parsePubkey('baseMint', baseMint);
+    const owner = parsePubkey('payer', payer);
+    const poolAddress = parsePubkey('pool', pool);
+    const lamportsIn = parseSolLamports('amountSol', amountSol);
 
-    const connection = new Connection(RPC_ENDPOINT, "confirmed");
-    const dbc = new DynamicBondingCurveClient(connection, "confirmed");
+    const connection = new Connection(RPC_ENDPOINT, 'confirmed');
+    const dbc = new DynamicBondingCurveClient(connection, 'confirmed');
 
     let swapTxInstrs: Transaction;
     try {
@@ -111,7 +111,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         pool: poolAddress,
         amountIn: new BN(lamportsIn.toString()),
         minimumAmountOut: new BN(1), // atomic with create; avoid pre-quote
-        swapBaseForQuote: false,     // buy base token with SOL
+        swapBaseForQuote: false, // buy base token with SOL
         referralTokenAccount: null,
       });
 
@@ -123,7 +123,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (blockhash && blockhash.trim().length > 0) {
         tx.recentBlockhash = blockhash.trim();
       } else {
-        const { blockhash: fresh } = await connection.getLatestBlockhash("confirmed");
+        const { blockhash: fresh } = await connection.getLatestBlockhash('confirmed');
         tx.recentBlockhash = fresh;
       }
 
@@ -135,15 +135,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Surface SDK-originated errors explicitly (this is where "Pool not found" would come from)
       const msg = inner?.message || String(inner);
       return bad(res, 500, msg, {
-        where: "build-swap",
-        hint:
-          "If this says 'Pool not found', something in the SDK call is still reading before create lands.",
+        where: 'build-swap',
+        hint: "If this says 'Pool not found', something in the SDK call is still reading before create lands.",
       });
     }
 
     const b64 = swapTxInstrs
       .serialize({ requireAllSignatures: false, verifySignatures: false })
-      .toString("base64");
+      .toString('base64');
 
     return res.status(200).json({
       ok: true,
@@ -153,7 +152,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   } catch (e: any) {
     // eslint-disable-next-line no-console
-    console.error("build-swap error:", e);
-    return bad(res, 500, e?.message || "Unexpected error", { where: "build-swap" });
+    console.error('build-swap error:', e);
+    return bad(res, 500, e?.message || 'Unexpected error', { where: 'build-swap' });
   }
 }

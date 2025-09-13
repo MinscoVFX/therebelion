@@ -38,8 +38,8 @@ async function sendWithFreshBlockhash(
   tx: Transaction,
   signers: Signer[],
   opts?: {
-    commitment?: Commitment;         // <-- widened type
-    confirmCommitment?: Commitment;  // <-- widened type
+    commitment?: Commitment; // <-- widened type
+    confirmCommitment?: Commitment; // <-- widened type
     maxRetries?: number;
     maxAttempts?: number;
   }
@@ -53,7 +53,9 @@ async function sendWithFreshBlockhash(
 
   // Normalize to safe, modern values regardless of older aliases (e.g., "recent")
   const commitment: Commitment =
-    commitmentParam === 'processed' || commitmentParam === 'confirmed' || commitmentParam === 'finalized'
+    commitmentParam === 'processed' ||
+    commitmentParam === 'confirmed' ||
+    commitmentParam === 'finalized'
       ? commitmentParam
       : 'processed';
 

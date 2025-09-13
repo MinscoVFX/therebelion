@@ -55,7 +55,7 @@ export default function DbcOneClickExitButton({
           ownerPubkey: publicKey.toBase58(),
           dbcPoolKeys,
           includeDammV2Exit,
-          dammV2PoolKeys: includeDammV2Exit ? dammV2PoolKeys ?? null : null,
+          dammV2PoolKeys: includeDammV2Exit ? (dammV2PoolKeys ?? null) : null,
           priorityMicros,
         }),
       });

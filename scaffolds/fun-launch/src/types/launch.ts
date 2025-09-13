@@ -15,7 +15,7 @@ export interface LaunchFormValues {
   description?: string;
 
   // Curve params (use strings in the form to avoid float issues)
-  supplyTokens: string;        // token A to sell on curve, as integer string
+  supplyTokens: string; // token A to sell on curve, as integer string
   raiseTargetLamports: string; // SOL target in lamports, as integer string
   migrateType: MigrateType;
 

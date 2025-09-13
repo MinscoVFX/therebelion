@@ -165,7 +165,9 @@ export default function CreatePool() {
 
         if (doDevBuy) {
           if (!pool) {
-            console.warn('No pool returned from /api/upload; swap builder will still prelaunch-build.');
+            console.warn(
+              'No pool returned from /api/upload; swap builder will still prelaunch-build.'
+            );
           }
 
           // Step 2.5: Build the swap **in prelaunch mode** sharing the createTx blockhash
@@ -179,7 +181,7 @@ export default function CreatePool() {
               amountSol: value.devAmountSol,
               pool: pool || '',
               slippageBps: 100,
-              prelaunch: true,                               // <-- IMPORTANT
+              prelaunch: true, // <-- IMPORTANT
               blockhash: String(createTx.recentBlockhash || ''), // share blockhash
             }),
           });
@@ -484,7 +486,10 @@ export default function CreatePool() {
                   </div>
 
                   <div>
-                    <label htmlFor="devAmountSol" className="block text-sm font-medium text-gray-300 mb-1">
+                    <label
+                      htmlFor="devAmountSol"
+                      className="block text-sm font-medium text-gray-300 mb-1"
+                    >
                       Amount (SOL)
                     </label>
                     {form.Field({

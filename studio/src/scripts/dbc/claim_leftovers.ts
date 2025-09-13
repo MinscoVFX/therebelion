@@ -14,13 +14,7 @@
 
 import 'dotenv/config';
 import bs58 from 'bs58';
-import {
-  Connection,
-  Keypair,
-  PublicKey,
-  VersionedTransaction,
-  Transaction,
-} from '@solana/web3.js';
+import { Connection, Keypair, PublicKey, VersionedTransaction, Transaction } from '@solana/web3.js';
 
 type AttemptResult = {
   baseMint: string;
@@ -39,7 +33,9 @@ async function loadDbcSdk(): Promise<Record<string, unknown> | null> {
     return sdk as unknown as Record<string, unknown>;
   } catch (e) {
     // eslint-disable-next-line no-console
-    console.error('[FATAL] Failed to load @meteora-ag/dynamic-bonding-curve-sdk. Is it installed in the studio package?');
+    console.error(
+      '[FATAL] Failed to load @meteora-ag/dynamic-bonding-curve-sdk. Is it installed in the studio package?'
+    );
     // eslint-disable-next-line no-console
     console.error(String(e));
     return null;
@@ -57,7 +53,10 @@ function csvEnv(name: string, required = true): string[] {
     }
     return [];
   }
-  return raw.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+  return raw
+    .split(/[,\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function expectEnv(name: string): string {
@@ -84,7 +83,11 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-async function withBackoff<T>(fn: () => Promise<T>, label: string, attempts = 3): Promise<T | null> {
+async function withBackoff<T>(
+  fn: () => Promise<T>,
+  label: string,
+  attempts = 3
+): Promise<T | null> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -133,7 +136,11 @@ async function sendGeneric(
         'send legacy tx'
       );
       if (!sig) return null;
-      await withBackoff(() => connection.confirmTransaction(sig, 'confirmed'), 'confirm legacy tx', 5);
+      await withBackoff(
+        () => connection.confirmTransaction(sig, 'confirmed'),
+        'confirm legacy tx',
+        5
+      );
       return sig;
     }
 
@@ -205,7 +212,9 @@ async function main() {
       signer = Keypair.fromSecretKey(secret);
     } else {
       // eslint-disable-next-line no-console
-      console.error('[WARN] PK_B58 provided without PRIVATE_KEY_B58. A signer is required to submit transactions.');
+      console.error(
+        '[WARN] PK_B58 provided without PRIVATE_KEY_B58. A signer is required to submit transactions.'
+      );
       process.exit(0);
     }
   } catch (e) {
@@ -246,11 +255,7 @@ async function main() {
   // Claim entrypoint candidates under the "partner" namespace (most likely)
   // plus a few direct fallbacks.
   const partnerObj = dbcClient?.partner || (sdk as any)?.partner || null;
-  const claimNames = [
-    'claimLeftover',
-    'claimLeftovers',
-    'claimLeftoverBase',
-  ];
+  const claimNames = ['claimLeftover', 'claimLeftovers', 'claimLeftoverBase'];
   const builderNames = [
     'buildClaimLeftoverTx',
     'buildClaimLeftoversTx',
@@ -302,12 +307,24 @@ async function main() {
             });
             const txSig = await sendGeneric(connection, signer as Keypair, txOrIx);
             if (txSig) {
-              return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'claimed', txSig };
+              return {
+                baseMint: baseMintStr,
+                configKey: configKeyStr,
+                programId: programIdStr,
+                status: 'claimed',
+                txSig,
+              };
             }
           } catch (e) {
             const msg = String((e as any)?.message || e);
             if (/no claimable|nothing to claim|not claimable|pool not found|no pool/i.test(msg)) {
-              return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'noop', reason: msg };
+              return {
+                baseMint: baseMintStr,
+                configKey: configKeyStr,
+                programId: programIdStr,
+                status: 'noop',
+                reason: msg,
+              };
             }
             // continue to next candidate
           }
@@ -333,12 +350,24 @@ async function main() {
               built;
             const txSig = await sendGeneric(connection, signer as Keypair, txLike);
             if (txSig) {
-              return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'claimed', txSig };
+              return {
+                baseMint: baseMintStr,
+                configKey: configKeyStr,
+                programId: programIdStr,
+                status: 'claimed',
+                txSig,
+              };
             }
           } catch (e) {
             const msg = String((e as any)?.message || e);
             if (/no claimable|nothing to claim|not claimable|pool not found|no pool/i.test(msg)) {
-              return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'noop', reason: msg };
+              return {
+                baseMint: baseMintStr,
+                configKey: configKeyStr,
+                programId: programIdStr,
+                status: 'noop',
+                reason: msg,
+              };
             }
           }
         }
@@ -358,16 +387,34 @@ async function main() {
             programId,
           });
           const txLike =
-            (maybe && (maybe.tx ?? maybe.transaction ?? maybe.ixs ?? maybe.ix ?? maybe.instructions ?? maybe.instruction)) ??
+            (maybe &&
+              (maybe.tx ??
+                maybe.transaction ??
+                maybe.ixs ??
+                maybe.ix ??
+                maybe.instructions ??
+                maybe.instruction)) ??
             maybe;
           const txSig = await sendGeneric(connection, signer as Keypair, txLike);
           if (txSig) {
-            return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'claimed', txSig };
+            return {
+              baseMint: baseMintStr,
+              configKey: configKeyStr,
+              programId: programIdStr,
+              status: 'claimed',
+              txSig,
+            };
           }
         } catch (e) {
           const msg = String((e as any)?.message || e);
           if (/no claimable|nothing to claim|not claimable|pool not found|no pool/i.test(msg)) {
-            return { baseMint: baseMintStr, configKey: configKeyStr, programId: programIdStr, status: 'noop', reason: msg };
+            return {
+              baseMint: baseMintStr,
+              configKey: configKeyStr,
+              programId: programIdStr,
+              status: 'noop',
+              reason: msg,
+            };
           }
         }
       }
@@ -386,7 +433,9 @@ async function main() {
     for (const configKey of DBC_CONFIG_KEYS) {
       for (const programId of programs) {
         const res = await attemptClaimOne(baseMint, configKey, programId);
-        const tag = `${baseMint.slice(0, 6)}… ${configKey.slice(0, 6)}…` + (programId ? ` ${programId.slice(0, 6)}…` : '');
+        const tag =
+          `${baseMint.slice(0, 6)}… ${configKey.slice(0, 6)}…` +
+          (programId ? ` ${programId.slice(0, 6)}…` : '');
         if (res.status === 'claimed') {
           // eslint-disable-next-line no-console
           console.log(`[OK]   Claimed leftovers for ${tag}  -> ${res.txSig}`);
@@ -421,7 +470,9 @@ async function main() {
   const anyClaimed = results.some((r) => r.status === 'claimed');
   if (anyClaimed) {
     // eslint-disable-next-line no-console
-    console.log(`[INFO] Done. ${results.filter((r) => r.status === 'claimed').length} claim(s) sent.`);
+    console.log(
+      `[INFO] Done. ${results.filter((r) => r.status === 'claimed').length} claim(s) sent.`
+    );
   } else {
     // eslint-disable-next-line no-console
     console.log('[INFO] Done. Nothing to claim (or no claim path available).');

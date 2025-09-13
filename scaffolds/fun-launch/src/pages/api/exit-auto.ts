@@ -59,7 +59,11 @@ function pickRemoveBuilder(mod: any): ((args: any) => Promise<any>) | null {
   );
 }
 
-async function getUserLpAmount(conn: Connection, owner: PublicKey, lpMint: PublicKey): Promise<bigint> {
+async function getUserLpAmount(
+  conn: Connection,
+  owner: PublicKey,
+  lpMint: PublicKey
+): Promise<bigint> {
   const ata = getAssociatedTokenAddressSync(lpMint, owner, false);
   try {
     const bal = await conn.getTokenAccountBalance(ata);
@@ -137,10 +141,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const damm = requireStudioModule('lib/damm_v2/index.js');
     if (!damm) throw new Error('Studio DAMM v2 runtime not found (studio dist missing).');
     const removeBuilder = pickRemoveBuilder(damm);
-    if (!removeBuilder) return res.status(500).json({ error: 'Remove-liquidity builder missing in Studio runtime.' });
+    if (!removeBuilder)
+      return res.status(500).json({ error: 'Remove-liquidity builder missing in Studio runtime.' });
 
     const ixs: TransactionInstruction[] = [];
-    ixs.push(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Number(priorityMicros) || 0 }));
+    ixs.push(
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Number(priorityMicros) || 0 })
+    );
 
     ixs.push(
       createAssociatedTokenAccountIdempotentInstruction(

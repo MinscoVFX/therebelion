@@ -1,6 +1,6 @@
-import type { Connection, PublicKey } from "@solana/web3.js";
-import type { SendTx } from "./payCreationFee";
-import { payCreationFee } from "./payCreationFee";
+import type { Connection, PublicKey } from '@solana/web3.js';
+import type { SendTx } from './payCreationFee';
+import { payCreationFee } from './payCreationFee';
 
 /**
  * Wrap any async action with the mandatory 0.025 SOL fee payment.

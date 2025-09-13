@@ -1,15 +1,19 @@
-import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
 
 type FeeSplit = { receiver: PublicKey; lamports: number };
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
 /** Helpers */
 function sanitize(s: string | undefined | null): string {
-  return (s ?? "").trim().replace(/\u200B/g, "");
+  return (s ?? '').trim().replace(/\u200B/g, '');
 }
 function parsePubkey(label: string, value: string): PublicKey {
   const v = sanitize(value);
-  try { return new PublicKey(v); } catch { throw new Error(`${label} is not a valid base58 pubkey: "${v}"`); }
+  try {
+    return new PublicKey(v);
+  } catch {
+    throw new Error(`${label} is not a valid base58 pubkey: "${v}"`);
+  }
 }
 
 /** Parse fee splits from env:
@@ -22,23 +26,30 @@ function getFeeSplitsFromEnv(): FeeSplit[] {
 
   if (rawMulti) {
     return rawMulti
-      .split(",")
+      .split(',')
       .map((s) => sanitize(s))
       .filter(Boolean)
       .map((pair) => {
-        const [addrRaw, solRaw] = pair.split(":");
+        const [addrRaw, solRaw] = pair.split(':');
         const addr = sanitize(addrRaw);
         const solStr = sanitize(solRaw);
-        if (!addr || !solStr) throw new Error(`Invalid fee split format: "${pair}". Use "Wallet:0.020"`);
-        const receiver = parsePubkey("Fee receiver", addr);
+        if (!addr || !solStr)
+          throw new Error(`Invalid fee split format: "${pair}". Use "Wallet:0.020"`);
+        const receiver = parsePubkey('Fee receiver', addr);
         const sol = parseFloat(solStr);
-        if (!Number.isFinite(sol) || sol <= 0) throw new Error(`Invalid SOL amount in split "${pair}"`);
+        if (!Number.isFinite(sol) || sol <= 0)
+          throw new Error(`Invalid SOL amount in split "${pair}"`);
         return { receiver, lamports: Math.floor(sol * LAMPORTS_PER_SOL) };
       });
   }
 
   if (rawSingle) {
-    return [{ receiver: parsePubkey("NEXT_PUBLIC_CREATION_FEE_RECEIVER", rawSingle), lamports: 35_000_000 }];
+    return [
+      {
+        receiver: parsePubkey('NEXT_PUBLIC_CREATION_FEE_RECEIVER', rawSingle),
+        lamports: 35_000_000,
+      },
+    ];
   }
 
   throw new Error(
@@ -61,17 +72,17 @@ export function prependCreationFeeToBase64Tx(opts: {
   const { poolTxBase64, payer } = opts;
 
   const base64 = sanitize(poolTxBase64);
-  if (!base64) throw new Error("poolTxBase64 is empty");
+  if (!base64) throw new Error('poolTxBase64 is empty');
 
-  const payerPk = parsePubkey("payer", payer);
+  const payerPk = parsePubkey('payer', payer);
   const splits = getFeeSplitsFromEnv();
 
   // Decode existing tx (surface a clean error if base64 is malformed)
   let tx: Transaction;
   try {
-    tx = Transaction.from(Buffer.from(base64, "base64"));
+    tx = Transaction.from(Buffer.from(base64, 'base64'));
   } catch {
-    throw new Error("poolTxBase64 is not a valid base64-encoded transaction");
+    throw new Error('poolTxBase64 is not a valid base64-encoded transaction');
   }
 
   // Ensure feePayer is set to the wallet that will sign
@@ -90,5 +101,5 @@ export function prependCreationFeeToBase64Tx(opts: {
 
   // Re-encode (still unsigned)
   const serialized = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
-  return Buffer.from(serialized).toString("base64");
+  return Buffer.from(serialized).toString('base64');
 }

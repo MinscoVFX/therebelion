@@ -1,19 +1,19 @@
 // scaffolds/fun-launch/src/components/CreatePoolSubmit.tsx
-"use client";
+'use client';
 
-import { Connection, PublicKey, TransactionInstruction } from "@solana/web3.js";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { useAtomicLaunchClientBundle } from "@/components/hooks/useAtomicLaunchClientBundle";
+import { Connection, PublicKey, TransactionInstruction } from '@solana/web3.js';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { useAtomicLaunchClientBundle } from '@/components/hooks/useAtomicLaunchClientBundle';
 
 type Props = {
-  connection: Connection;                 // same RPC as app
-  poolAddress: string;                    // DBC virtual pool (NOT mint/config)
-  devBuyAmountSol: number;                // from your existing input
+  connection: Connection; // same RPC as app
+  poolAddress: string; // DBC virtual pool (NOT mint/config)
+  devBuyAmountSol: number; // from your existing input
   // 🔧 feePayer is OPTIONAL here; hook falls back to walletPublicKey if omitted
   buildCreateIxs: () => Promise<{ ixs: TransactionInstruction[]; feePayer?: PublicKey }>;
-  createPriorityMicroLamports?: number;   // optional
-  buyPriorityMicroLamports?: number;      // optional
-  referralTokenAccount?: PublicKey;       // optional
+  createPriorityMicroLamports?: number; // optional
+  buyPriorityMicroLamports?: number; // optional
+  referralTokenAccount?: PublicKey; // optional
 };
 
 export default function CreatePoolSubmit({
@@ -30,8 +30,8 @@ export default function CreatePoolSubmit({
 
   async function onLaunch() {
     if (!publicKey || !signTransaction) {
-      alert("❌ Connect Phantom first");
-      throw new Error("Connect Phantom first");
+      alert('❌ Connect Phantom first');
+      throw new Error('Connect Phantom first');
     }
 
     try {
@@ -47,14 +47,14 @@ export default function CreatePoolSubmit({
         referralTokenAccount,
       });
 
-      console.log("✅ Bundle sent:", res.bundleId);
+      console.log('✅ Bundle sent:', res.bundleId);
       alert(`✅ Bundle sent!\nBundle ID: ${res.bundleId}`);
     } catch (err: any) {
-      console.error("❌ Atomic launch error:", err);
+      console.error('❌ Atomic launch error:', err);
 
       // Try to surface server `where` tag
       const msg = err?.message || String(err);
-      let where = "";
+      let where = '';
       if (err?.where) {
         where = ` [from ${err.where}]`;
       } else {

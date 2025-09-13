@@ -1,4 +1,4 @@
-import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { Connection, PublicKey, SystemProgram, Transaction } from '@solana/web3.js';
 
 export type SendTx = (tx: Transaction, connection: Connection) => Promise<string>;
 
@@ -10,7 +10,7 @@ function getFeeReceiver(): PublicKey {
   const v = process.env.NEXT_PUBLIC_CREATION_FEE_RECEIVER;
   if (!v) {
     throw new Error(
-      "Creation fee receiver not configured. Set NEXT_PUBLIC_CREATION_FEE_RECEIVER to a base58 address."
+      'Creation fee receiver not configured. Set NEXT_PUBLIC_CREATION_FEE_RECEIVER to a base58 address.'
     );
   }
   return new PublicKey(v);

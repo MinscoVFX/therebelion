@@ -7,10 +7,14 @@ import { claimTradingFee } from '../../lib/dbc';
 
 function parseBaseMintsFromEnv(): string[] {
   const raw = (process.env.BASE_MINTS || '').trim();
-  if (!raw) throw new Error('Missing BASE_MINTS. Provide a comma-separated list of base mint addresses.');
+  if (!raw)
+    throw new Error('Missing BASE_MINTS. Provide a comma-separated list of base mint addresses.');
   return Array.from(
     new Set(
-      raw.split(',').map(s => s.trim()).filter(Boolean)
+      raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
     )
   );
 }
@@ -48,14 +52,14 @@ async function main() {
     }
   }
 
-  const okCount = results.filter(r => r.ok).length;
+  const okCount = results.filter((r) => r.ok).length;
   const failCount = results.length - okCount;
 
   console.log('\n> Summary:');
   console.log(`- Success: ${okCount}`);
   console.log(`- Failed:  ${failCount}`);
   if (failCount) {
-    for (const r of results.filter(r => !r.ok)) {
+    for (const r of results.filter((r) => !r.ok)) {
       console.log(`  * ${r.mint}: ${r.error}`);
     }
   }

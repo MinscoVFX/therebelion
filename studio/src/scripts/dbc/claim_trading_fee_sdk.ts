@@ -18,7 +18,10 @@ function parseMints(): PublicKey[] {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  if (!list.length) throw new Error('BASE_MINTS is empty. Set a comma-separated list of base mints in Actions secrets.');
+  if (!list.length)
+    throw new Error(
+      'BASE_MINTS is empty. Set a comma-separated list of base mints in Actions secrets.'
+    );
   return list.map((m) => {
     try {
       return new PublicKey(m);
@@ -37,10 +40,15 @@ function resolveSdkClaim(client: unknown) {
     'claimTradingFee',
   ];
   for (const path of candidates) {
-    const fn = path.split('.').reduce<any>(
-      (o, k) => (o && (o as Record<string, unknown>)[k] !== undefined ? (o as Record<string, unknown>)[k] : undefined),
-      client,
-    );
+    const fn = path
+      .split('.')
+      .reduce<any>(
+        (o, k) =>
+          o && (o as Record<string, unknown>)[k] !== undefined
+            ? (o as Record<string, unknown>)[k]
+            : undefined,
+        client
+      );
     if (typeof fn === 'function') {
       return async (args: {
         baseMint: PublicKey;
@@ -65,7 +73,11 @@ function resolveSdkClaim(client: unknown) {
   return undefined;
 }
 
-async function getPartnerFeesSafe(client: any, baseMint: PublicKey, partner: PublicKey): Promise<number | null> {
+async function getPartnerFeesSafe(
+  client: any,
+  baseMint: PublicKey,
+  partner: PublicKey
+): Promise<number | null> {
   try {
     if (typeof client.partner?.getPartnerFees === 'function') {
       const fees = await client.partner.getPartnerFees({ baseMint, partner });
@@ -129,7 +141,9 @@ async function main() {
       }
     }
 
-    console.log(`— Claiming for baseMint ${mintStr} (${solAmount === Number.MAX_SAFE_INTEGER ? 'unknown fees' : `${solAmount} SOL`})`);
+    console.log(
+      `— Claiming for baseMint ${mintStr} (${solAmount === Number.MAX_SAFE_INTEGER ? 'unknown fees' : `${solAmount} SOL`})`
+    );
 
     try {
       // Try lib first
@@ -164,7 +178,9 @@ async function main() {
         res.tx.feePayer = me;
         res.tx.add(
           ComputeBudgetProgram.setComputeUnitLimit({ units: 1_000_000 }),
-          ComputeBudgetProgram.setComputeUnitPrice({ microLamports: cfg.computeUnitPriceMicroLamports ?? 100_000 })
+          ComputeBudgetProgram.setComputeUnitPrice({
+            microLamports: cfg.computeUnitPriceMicroLamports ?? 100_000,
+          })
         );
 
         let attempt = 0;

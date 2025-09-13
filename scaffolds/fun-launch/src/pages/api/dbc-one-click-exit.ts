@@ -77,7 +77,9 @@ async function buildDbcClaimTradingFeeIx(args: {
   }
 }
 
-function getDammRemoveBuilder(): (params: any) => Promise<TransactionInstruction | TransactionInstruction[]> {
+function getDammRemoveBuilder(): (
+  params: any
+) => Promise<TransactionInstruction | TransactionInstruction[]> {
   const mod = requireStudioModule('lib/damm_v2/index.js');
   if (!mod) throw new Error('DAMM v2 runtime not found (studio dist missing).');
 
@@ -91,7 +93,11 @@ function getDammRemoveBuilder(): (params: any) => Promise<TransactionInstruction
   return builder;
 }
 
-async function getUserLpAmount(conn: Connection, owner: PublicKey, lpMint: PublicKey): Promise<bigint> {
+async function getUserLpAmount(
+  conn: Connection,
+  owner: PublicKey,
+  lpMint: PublicKey
+): Promise<bigint> {
   const ata = getAssociatedTokenAddressSync(lpMint, owner, false);
   try {
     const bal = await conn.getTokenAccountBalance(ata);
@@ -155,7 +161,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const parsedDbc = parseDbcPoolKeys(dbcPoolKeys);
 
     const ixs: TransactionInstruction[] = [];
-    ixs.push(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Number(priorityMicros) || 0 }));
+    ixs.push(
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Number(priorityMicros) || 0 })
+    );
 
     // 1) DBC fees
     ixs.push(

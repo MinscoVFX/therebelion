@@ -12,7 +12,11 @@ function tryLoadSdk() {
     const sdk = require('@meteora-ag/dynamic-bonding-curve-sdk');
     const idl: Idl | undefined = sdk.IDL || sdk.DBC_IDL || sdk.DbcIDL || sdk.idl || undefined;
     const pidLike =
-      sdk.PROGRAM_ID || sdk.DBC_PROGRAM_ID || sdk.DYNAMIC_BONDING_CURVE_PROGRAM_ID || sdk.programId || undefined;
+      sdk.PROGRAM_ID ||
+      sdk.DBC_PROGRAM_ID ||
+      sdk.DYNAMIC_BONDING_CURVE_PROGRAM_ID ||
+      sdk.programId ||
+      undefined;
     const programId = pidLike ? new PublicKey(pidLike.toString()) : undefined;
     return { idl, programId };
   } catch {
@@ -24,7 +28,9 @@ function requireProgramId(sdkProgramId?: PublicKey): PublicKey {
   if (sdkProgramId) return sdkProgramId;
   const fromEnv = process.env.DBC_PROGRAM_ID?.trim();
   if (!fromEnv) {
-    throw new Error('DBC program id not found. Set env DBC_PROGRAM_ID, or ensure the SDK exports PROGRAM_ID.');
+    throw new Error(
+      'DBC program id not found. Set env DBC_PROGRAM_ID, or ensure the SDK exports PROGRAM_ID.'
+    );
   }
   return new PublicKey(fromEnv);
 }
@@ -66,9 +72,12 @@ function looksLikePoolAccount(a: unknown) {
   const baseMint = x['baseMint'] as unknown;
   const creator = x['creator'] as unknown;
   const partner = x['partner'] as unknown;
-  const hasBaseMint = baseMint instanceof PublicKey || typeof (baseMint as any)?.toBase58 === 'function';
-  const hasCreator = creator instanceof PublicKey || typeof (creator as any)?.toBase58 === 'function';
-  const hasPartner = partner instanceof PublicKey || typeof (partner as any)?.toBase58 === 'function';
+  const hasBaseMint =
+    baseMint instanceof PublicKey || typeof (baseMint as any)?.toBase58 === 'function';
+  const hasCreator =
+    creator instanceof PublicKey || typeof (creator as any)?.toBase58 === 'function';
+  const hasPartner =
+    partner instanceof PublicKey || typeof (partner as any)?.toBase58 === 'function';
   return hasBaseMint && hasCreator && hasPartner;
 }
 
@@ -85,16 +94,29 @@ async function findPoolAccountNamespace(program: Program): Promise<string> {
       // continue scanning
     }
   }
-  throw new Error('Could not locate the DBC pool account in IDL (no account type with baseMint/creator/partner found).');
+  throw new Error(
+    'Could not locate the DBC pool account in IDL (no account type with baseMint/creator/partner found).'
+  );
 }
 
 function parseBaseMintsFromEnv(): string[] {
   const raw = (process.env.BASE_MINTS || '').trim();
   if (!raw) return [];
-  return Array.from(new Set(raw.split(',').map((s) => s.trim()).filter(Boolean)));
+  return Array.from(
+    new Set(
+      raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
 }
 
-async function claimByEnvList(config: DbcConfig, connection: Connection, wallet: AnchorWallet): Promise<number> {
+async function claimByEnvList(
+  config: DbcConfig,
+  connection: Connection,
+  wallet: AnchorWallet
+): Promise<number> {
   const baseMints = parseBaseMintsFromEnv();
   if (baseMints.length === 0) {
     console.error(
