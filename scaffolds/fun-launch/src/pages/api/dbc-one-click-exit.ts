@@ -13,8 +13,8 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
 } from '@solana/spl-token';
 import path from 'path';
+import fs from 'fs';
 
-// Keep this on Node runtime (not Edge) and avoid static optimization.
 export const dynamic = 'force-dynamic';
 
 const RPC_URL = process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com';
@@ -32,29 +32,24 @@ type DammV2PoolKeys = {
   authorityPda: PublicKey;
 };
 
-/** ----- Robust runtime resolution for Studio compiled JS (monorepo + Vercel) ----- */
-function resolveStudio(pathInDist: string): string | null {
+function resolveStudioDist(subpath: string): string | null {
   try {
-    return require.resolve(`@meteora-invent/studio/dist/${pathInDist}`);
+    const pkg = require.resolve('@meteora-invent/studio/package.json');
+    const base = path.dirname(pkg);
+    const candidate = path.join(base, 'dist', subpath);
+    return fs.existsSync(candidate) ? candidate : null;
   } catch {
-    try {
-      return path.join(process.cwd(), `../../studio/dist/${pathInDist}`);
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
-
-async function importStudioModule(pathInDist: string): Promise<any | null> {
-  const target = resolveStudio(pathInDist);
+async function importStudioModule(subpath: string): Promise<any | null> {
+  const target = resolveStudioDist(subpath);
   if (!target) return null;
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore - dynamic path; tell webpack to ignore
+  // @ts-ignore
   const mod = await import(/* webpackIgnore: true */ target);
   return mod ?? null;
 }
 
-/** DBC: locate the claim-fee instruction builder across possible export names */
 async function buildDbcClaimTradingFeeIx(args: {
   connection: Connection;
   poolKeys: DbcPoolKeys;
@@ -71,36 +66,33 @@ async function buildDbcClaimTradingFeeIx(args: {
 
   if (!builder) throw new Error('DBC claim fee builder not found in Studio runtime.');
 
-  // Some SDKs need only (connection, poolKeys, feeClaimer); some accept a single object.
   try {
-    const ix = await builder({
+    return await builder({
       connection: args.connection,
       poolKeys: { pool: args.poolKeys.pool, feeVault: args.poolKeys.feeVault },
       feeClaimer: args.feeClaimer,
     });
-    return ix;
   } catch {
-    const ix = await builder(args.connection, args.poolKeys, args.feeClaimer);
-    return ix;
+    return await builder(args.connection, args.poolKeys, args.feeClaimer);
   }
 }
 
-/** DAMM v2: locate remove-liquidity builder across possible export names */
-async function pickDammRemoveBuilder(): Promise<(params: any) => Promise<TransactionInstruction | TransactionInstruction[]>> {
+async function pickDammRemoveBuilder(): Promise<
+  (params: any) => Promise<TransactionInstruction | TransactionInstruction[]>
+> {
   const mod = await importStudioModule('lib/damm_v2/index.js');
   if (!mod) throw new Error('DAMM v2 runtime not found (studio dist missing).');
 
-  const removeBuilder =
+  const builder =
     mod.buildRemoveLiquidityIx ||
     mod.removeLiquidityIx ||
     (mod.builders && (mod.builders.buildRemoveLiquidityIx || mod.builders.removeLiquidity)) ||
     null;
 
-  if (!removeBuilder) throw new Error('Remove-liquidity builder missing in DAMM v2 runtime.');
-  return removeBuilder;
+  if (!builder) throw new Error('Remove-liquidity builder missing in DAMM v2 runtime.');
+  return builder;
 }
 
-/** Read base-units LP balance from owner’s ATA (0n if missing). */
 async function getUserLpAmount(conn: Connection, owner: PublicKey, lpMint: PublicKey): Promise<bigint> {
   const ata = getAssociatedTokenAddressSync(lpMint, owner, false);
   try {
@@ -112,7 +104,6 @@ async function getUserLpAmount(conn: Connection, owner: PublicKey, lpMint: Publi
   }
 }
 
-/** ----- Parsers from raw body into PublicKey-bearing structs ----- */
 function parseDbcPoolKeys(raw: any): DbcPoolKeys {
   return {
     pool: new PublicKey(raw.pool),
@@ -132,22 +123,6 @@ function parseDammV2PoolKeys(raw: any): DammV2PoolKeys {
   };
 }
 
-/**
- * POST /api/dbc-one-click-exit
- * Body:
- * {
- *   "ownerPubkey": "<string>",
- *   "dbcPoolKeys": { "pool": "<string>", "feeVault": "<string>" },
- *   "includeDammV2Exit": true|false,
- *   "dammV2PoolKeys": {
- *      "programId": "<string>", "pool": "<string>", "lpMint": "<string>",
- *      "tokenAMint": "<string>", "tokenBMint": "<string>",
- *      "tokenAVault": "<string>", "tokenBVault": "<string>",
- *      "authorityPda": "<string>"
- *   },
- *   "priorityMicros": 250000
- * }
- */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' });
@@ -182,11 +157,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const parsedDbc = parseDbcPoolKeys(dbcPoolKeys);
 
     const ixs: TransactionInstruction[] = [];
-
-    // Priority fee
     ixs.push(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Number(priorityMicros) || 0 }));
 
-    // 1) DBC: claim trading fees (creator/partner payout)
+    // 1) DBC fees
     ixs.push(
       await buildDbcClaimTradingFeeIx({
         connection,
@@ -195,7 +168,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })
     );
 
-    // 2) (Optional) DAMM v2: remove ALL LP for the provided pool
+    // 2) Optional DAMM v2 exit (for a specific pool, if provided)
     if (includeDammV2Exit) {
       if (!dammV2PoolKeys) {
         return res.status(400).json({ error: 'includeDammV2Exit=true but dammV2PoolKeys missing' });
@@ -203,7 +176,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const parsedDamm = parseDammV2PoolKeys(dammV2PoolKeys);
       const removeBuilder = await pickDammRemoveBuilder();
 
-      // Ensure token ATAs for withdrawals
       ixs.push(
         createAssociatedTokenAccountIdempotentInstruction(
           owner,
@@ -221,7 +193,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         )
       );
 
-      // Remove 100% of user's LP (balance from ATA)
       const userLpAta = getAssociatedTokenAddressSync(parsedDamm.lpMint, owner, false);
       const lpAmount = await getUserLpAmount(connection, owner, parsedDamm.lpMint);
       if (lpAmount === 0n) {
@@ -239,13 +210,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         userLpAccount: userLpAta,
         userAToken: getAssociatedTokenAddressSync(parsedDamm.tokenAMint, owner, false),
         userBToken: getAssociatedTokenAddressSync(parsedDamm.tokenBMint, owner, false),
-        lpAmount, // 100%
+        lpAmount,
       });
 
       ixs.push(...(Array.isArray(dammIxs) ? dammIxs : [dammIxs]));
     }
 
-    // Build & return the v0 tx
     const { blockhash } = await connection.getLatestBlockhash('finalized');
     const msg = new TransactionMessage({
       payerKey: owner,
