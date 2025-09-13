@@ -13,7 +13,7 @@ type Props = {
 };
 
 function solscanUrl(sig: string, endpoint: string) {
-  const lower = endpoint.toLowerCase();
+  const lower = endpoint?.toLowerCase?.() ?? '';
   if (lower.includes('devnet')) return `https://solscan.io/tx/${sig}?cluster=devnet`;
   if (lower.includes('testnet')) return `https://solscan.io/tx/${sig}?cluster=testnet`;
   return `https://solscan.io/tx/${sig}`;
@@ -33,7 +33,7 @@ export default function OneClickExitAutoButton({
       toast.error('Connect your wallet first');
       return;
     }
-    if (loading) return; // block double clicks
+    if (loading) return; // prevent double clicks
     setLoading(true);
     try {
       const res = await fetch('/api/exit-auto', {
@@ -45,7 +45,7 @@ export default function OneClickExitAutoButton({
         }),
       });
 
-      const data: any = await res.json();
+      const data: { tx?: string; error?: string } = await res.json();
       if (!res.ok || !data?.tx) throw new Error(data?.error || 'Failed to build transaction');
 
       const vtx = VersionedTransaction.deserialize(Buffer.from(data.tx, 'base64'));
@@ -55,7 +55,7 @@ export default function OneClickExitAutoButton({
         <div>
           <p className="font-medium">Transaction submitted</p>
           <a
-            href={solscanUrl(sig, connection.rpcEndpoint)}
+            href={solscanUrl(sig, (connection as any).rpcEndpoint)}
             target="_blank"
             rel="noreferrer"
             className="underline"
@@ -65,9 +65,10 @@ export default function OneClickExitAutoButton({
         </div>,
         { duration: 5000 }
       );
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
       console.error(e);
-      toast.error(e?.message ?? 'Failed');
+      toast.error(msg || 'Failed');
     } finally {
       setLoading(false);
     }
