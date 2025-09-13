@@ -5,9 +5,12 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "composite": true,
-    "noEmit": false,
-    "strictNullChecks": false
+    "jsx": "react-jsx",
+    "types": ["react", "react-dom"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
   "exclude": ["node_modules"]
