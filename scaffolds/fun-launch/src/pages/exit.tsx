@@ -11,13 +11,15 @@ function solscanUrl(sig: string, endpoint: string) {
   return `https://solscan.io/tx/${sig}`;
 }
 
-function OneClickExitInlineButton(props: { priorityMicros?: number; className?: string; label?: string }) {
-  const {
-    priorityMicros = 250_000,
-    className = 'px-4 py-2 rounded-2xl bg-black text-white hover:opacity-90 disabled:opacity-50',
-    label = 'One-Click Exit',
-  } = props;
-
+function OneClickExitInlineButton({
+  priorityMicros = 250_000,
+  className = 'px-4 py-2 rounded-2xl bg-black text-white hover:opacity-90 disabled:opacity-50',
+  label = 'One-Click Exit',
+}: {
+  priorityMicros?: number;
+  className?: string;
+  label?: string;
+}) {
   const { publicKey, sendTransaction, connected } = useWallet();
   const { connection } = useConnection();
   const [loading, setLoading] = useState(false);
@@ -39,7 +41,7 @@ function OneClickExitInlineButton(props: { priorityMicros?: number; className?: 
         }),
       });
 
-      const data: any = await res.json();
+      const data: { tx?: string; error?: string } = await res.json();
       if (!res.ok || !data?.tx) throw new Error(data?.error || 'Failed to build transaction');
 
       const vtx = VersionedTransaction.deserialize(Buffer.from(data.tx, 'base64'));
@@ -59,16 +61,22 @@ function OneClickExitInlineButton(props: { priorityMicros?: number; className?: 
         </div>,
         { duration: 5000 }
       );
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
       console.error(e);
-      toast.error(e?.message ?? 'Failed');
+      toast.error(msg || 'Failed');
     } finally {
       setLoading(false);
     }
   }, [connected, publicKey, priorityMicros, sendTransaction, connection, loading]);
 
   return (
-    <button onClick={onClick} disabled={loading} className={className} title="Auto-detect your DAMM v2 LP and remove 100%.">
+    <button
+      onClick={onClick}
+      disabled={loading}
+      className={className}
+      title="Auto-detect your DAMM v2 LP and remove 100%. No inputs needed."
+    >
       {loading ? 'Exiting…' : label}
     </button>
   );
