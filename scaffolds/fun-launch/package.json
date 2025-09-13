@@ -1,18 +1,7 @@
 {
   "name": "@meteora-invent/scaffold/fun-launch",
   "version": "0.1.0",
-  "private": true,
   "author": "Dann Wee <dann@raccoons.dev>",
-  "license": "ISC",
-  "scripts": {
-    "clean": "rm -rf node_modules .next .turbo",
-    "dev": "next dev --turbopack",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
-  },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",
     "@iconify-json/ic": "^1.2.2",
@@ -67,6 +56,17 @@
     "postcss": "^8.5.3",
     "prettier": "^3.5.3",
     "tailwindcss": "^3.3.1",
-    "typescript": "^5.0.0"
+    "typescript": "^5.6.3"
+  },
+  "license": "ISC",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "clean": "rm -rf node_modules .next .turbo",
+    "dev": "next dev --turbopack",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "next lint",
+    "start": "next start"
   }
 }

@@ -1,16 +1,16 @@
 {
   "name": "@meteora-invent/config-prettier",
-  "version": "0.0.0",
-  "private": true,
   "description": "Shared Prettier configuration for Meteora Invent monorepo",
-  "main": "index.js",
+  "version": "0.0.0",
   "files": [
     "index.js"
   ],
-  "scripts": {
-    "clean": "rm -rf node_modules .turbo"
-  },
+  "main": "index.js",
   "peerDependencies": {
     "prettier": "^3.5.3"
+  },
+  "private": true,
+  "scripts": {
+    "clean": "rm -rf node_modules .turbo"
   }
 }
