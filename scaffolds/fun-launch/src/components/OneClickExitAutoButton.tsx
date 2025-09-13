@@ -43,7 +43,7 @@ export default function OneClickExitAutoButton(props: {
       const vtx = VersionedTransaction.deserialize(Buffer.from(data.tx, 'base64'));
       const sig = await sendTransaction(vtx, connection);
 
-      // ✅ Show success with clickable Solscan link
+      // Success toast with Solscan link
       toast.success(
         <div>
           <p className="font-medium">Transaction submitted</p>
@@ -51,7 +51,7 @@ export default function OneClickExitAutoButton(props: {
             href={`https://solscan.io/tx/${sig}`}
             target="_blank"
             rel="noreferrer"
-            className="underline text-blue-400"
+            className="underline"
           >
             View on Solscan
           </a>
@@ -67,8 +67,12 @@ export default function OneClickExitAutoButton(props: {
   };
 
   return (
-    <button onClick={onClick} disabled={loading} className={className}
-      title="Auto-detect your DAMM v2 LP and remove 100%. No inputs needed.">
+    <button
+      onClick={onClick}
+      disabled={loading}
+      className={className}
+      title="Auto-detect your DAMM v2 LP and remove 100%. No inputs needed."
+    >
       {loading ? 'Exiting…' : label}
     </button>
   );
