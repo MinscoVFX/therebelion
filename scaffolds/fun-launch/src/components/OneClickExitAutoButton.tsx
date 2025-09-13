@@ -6,6 +6,12 @@ import { useConnection } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import { toast } from 'sonner';
 
+type Props = {
+  priorityMicros?: number;
+  className?: string;
+  label?: string;
+};
+
 function solscanUrl(sig: string, endpoint: string) {
   const lower = endpoint.toLowerCase();
   if (lower.includes('devnet')) return `https://solscan.io/tx/${sig}?cluster=devnet`;
@@ -13,17 +19,11 @@ function solscanUrl(sig: string, endpoint: string) {
   return `https://solscan.io/tx/${sig}`;
 }
 
-export default function OneClickExitAutoButton(props: {
-  priorityMicros?: number;
-  className?: string;
-  label?: string;
-}) {
-  const {
-    priorityMicros = 250_000,
-    className = 'px-4 py-2 rounded-2xl bg-black text-white hover:opacity-90 disabled:opacity-50',
-    label = 'One-Click Exit (Auto)',
-  } = props;
-
+export default function OneClickExitAutoButton({
+  priorityMicros = 250_000,
+  className = 'px-4 py-2 rounded-2xl bg-black text-white hover:opacity-90 disabled:opacity-50',
+  label = 'One-Click Exit (Auto)',
+}: Props) {
   const { publicKey, sendTransaction, connected } = useWallet();
   const { connection } = useConnection();
   const [loading, setLoading] = useState(false);
@@ -33,7 +33,7 @@ export default function OneClickExitAutoButton(props: {
       toast.error('Connect your wallet first');
       return;
     }
-    if (loading) return;
+    if (loading) return; // block double clicks
     setLoading(true);
     try {
       const res = await fetch('/api/exit-auto', {
