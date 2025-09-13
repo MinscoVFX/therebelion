@@ -42,13 +42,8 @@ export async function getUserLpAmount(
 
 /**
  * Build instructions to remove 100% of user's LP from DAMM v2.
- * NOTE:
- *  - This dynamically imports your Studio DAMM v2 helpers from:
- *      studio/src/lib/damm_v2 (index.ts)
- *  - We look for a function named `buildRemoveLiquidityIx` or `removeLiquidityIx`
- *    to stay compatible with slight naming differences.
- *  - If no builder is exported yet, we return [] so the caller can proceed
- *    with the fee-claim-only flow without crashing.
+ * If your Studio lib doesn't (yet) export a remove-liquidity builder,
+ * we skip gracefully so the DBC fee-claim flow still works.
  */
 export async function buildDammV2RemoveAllLpIxs(args: {
   connection: Connection;
@@ -86,14 +81,20 @@ export async function buildDammV2RemoveAllLpIxs(args: {
   // 3) Import Studio DAMM v2 module at runtime (correct relative path from this file)
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore - resolve at runtime; ambient types silence TS resolution
-  const damm = await import('../../../../studio/src/lib/damm_v2');
+  const dammModule = await import('../../../../studio/src/lib/damm_v2');
 
+  // Cast to any to avoid TS2339 on property probing
+  const damm: any = dammModule as any;
+
+  // Try common export names (adjust later if you add a specific builder)
   const builder: any =
-    (damm && (damm.buildRemoveLiquidityIx || damm.removeLiquidityIx)) || null;
+    damm.buildRemoveLiquidityIx ||
+    damm.removeLiquidityIx ||
+    (damm.builders && (damm.builders.removeLiquidity || damm.builders.buildRemoveLiquidityIx)) ||
+    null;
 
   if (!builder) {
     // No exported remove-liquidity builder yet; skip gracefully.
-    // You can wire this later by exporting the builder from studio/src/lib/damm_v2/index.ts
     console.warn(
       '[dammv2-adapter] No remove-liquidity builder exported in studio/src/lib/damm_v2. ' +
       'Skipping LP removal and proceeding with fee-claim-only.'
