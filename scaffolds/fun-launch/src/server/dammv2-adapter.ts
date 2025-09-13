@@ -9,7 +9,7 @@ import {
 } from '@solana/spl-token';
 
 /**
- * DAMM v2 pool keys structure.
+ * Meteora DAMM v2 pool keys.
  */
 export type DammV2PoolKeys = {
   programId: PublicKey;
@@ -23,7 +23,7 @@ export type DammV2PoolKeys = {
 };
 
 /**
- * Read user LP balance.
+ * Read user's LP balance (base units).
  */
 export async function getUserLpAmount(
   connection: Connection,
@@ -41,8 +41,14 @@ export async function getUserLpAmount(
 }
 
 /**
- * Build instructions to remove 100% LP from DAMM v2.
- * This uses a dynamic import of your Studio builder and suppresses TS type resolution on that line.
+ * Build instructions to remove 100% of user's LP from DAMM v2.
+ * NOTE:
+ *  - This dynamically imports your Studio DAMM v2 helpers from:
+ *      studio/src/lib/damm_v2 (index.ts)
+ *  - We look for a function named `buildRemoveLiquidityIx` or `removeLiquidityIx`
+ *    to stay compatible with slight naming differences.
+ *  - If no builder is exported yet, we return [] so the caller can proceed
+ *    with the fee-claim-only flow without crashing.
  */
 export async function buildDammV2RemoveAllLpIxs(args: {
   connection: Connection;
@@ -51,11 +57,11 @@ export async function buildDammV2RemoveAllLpIxs(args: {
 }): Promise<TransactionInstruction[]> {
   const { connection, owner, poolKeys } = args;
 
-  // 1) Fetch user LP balance
+  // 1) Check user's LP balance
   const userLp = await getUserLpAmount(connection, owner, poolKeys.lpMint);
-  if (userLp === 0n) return [];
+  if (userLp === 0n) return []; // nothing to remove
 
-  // 2) Ensure ATAs exist for underlying token A/B
+  // 2) Ensure user ATAs exist for receiving token A/B
   const userAToken = getAssociatedTokenAddressSync(poolKeys.tokenAMint, owner, false);
   const userBToken = getAssociatedTokenAddressSync(poolKeys.tokenBMint, owner, false);
 
@@ -77,33 +83,26 @@ export async function buildDammV2RemoveAllLpIxs(args: {
     )
   );
 
-  // 3) Import your Studio builder dynamically
+  // 3) Import Studio DAMM v2 module at runtime (correct relative path from this file)
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore - allow unresolved module at type-time; we only need it at runtime
-  const damm = await import('../../../studio/src/lib/dammv2/remove');
+  // @ts-ignore - resolve at runtime; ambient types silence TS resolution
+  const damm = await import('../../../../studio/src/lib/damm_v2');
 
-  if (!('buildRemoveLiquidityIx' in damm)) {
-    throw new Error(
-      'Studio DAMM v2 lib is missing `buildRemoveLiquidityIx`. ' +
-      'Adjust the import path or export it from studio/src/lib/dammv2/remove.'
+  const builder: any =
+    (damm && (damm.buildRemoveLiquidityIx || damm.removeLiquidityIx)) || null;
+
+  if (!builder) {
+    // No exported remove-liquidity builder yet; skip gracefully.
+    // You can wire this later by exporting the builder from studio/src/lib/damm_v2/index.ts
+    console.warn(
+      '[dammv2-adapter] No remove-liquidity builder exported in studio/src/lib/damm_v2. ' +
+      'Skipping LP removal and proceeding with fee-claim-only.'
     );
+    return ixs;
   }
 
-  const fn = (damm as any).buildRemoveLiquidityIx as (p: {
-    programId: PublicKey;
-    pool: PublicKey;
-    authorityPda: PublicKey;
-    lpMint: PublicKey;
-    tokenAVault: PublicKey;
-    tokenBVault: PublicKey;
-    user: PublicKey;
-    userLpAccount: PublicKey;
-    userAToken: PublicKey;
-    userBToken: PublicKey;
-    lpAmount: bigint;
-  }) => Promise<TransactionInstruction | TransactionInstruction[]>;
-
-  const removeIxs = await fn({
+  // 4) Build remove-liquidity instruction(s) for 100% LP burn
+  const removeIxs: TransactionInstruction | TransactionInstruction[] = await builder({
     programId: poolKeys.programId,
     pool: poolKeys.pool,
     authorityPda: poolKeys.authorityPda,
@@ -115,6 +114,9 @@ export async function buildDammV2RemoveAllLpIxs(args: {
     userAToken,
     userBToken,
     lpAmount: userLp, // remove ALL LP
+    // Add min out / slippage fields here if your builder supports them:
+    // minA: 0n,
+    // minB: 0n,
   });
 
   return [...ixs, ...(Array.isArray(removeIxs) ? removeIxs : [removeIxs])];
