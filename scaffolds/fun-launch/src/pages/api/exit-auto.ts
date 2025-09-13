@@ -17,14 +17,11 @@ import path from 'path';
 const RPC_URL = process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com';
 const connection = new Connection(RPC_URL, 'confirmed');
 
-/** Resolve compiled Studio runtime path in a robust way (works in monorepo + Vercel). */
+// Robust Studio DAMM v2 runtime resolution
 function resolveStudioDammV2(): string | null {
   try {
-    // Resolve the ENTRY js file via the workspace package name
-    const entry = require.resolve('@meteora-invent/studio/dist/lib/damm_v2/index.js');
-    return entry;
+    return require.resolve('@meteora-invent/studio/dist/lib/damm_v2/index.js');
   } catch {
-    // Fallback: try relative path from fun-launch after Turbo build (monorepo)
     try {
       return path.join(process.cwd(), '../../studio/dist/lib/damm_v2/index.js');
     } catch {
@@ -33,7 +30,6 @@ function resolveStudioDammV2(): string | null {
   }
 }
 
-/** Runtime import of Studio DAMM v2 compiled JS (prevents Next bundling TS). */
 async function importDammRuntime(): Promise<any | null> {
   const target = resolveStudioDammV2();
   if (!target) return null;
@@ -42,7 +38,6 @@ async function importDammRuntime(): Promise<any | null> {
   return mod ?? null;
 }
 
-/** Pick helpers by common export names. */
 function pickPoolResolver(mod: any): ((args: any) => Promise<any>) | null {
   return (
     mod?.getPoolByLpMint ||
@@ -61,7 +56,6 @@ function pickRemoveBuilder(mod: any): ((args: any) => Promise<any>) | null {
   );
 }
 
-/** Read base-units LP balance from owner’s ATA (0n if missing). */
 async function getUserLpAmount(conn: Connection, owner: PublicKey, lpMint: PublicKey): Promise<bigint> {
   const ata = getAssociatedTokenAddressSync(lpMint, owner, false);
   try {
@@ -73,7 +67,6 @@ async function getUserLpAmount(conn: Connection, owner: PublicKey, lpMint: Publi
   }
 }
 
-/** Find largest DAMM v2 LP owned by wallet using Studio resolver + parsed SPL accounts. */
 async function findBestDammLpAndPool(
   conn: Connection,
   owner: PublicKey
@@ -114,7 +107,7 @@ async function findBestDammLpAndPool(
       const amt = await getUserLpAmount(conn, owner, pk.lpMint);
       if (amt > 0n) poolable.push({ lpMint: pk.lpMint, lpAmount: amt, poolKeys: pk });
     } catch {
-      // Not a DAMM v2 LP or resolver threw – skip
+      // Not a DAMM v2 LP — skip
     }
   }
   if (!poolable.length) return null;
@@ -176,7 +169,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       userLpAccount: userLpAta,
       userAToken: getAssociatedTokenAddressSync(best.poolKeys.tokenAMint, owner, false),
       userBToken: getAssociatedTokenAddressSync(best.poolKeys.tokenBMint, owner, false),
-      lpAmount: best.lpAmount, // 100%
+      lpAmount: best.lpAmount,
     });
 
     ixs.push(...(Array.isArray(removeIxs) ? removeIxs : [removeIxs]));
