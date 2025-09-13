@@ -37,13 +37,13 @@ export default function OneClickExitAutoButton(props: {
         }),
       });
 
-      const data = await res.json();
+      const data: any = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to build transaction');
 
       const vtx = VersionedTransaction.deserialize(Buffer.from(data.tx, 'base64'));
       const sig = await sendTransaction(vtx, connection);
 
-      // Success toast with Solscan link
+      // Show success with a Solscan link
       toast.success(
         <div>
           <p className="font-medium">Transaction submitted</p>
