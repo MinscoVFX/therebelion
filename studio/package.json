@@ -1,9 +1,18 @@
 {
   "name": "@meteora-invent/studio",
   "version": "1.0.0",
-  "main": "index.js",
+  "private": true,
+  "description": "Meteora Invent is a toolkit consisting of everything you need to invent innovative token launches. Powered by Meteora, the most secure, sustainable and composable liquidity layer on Solana.",
+  "keywords": ["studio", "create", "build"],
+  "author": "Dann Wee <dann@raccoons.dev>",
+  "license": "ISC",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist/**/*", "README.md"],
   "scripts": {
-    "clean": "rm -rf node_modules .turbo",
+    "clean": "rimraf dist node_modules .turbo",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint . --ext .ts,.js",
     "lint:fix": "eslint . --ext .ts,.js --fix",
     "format": "prettier --write .",
@@ -28,14 +37,6 @@
     "dbc-swap": "tsx src/scripts/dbc/swap.ts",
     "alpha-vault-create": "tsx src/scripts/alpha_vault/create_alpha_vault.ts"
   },
-  "keywords": [
-    "studio",
-    "create",
-    "build"
-  ],
-  "author": "Dann Wee <dann@raccoons.dev>",
-  "license": "ISC",
-  "description": "Meteora Invent is a toolkit consisting of everything you need to invent innovative token launches. Powered by Meteora, the most secure, sustainable and composable liquidity layer on Solana.",
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",
     "@meteora-ag/alpha-vault": "^1.1.14",
@@ -68,6 +69,8 @@
     "babar": "^0.2.3",
     "eslint": "^8.57.0",
     "jest": "^30.0.4",
-    "tsx": "^4.19.3"
+    "tsx": "^4.19.3",
+    "typescript": "^5.6.3",
+    "rimraf": "^5.0.5"
   }
 }
