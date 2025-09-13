@@ -1,8 +1,59 @@
 {
   "name": "@meteora-invent/studio",
-  "description": "Meteora Invent is a toolkit consisting of everything you need to invent innovative token launches. Powered by Meteora, the most secure, sustainable and composable liquidity layer on Solana.",
   "version": "1.0.0",
+  "private": true,
+  "description": "Meteora Invent is a toolkit consisting of everything you need to invent innovative token launches. Powered by Meteora, the most secure, sustainable and composable liquidity layer on Solana.",
+  "keywords": ["studio", "create", "build"],
   "author": "Dann Wee <dann@raccoons.dev>",
+  "license": "ISC",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist/**/*", "README.md"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./lib/damm_v2": {
+      "types": "./dist/lib/damm_v2/index.d.ts",
+      "require": "./dist/lib/damm_v2/index.js",
+      "default": "./dist/lib/damm_v2/index.js"
+    },
+    "./lib/dbc": {
+      "types": "./dist/lib/dbc/index.d.ts",
+      "require": "./dist/lib/dbc/index.js",
+      "default": "./dist/lib/dbc/index.js"
+    }
+  },
+  "scripts": {
+    "clean": "rimraf dist node_modules .turbo",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . --ext .ts,.js",
+    "lint:fix": "eslint . --ext .ts,.js --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "start-test-validator": "solana-test-validator --bind-address 0.0.0.0 --account-dir ./src/tests/artifacts/accounts --bpf-program LbVRzDTvBDEcrthxfZ4RL6yiq3uZw8bS6MwtdY6UhFQ ./src/tests/artifacts/lb_clmm.so --bpf-program Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB ./src/tests/artifacts/dynamic_amm.so --bpf-program cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG ./src/tests/artifacts/cp_amm.so  --bpf-program dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN ./src/tests/artifacts/dynamic_bonding_curve.so --bpf-program SNPmGgnywBvvrAKMLundzG6StojyHTHDLu7T4sdhP4k ./src/tests/artifacts/alpha_vault.so --bpf-program 24Uqj9JCLxUeoC3hGfh5W3s9FM9uCHDS2SG3LYwBpyTi ./src/tests/artifacts/dynamic_vault.so --bpf-program LocpQgucEQHbqNABEYvBvwoxCPsSbG91A1QaQhQQqjn ./src/tests/artifacts/locker.so --bpf-program dfsdo2UqvwfN8DuUVrMRNfQe11VaiNoKcMqLHVvDPzh ./src/tests/artifacts/dynamic_fee_sharing.so --bpf-program metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s ./src/tests/artifacts/metaplex.so --mint bossj3JvwiNK7pvjr149DqdtJxf2gdygbcmEPTkb2F1 --reset",
+    "generate-keypair": "tsx src/scripts/settings/generate_keypair.ts",
+    "dlmm-create-pool": "tsx src/scripts/dlmm/create_pool.ts",
+    "dlmm-seed-liquidity-lfg": "tsx src/scripts/dlmm/seed_liquidity_lfg.ts",
+    "dlmm-seed-liquidity-single-bin": "tsx src/scripts/dlmm/seed_liquidity_single_bin.ts",
+    "dlmm-set-pool-status": "tsx src/scripts/dlmm/set_pool_status.ts",
+    "damm-v2-create-balanced-pool": "tsx src/scripts/damm_v2/create_balanced_pool.ts",
+    "damm-v2-create-one-sided-pool": "tsx src/scripts/damm_v2/create_one_sided_pool.ts",
+    "damm-v1-create-pool": "tsx src/scripts/damm_v1/create_pool.ts",
+    "damm-v1-lock-liquidity": "tsx src/scripts/damm_v1/lock_liquidity.ts",
+    "damm-v1-create-stake2earn-farm": "tsx src/scripts/damm_v1/create_stake2earn_farm.ts",
+    "damm-v1-lock-liquidity-stake2earn": "tsx src/scripts/damm_v1/lock_liquidity_stake2earn.ts",
+    "dbc-create-config": "tsx src/scripts/dbc/create_config.ts",
+    "dbc-create-pool": "tsx src/scripts/dbc/create_pool.ts",
+    "dbc-claim-trading-fee": "tsx src/scripts/dbc/claim_trading_fee.ts",
+    "dbc-migrate-to-damm-v1": "tsx src/scripts/dbc/migrate_damm_v1.ts",
+    "dbc-migrate-to-damm-v2": "tsx src/scripts/dbc/migrate_damm_v2.ts",
+    "dbc-swap": "tsx src/scripts/dbc/swap.ts",
+    "alpha-vault-create": "tsx src/scripts/alpha_vault/create_alpha_vault.ts"
+  },
   "dependencies": {
     "@coral-xyz/anchor": "^0.31.1",
     "@meteora-ag/alpha-vault": "^1.1.14",
@@ -35,49 +86,8 @@
     "babar": "^0.2.3",
     "eslint": "^8.57.0",
     "jest": "^30.0.4",
-    "rimraf": "^5.0.5",
     "tsx": "^4.19.3",
-    "typescript": "^5.6.3"
-  },
-  "files": [
-    "dist/**/*",
-    "README.md"
-  ],
-  "keywords": [
-    "build",
-    "create",
-    "studio"
-  ],
-  "license": "ISC",
-  "main": "dist/index.js",
-  "private": true,
-  "scripts": {
-    "alpha-vault-create": "tsx src/scripts/alpha_vault/create_alpha_vault.ts",
-    "build": "tsc -p tsconfig.json",
-    "clean": "rimraf dist node_modules .turbo",
-    "damm-v1-create-pool": "tsx src/scripts/damm_v1/create_pool.ts",
-    "damm-v1-create-stake2earn-farm": "tsx src/scripts/damm_v1/create_stake2earn_farm.ts",
-    "damm-v1-lock-liquidity": "tsx src/scripts/damm_v1/lock_liquidity.ts",
-    "damm-v1-lock-liquidity-stake2earn": "tsx src/scripts/damm_v1/lock_liquidity_stake2earn.ts",
-    "damm-v2-create-balanced-pool": "tsx src/scripts/damm_v2/create_balanced_pool.ts",
-    "damm-v2-create-one-sided-pool": "tsx src/scripts/damm_v2/create_one_sided_pool.ts",
-    "dbc-claim-trading-fee": "tsx src/scripts/dbc/claim_trading_fee.ts",
-    "dbc-create-config": "tsx src/scripts/dbc/create_config.ts",
-    "dbc-create-pool": "tsx src/scripts/dbc/create_pool.ts",
-    "dbc-migrate-to-damm-v1": "tsx src/scripts/dbc/migrate_damm_v1.ts",
-    "dbc-migrate-to-damm-v2": "tsx src/scripts/dbc/migrate_damm_v2.ts",
-    "dbc-swap": "tsx src/scripts/dbc/swap.ts",
-    "dlmm-create-pool": "tsx src/scripts/dlmm/create_pool.ts",
-    "dlmm-seed-liquidity-lfg": "tsx src/scripts/dlmm/seed_liquidity_lfg.ts",
-    "dlmm-seed-liquidity-single-bin": "tsx src/scripts/dlmm/seed_liquidity_single_bin.ts",
-    "dlmm-set-pool-status": "tsx src/scripts/dlmm/set_pool_status.ts",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "generate-keypair": "tsx src/scripts/settings/generate_keypair.ts",
-    "lint": "eslint . --ext .ts,.js",
-    "lint:fix": "eslint . --ext .ts,.js --fix",
-    "start-test-validator": "solana-test-validator --bind-address 0.0.0.0 --account-dir ./src/tests/artifacts/accounts --bpf-program LbVRzDTvBDEcrthxfZ4RL6yiq3uZw8bS6MwtdY6UhFQ ./src/tests/artifacts/lb_clmm.so --bpf-program Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB ./src/tests/artifacts/dynamic_amm.so --bpf-program cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG ./src/tests/artifacts/cp_amm.so  --bpf-program dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN ./src/tests/artifacts/dynamic_bonding_curve.so --bpf-program SNPmGgnywBvvrAKMLundzG6StojyHTHDLu7T4sdhP4k ./src/tests/artifacts/alpha_vault.so --bpf-program 24Uqj9JCLxUeoC3hGfh5W3s9FM9uCHDS2SG3LYwBpyTi ./src/tests/artifacts/dynamic_vault.so --bpf-program LocpQgucEQHbqNABEYvBvwoxCPsSbG91A1QaQhQQqjn ./src/tests/artifacts/locker.so --bpf-program dfsdo2UqvwfN8DuUVrMRNfQe11VaiNoKcMqLHVvDPzh ./src/tests/artifacts/dynamic_fee_sharing.so --bpf-program metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s ./src/tests/artifacts/metaplex.so --mint bossj3JvwiNK7pvjr149DqdtJxf2gdygbcmEPTkb2F1 --reset",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "types": "dist/index.d.ts"
+    "typescript": "^5.6.3",
+    "rimraf": "^5.0.5"
+  }
 }
