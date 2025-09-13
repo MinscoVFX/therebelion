@@ -19,23 +19,23 @@ type DammV2PoolKeys = {
   authorityPda: string;
 };
 
-type Props = {
+export default function DbcOneClickExitButton(props: {
   dbcPoolKeys: DbcPoolKeys;
   includeDammV2Exit?: boolean;
   dammV2PoolKeys?: DammV2PoolKeys;
   priorityMicros?: number;
   className?: string;
   label?: string;
-};
+}) {
+  const {
+    dbcPoolKeys,
+    includeDammV2Exit = false,
+    dammV2PoolKeys,
+    priorityMicros = 250_000,
+    className = 'px-4 py-2 rounded-2xl bg-black text-white hover:opacity-90 disabled:opacity-50',
+    label = 'One-Click (Claim Fees + Exit)',
+  } = props;
 
-export default function DbcOneClickExitButton({
-  dbcPoolKeys,
-  includeDammV2Exit = false,
-  dammV2PoolKeys,
-  priorityMicros = 250_000,
-  className = 'px-4 py-2 rounded-2xl bg-black text-white hover:opacity-90 disabled:opacity-50',
-  label = 'One-Click (Claim Fees + Exit)',
-}: Props): JSX.Element {
   const { publicKey, sendTransaction, connected } = useWallet();
   const { connection } = useConnection();
   const [loading, setLoading] = useState(false);
@@ -45,7 +45,7 @@ export default function DbcOneClickExitButton({
       toast.error('Connect your wallet first');
       return;
     }
-    if (loading) return; // prevent double submit
+    if (loading) return;
     setLoading(true);
     try {
       const res = await fetch('/api/dbc-one-click-exit', {
@@ -60,19 +60,15 @@ export default function DbcOneClickExitButton({
         }),
       });
 
-      const data: { tx?: string; blockhash?: string; error?: string } = await res.json();
-      if (!res.ok || !data?.tx) {
-        throw new Error(data?.error || 'Failed to build transaction');
-      }
+      const data: any = await res.json();
+      if (!res.ok || !data?.tx) throw new Error(data?.error || 'Failed to build transaction');
 
       const vtx = VersionedTransaction.deserialize(Buffer.from(data.tx, 'base64'));
       const sig = await sendTransaction(vtx, connection);
-
       toast.success(`Submitted: ${sig}`, { duration: 4000 });
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
+    } catch (e: any) {
       console.error(e);
-      toast.error(msg || 'Failed');
+      toast.error(e?.message ?? 'Failed');
     } finally {
       setLoading(false);
     }
@@ -98,3 +94,4 @@ export default function DbcOneClickExitButton({
       {loading ? 'Exiting…' : label}
     </button>
   );
+}
