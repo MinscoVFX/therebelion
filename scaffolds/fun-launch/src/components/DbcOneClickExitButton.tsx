@@ -7,7 +7,6 @@ import { VersionedTransaction } from '@solana/web3.js';
 import { toast } from 'sonner';
 
 type DbcPoolKeys = { pool: string; feeVault: string };
-
 type DammV2PoolKeys = {
   programId: string;
   pool: string;
@@ -45,7 +44,7 @@ export default function DbcOneClickExitButton({
       toast.error('Connect your wallet first');
       return;
     }
-    if (loading) return; // prevent double submits
+    if (loading) return;
     setLoading(true);
     try {
       const res = await fetch('/api/dbc-one-click-exit', {
@@ -60,19 +59,15 @@ export default function DbcOneClickExitButton({
         }),
       });
 
-      const data: { tx?: string; error?: string } = await res.json();
-      if (!res.ok || !data?.tx) {
-        throw new Error(data?.error || 'Failed to build transaction');
-      }
+      const data: any = await res.json();
+      if (!res.ok || !data?.tx) throw new Error(data?.error || 'Failed to build transaction');
 
       const vtx = VersionedTransaction.deserialize(Buffer.from(data.tx, 'base64'));
       const sig = await sendTransaction(vtx, connection);
-
       toast.success(`Submitted: ${sig}`, { duration: 4000 });
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
+    } catch (e: any) {
       console.error(e);
-      toast.error(msg || 'Failed');
+      toast.error(e?.message ?? 'Failed');
     } finally {
       setLoading(false);
     }
