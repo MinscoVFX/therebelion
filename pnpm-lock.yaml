@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@meteora-invent/config-eslint':
+        specifier: workspace:*
+        version: link:packages/config/eslint
       '@types/node':
         specifier: ^20
         version: 20.19.4
