@@ -3,27 +3,27 @@
 let dammCache: any | undefined;
 let dbcCache: any | undefined;
 
-export function getDammV2Runtime() {
+export async function getDammV2Runtime() {
   if (dammCache !== undefined) return dammCache;
   try {
-    dammCache = require('@meteora-invent/studio/lib/damm_v2');
+    dammCache = await import('@meteora-invent/studio/lib/damm_v2');
   } catch {
     dammCache = null;
   }
   return dammCache;
 }
-export function getDbcRuntime() {
+export async function getDbcRuntime() {
   if (dbcCache !== undefined) return dbcCache;
   try {
-    dbcCache = require('@meteora-invent/studio/lib/dbc');
+    dbcCache = await import('@meteora-invent/studio/lib/dbc');
   } catch {
     dbcCache = null;
   }
   return dbcCache;
 }
 
-export function getRuntimeHealth() {
-  const damm = !!getDammV2Runtime();
-  const dbc = !!getDbcRuntime();
+export async function getRuntimeHealth() {
+  const damm = !!(await getDammV2Runtime());
+  const dbc = !!(await getDbcRuntime());
   return { damm_v2: damm, dbc };
 }

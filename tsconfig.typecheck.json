@@ -1,51 +1,12 @@
 {
-  "extends": "@meteora-invent/config/typescript/base",
-  "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "@meteora-invent/config/*": ["./packages/config/*"],
-      "@meteora-invent/studio": ["./studio"],
-      "@meteora-invent/scaffold/*": ["./scaffolds/*"],
-      "@/*": ["./scaffolds/fun-launch/src/*"]
-    },
-
-    // keep CI green: we only type-check, never emit
-    "noEmit": true,
-    "composite": false,
-    "skipLibCheck": true,
-
-    // fix "Cannot use JSX unless the '--jsx' flag is provided"
-    "jsx": "react-jsx",
-
-    // match your repo’s runtime/library targets
-    "target": "ES2020",
-    "module": "ESNext",
-    "lib": ["dom", "dom.iterable", "es6"],
-
-    // module resolution compatible with your current setup
-    "moduleResolution": "node",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-
-    // interop quality-of-life flags
-    "allowJs": true,
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-
-    // avoid noisy unused warnings in CI
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-
-    // make sure React/Node globals resolve
-    "types": ["node", "react", "react-dom"]
-  },
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true },
   "include": [
-    "packages/**/*.ts",
-    "packages/**/*.tsx",
+    "studio/**/*.ts",
+    "studio/**/*.tsx",
     "scaffolds/**/*.ts",
     "scaffolds/**/*.tsx",
-    "studio/**/*.ts",
-    "studio/**/*.tsx"
-  ],
-  "exclude": ["node_modules", "dist", "build", ".next", ".turbo"]
+    "packages/**/*.ts",
+    "packages/**/*.tsx"
+  ]
 }

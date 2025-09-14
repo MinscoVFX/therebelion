@@ -1,101 +1,223 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useWallet } from '@jup-ag/wallet-adapter';
 import { useConnection } from '@solana/wallet-adapter-react';
-import { VersionedTransaction } from '@solana/web3.js';
 import { toast } from 'sonner';
-
-type DbcPoolKeys = { pool: string; feeVault: string };
-
-type DammV2PoolKeys = {
-  programId: string;
-  pool: string;
-  lpMint: string;
-  tokenAMint: string;
-  tokenBMint: string;
-  tokenAVault: string;
-  tokenBVault: string;
-  authorityPda: string;
-};
+import { useDbcInstantExit } from '@/hooks/useDbcInstantExit';
+import { DbcPoolSelector } from '@/components/DbcPoolSelector';
+import { useDbcPools } from '@/context/DbcPoolContext';
+import { scanDbcPositionsUltraSafe } from '@/server/dbc-adapter';
+// useConnection already imported above
 
 type Props = {
-  dbcPoolKeys: DbcPoolKeys;
-  includeDammV2Exit?: boolean;
-  dammV2PoolKeys?: DammV2PoolKeys;
   priorityMicros?: number;
   className?: string;
   label?: string;
 };
 
+function solscanUrl(sig: string, endpoint: string) {
+  const lower = endpoint?.toLowerCase?.() ?? '';
+  if (lower.includes('devnet')) return `https://solscan.io/tx/${sig}?cluster=devnet`;
+  if (lower.includes('testnet')) return `https://solscan.io/tx/${sig}?cluster=testnet`;
+  return `https://solscan.io/tx/${sig}`;
+}
+
 export default function DbcOneClickExitButton({
-  dbcPoolKeys,
-  includeDammV2Exit = false,
-  dammV2PoolKeys,
   priorityMicros = 250_000,
   className = 'px-4 py-2 rounded-2xl bg-black text-white hover:opacity-90 disabled:opacity-50',
-  label = 'One-Click (Claim Fees + Exit)',
+  label = 'One-Click Exit (DBC)',
 }: Props) {
-  const { publicKey, sendTransaction, connected } = useWallet();
+  const { publicKey, connected } = useWallet();
   const { connection } = useConnection();
-  const [loading, setLoading] = useState(false);
+  const { state, exit } = useDbcInstantExit();
+  const { selected } = useDbcPools();
+  const [batchState, setBatchState] = useState<{running: boolean; total: number; done: number; lastSig?: string; errors: number}>({running:false,total:0,done:0,errors:0});
+  const [priority, setPriority] = useState<number>(priorityMicros);
+  const [includeDamm, setIncludeDamm] = useState(false);
+  const [slippageBps, setSlippageBps] = useState(50); // 0.50%
+  const [simulateFirst, setSimulateFirst] = useState(true);
+  const [fastMode, setFastMode] = useState(false);
+  const [computeUnitLimit, setComputeUnitLimit] = useState<number | undefined>();
 
-  const onClick = useCallback(async () => {
-    if (!connected || !publicKey) {
-      toast.error('Connect your wallet first');
-      return;
-    }
-    if (loading) return; // prevent double submit
-    setLoading(true);
+  // Persist minimal prefs separate from exit page (avoid collision) but reuse key naming style
+  useEffect(()=>{
     try {
-      const res = await fetch('/api/dbc-one-click-exit', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          ownerPubkey: publicKey.toBase58(),
-          dbcPoolKeys,
-          includeDammV2Exit,
-          dammV2PoolKeys: includeDammV2Exit ? (dammV2PoolKeys ?? null) : null,
-          priorityMicros,
-        }),
-      });
-
-      const data: { tx?: string; error?: string } = await res.json();
-      if (!res.ok || !data?.tx) {
-        throw new Error(data?.error || 'Failed to build transaction');
+      const saved = localStorage.getItem('dbc-exit-btn-prefs');
+      if (saved) {
+        const j = JSON.parse(saved);
+        if (typeof j.priority === 'number') setPriority(j.priority);
+        if (typeof j.slippageBps === 'number') setSlippageBps(j.slippageBps);
+        if (typeof j.simulateFirst === 'boolean') setSimulateFirst(j.simulateFirst);
+        if (typeof j.fastMode === 'boolean') setFastMode(j.fastMode);
+        if (typeof j.computeUnitLimit === 'number') setComputeUnitLimit(j.computeUnitLimit);
       }
-
-      const vtx = VersionedTransaction.deserialize(Buffer.from(data.tx, 'base64'));
-      const sig = await sendTransaction(vtx, connection);
-
-      toast.success(`Submitted: ${sig}`, { duration: 4000 });
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error(e);
-      toast.error(msg || 'Failed');
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      if (process?.env?.NODE_ENV === 'development') console.debug('Load btn prefs failed', err);
     }
-  }, [
-    connected,
-    publicKey,
-    loading,
-    dbcPoolKeys,
-    includeDammV2Exit,
-    dammV2PoolKeys,
-    priorityMicros,
-    sendTransaction,
-    connection,
-  ]);
+  }, []);
+  useEffect(()=>{
+    try { localStorage.setItem('dbc-exit-btn-prefs', JSON.stringify({ priority, slippageBps, simulateFirst, fastMode, computeUnitLimit })); } catch (err) {
+      if (process?.env?.NODE_ENV === 'development') console.debug('Persist btn prefs failed', err);
+    }
+  }, [priority, slippageBps, simulateFirst, fastMode, computeUnitLimit]);
+
+  const onClick = useCallback(async (): Promise<void> => {
+  if (!connected || !publicKey) { toast.error('Connect your wallet first'); return; }
+  if (!selected) { toast.error('Select a pool first'); return; }
+    if (selected === 'ALL') {
+      try {
+        setBatchState({running:true,total:0,done:0,errors:0});
+        const positions = await scanDbcPositionsUltraSafe({ connection, wallet: publicKey });
+  if (!positions.length) { toast.info('No DBC positions found'); setBatchState({running:false,total:0,done:0,errors:0}); return; }
+        // group by pool
+        const grouped = new Map<string, typeof positions>();
+  positions.forEach(p=>{ const k = p.poolKeys.pool.toBase58(); const existing = grouped.get(k); if(existing) existing.push(p); else grouped.set(k, [p]); });
+        const pools = Array.from(grouped.entries());
+        setBatchState({running:true,total:pools.length,done:0,errors:0});
+        for (const [, poss] of pools) {
+          const target = poss?.[0];
+          if (!target) { setBatchState(s=>({...s,done:s.done+1,errors:s.errors+1})); continue; }
+          try {
+            const sig = await exit({ dbcPoolKeys: { pool: target.poolKeys.pool.toBase58(), feeVault: target.poolKeys.feeVault.toBase58() }, includeDammV2Exit: false, priorityMicros: priority, simulateFirst: fastMode ? false : simulateFirst, slippageBps, fastMode, computeUnitLimit });
+            setBatchState(s=>({...s,done:s.done+1,lastSig: typeof sig === 'string' ? sig : s.lastSig}));
+          } catch (e:any) {
+            setBatchState(s=>({...s,done:s.done+1,errors:s.errors+1}));
+          }
+        }
+        toast.success('Batch exit complete');
+        setBatchState(s=>({...s,running:false}));
+      } catch (e:any) {
+        // Already surfaced toast here; add debug for clarity
+        toast.error(e?.message||'Batch exit failed');
+        if (process?.env?.NODE_ENV === 'development') console.debug('Batch exit failed', e);
+        setBatchState(s=>({...s,running:false}));
+      }
+  return;
+    }
+    await exit({
+      dbcPoolKeys: { pool: selected.pool, feeVault: selected.feeVault },
+      includeDammV2Exit: includeDamm,
+      priorityMicros: priority,
+      simulateFirst: fastMode ? false : simulateFirst,
+      slippageBps,
+      fastMode,
+      computeUnitLimit,
+    });
+  }, [connected, publicKey, exit, includeDamm, priority, selected, connection, simulateFirst, slippageBps, fastMode, computeUnitLimit]);
+
 
   return (
-    <button
-      onClick={onClick}
-      disabled={loading}
-      className={className}
-      title="Claim DBC trading fees (and remove all LP on DAMM v2 if migrated)."
-    >
-      {loading ? 'Exiting…' : label}
-    </button>
+    <div className="space-y-2">
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-3 flex-wrap items-end">
+          <DbcPoolSelector />
+          <label className="text-xs font-medium flex flex-col">
+            Priority (micros)
+            <input
+              type="number"
+              className="border rounded px-2 py-1 text-sm"
+              value={priority}
+              min={0}
+              step={50_000}
+              onChange={e => setPriority(Number(e.target.value))}
+            />
+          </label>
+          <label className="text-xs font-medium flex flex-col">
+            Slippage (bps)
+            <input
+              type="number"
+              className="border rounded px-2 py-1 text-sm w-24"
+              value={slippageBps}
+              min={1}
+              max={10_000}
+              onChange={e => setSlippageBps(Number(e.target.value))}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs font-medium select-none">
+            <input
+              type="checkbox"
+              checked={includeDamm}
+              onChange={e => setIncludeDamm(e.target.checked)}
+            />
+            Include DAMM Exit
+          </label>
+          <label className="flex items-center gap-2 text-xs font-medium select-none">
+            <input
+              type="checkbox"
+              checked={simulateFirst && !fastMode}
+              disabled={fastMode}
+              onChange={e => setSimulateFirst(e.target.checked)}
+            />
+            Simulate First{fastMode && <span className="text-orange-500">(fast)</span>}
+          </label>
+          <label className="flex items-center gap-2 text-xs font-medium select-none">
+            <input
+              type="checkbox"
+              checked={fastMode}
+              onChange={e => setFastMode(e.target.checked)}
+            />
+            Fast Mode
+          </label>
+          <label className="text-xs font-medium flex flex-col w-28">
+            CU Limit (opt)
+            <input
+              type="number"
+              className="border rounded px-2 py-1 text-sm"
+              min={50_000}
+              max={1_400_000}
+              placeholder="auto"
+              value={computeUnitLimit ?? ''}
+              onChange={e => {
+                const v = Number(e.target.value);
+                if (!e.target.value) return setComputeUnitLimit(undefined);
+                if (Number.isFinite(v)) setComputeUnitLimit(Math.min(1_400_000, Math.max(50_000, v)));
+              }}
+            />
+          </label>
+          <button
+            className={className}
+            onClick={onClick}
+            disabled={batchState.running || state.status === 'building' || state.status === 'signing' || state.status === 'sending' || state.status === 'confirming'}
+          >
+            {batchState.running
+              ? `Batch ${batchState.done}/${batchState.total}`
+              : state.status !== 'idle' && state.status !== 'error' && state.status !== 'success'
+                ? `${state.status}...`
+                : (selected === 'ALL' ? 'Exit All (DBC)' : label)}
+          </button>
+        </div>
+        <div className="text-[11px] text-gray-600 min-h-[1.25rem]">
+          {batchState.running && (
+            <span>Batch exiting pools {batchState.done}/{batchState.total} (errors {batchState.errors})</span>
+          )}
+          {state.status === 'error' && state.error && (
+            <span className="text-red-600">Error: {state.error}</span>
+          )}
+          {state.status === 'success' && state.signature && (
+            <a
+              className="text-blue-600 underline"
+              href={solscanUrl(state.signature, '')}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View success tx
+            </a>
+          )}
+          {['building','signing','sending','confirming'].includes(state.status) && (
+            <span>Attempt {state.attempt} – {state.status}</span>
+          )}
+          {state.timings && (
+            <span className="ml-2 text-gray-500">
+              {(() => {
+                const t = state.timings; const diff = (a?:number,b?:number)=>a&&b? (b-a).toFixed(0)+'ms':'-';
+                const total = t.confirmed? (t.confirmed - t.started).toFixed(0)+'ms':'-';
+                return `Build ${diff(t.started,t.built)} | Sign ${diff(t.built,t.signed)} | Send ${diff(t.signed,t.sent)} | Proc ${t.processed&&t.sent?(t.processed-t.sent).toFixed(0)+'ms':'-'} | Conf ${t.confirmed? (t.confirmed-(t.processed||t.sent||t.started)).toFixed(0)+'ms':'-'} | Total ${total}`;
+              })()}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

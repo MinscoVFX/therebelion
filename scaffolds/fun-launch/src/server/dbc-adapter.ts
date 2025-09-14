@@ -1,17 +1,16 @@
 // scaffolds/fun-launch/src/server/dbc-adapter.ts
-import { 
-  Connection, 
-  PublicKey, 
-  TransactionInstruction, 
+import {
+  Connection,
+  PublicKey,
+  TransactionInstruction,
   Transaction,
   ComputeBudgetProgram,
   sendAndConfirmTransaction,
-  Keypair
+  Keypair,
 } from '@solana/web3.js';
-import { 
-  TOKEN_PROGRAM_ID
-} from '@solana/spl-token';
+import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import path from 'path';
+import { Metadata, PROGRAM_ID as TOKEN_METADATA_PROGRAM_ID } from '@metaplex-foundation/mpl-token-metadata';
 
 // DBC Program IDs for bulletproof scanning
 const DBC_PROGRAM_IDS = [
@@ -30,6 +29,14 @@ export type DbcPoolKeys = {
   userTokenB?: PublicKey;
 };
 
+export type DecodedDbcPool = {
+  pool: PublicKey;
+  feeVault: PublicKey;
+  baseMint: PublicKey; // tokenA (base)
+  quoteMint: PublicKey; // tokenB (quote)
+  lpMint?: PublicKey; // if exposed / derivable
+};
+
 export type DbcPosition = {
   poolKeys: DbcPoolKeys;
   lpAmount: bigint;
@@ -45,30 +52,81 @@ export type BulletproofExitResult = {
   finalAmount?: bigint;
 };
 
-function resolveStudioDbc(): string | null {
-  const candidates = [
+// Predeclare potential runtime module paths so bundler can statically analyze
+const STUDIO_RUNTIME_CANDIDATES = {
+  dbc: [
     '@meteora-invent/studio/dist/lib/dbc/index.js',
     path.join(process.cwd(), '../../studio/dist/lib/dbc/index.js'),
     path.join(process.cwd(), '../../studio/src/lib/dbc/index.ts'),
-  ];
-  for (const c of candidates) {
+  ],
+  damm_v2: [
+    '@meteora-invent/studio/dist/lib/damm_v2/index.js',
+    path.join(process.cwd(), '../../studio/dist/lib/damm_v2/index.js'),
+    path.join(process.cwd(), '../../studio/src/lib/damm_v2/index.ts'),
+  ],
+} as const;
+
+function resolveFirstAvailable(kind: keyof typeof STUDIO_RUNTIME_CANDIDATES): string | null {
+  for (const candidate of STUDIO_RUNTIME_CANDIDATES[kind]) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      return require.resolve(c);
+      return require.resolve(candidate);
     } catch {
-      /* skip */
+      /* continue search */
     }
   }
   return null;
 }
 
+async function importDammV2Runtime(): Promise<any | null> {
+  const target = resolveFirstAvailable('damm_v2');
+  if (!target) return null;
+  try {
+    // Use dynamic import with fully-resolved absolute string constant (no expression building)
+    return await import(/* webpackIgnore: true */ target);
+  } catch {
+    return null;
+  }
+}
+
 async function importDbcRuntime(): Promise<any> {
-  const target = resolveStudioDbc();
-  if (!target)
+  const target = resolveFirstAvailable('dbc');
+  if (!target) {
     throw new Error('Studio DBC module not found (build studio or keep it in the monorepo).');
+  }
   const mod = await import(/* webpackIgnore: true */ target);
   if (!mod) throw new Error('Failed to import DBC runtime.');
   return mod;
+}
+
+async function decodeDbcPool(connection: Connection, pool: PublicKey): Promise<DecodedDbcPool | null> {
+  try {
+    const mod = await importDbcRuntime();
+    // Attempt to derive state accessor paths (depends on runtime build shape)
+    const Client = mod.DynamicBondingCurveClient || mod.DynamicBondingCurve || null;
+    if (!Client) return null;
+    const client = new Client(connection, 'confirmed');
+    // Heuristic: runtime exposes state.getPool(pool) or need base mint. We try direct first.
+    let poolState: any = null;
+    if (client.state?.getPool) {
+      try { poolState = await client.state.getPool(pool); } catch { /* ignore */ }
+    }
+    if (!poolState && client.state?.getPoolByBaseMint) {
+      // If pool PDA is not directly fetchable, cannot proceed.
+      return null;
+    }
+    if (!poolState) return null;
+    const acct = poolState.account || {};
+    const feeVault: PublicKey | undefined = acct.feeVault || acct.feeVaultBase || acct.feeVaultQuote;
+    const baseMint: PublicKey | undefined = acct.baseMint || acct.tokenAMint || acct.base || acct.base_token;
+    const quoteMint: PublicKey | undefined = acct.quoteMint || acct.tokenBMint || acct.quote || acct.quote_token;
+    if (!feeVault || !baseMint || !quoteMint) return null;
+    // lpMint may or may not exist in virtual pool; keep optional.
+    const lpMint = acct.lpMint || acct.lp_token_mint || undefined;
+    return { pool, feeVault, baseMint, quoteMint, lpMint };
+  } catch {
+    return null;
+  }
 }
 
 function pickClaimBuilder(
@@ -113,71 +171,185 @@ export async function scanDbcPositionsUltraSafe(args: {
   wallet: PublicKey;
 }): Promise<DbcPosition[]> {
   const { connection, wallet } = args;
-  const positions: DbcPosition[] = [];
+  const result: DbcPosition[] = [];
 
-  for (const programId of DBC_PROGRAM_IDS) {
-    try {
-      console.log(`[DBC Scanner] Scanning program: ${programId.toString()}`);
-      
-      // Get all token accounts for this wallet
-      const tokenAccounts = await connection.getTokenAccountsByOwner(wallet, {
-        programId: TOKEN_PROGRAM_ID
-      });
+  // Use parsed token accounts for reliability
+  const parsed = await connection.getParsedTokenAccountsByOwner(wallet, { programId: TOKEN_PROGRAM_ID });
 
-      for (const { account, pubkey } of tokenAccounts.value) {
+  for (const { account, pubkey } of parsed.value) {
+    const info: any = (account.data as any)?.parsed?.info;
+    if (!info) continue;
+    const amountStr = info.tokenAmount?.amount ?? '0';
+    if (amountStr === '0') continue;
+    const mintStr = info.mint;
+    if (!mintStr) continue;
+    const mint = new PublicKey(mintStr);
+
+    // Attempt association with each known DBC program
+    for (const programId of DBC_PROGRAM_IDS) {
+      try {
+        const [poolPda] = PublicKey.findProgramAddressSync([Buffer.from('pool'), mint.toBuffer()], programId);
+        const poolInfo = await connection.getAccountInfo(poolPda);
+        if (!poolInfo) continue;
+
+        // Placeholder: In proper integration, decode poolInfo layout to extract feeVault & token mints.
+        // For now we mirror prior placeholder but separate feeVault derivation attempt.
+        // Try decode real pool to refine tokens
+        let feeVault = poolPda;
+        let tokenA = mint;
+        let tokenB = mint;
+        let lpMintResolved = mint;
         try {
-          const parsedAccount = JSON.parse(account.data.toString());
-          const amount = BigInt(parsedAccount.amount || '0');
-          
-          if (amount > 0n) {
-            // Check if this is a DBC LP token by trying to derive pool info
-            const mint = new PublicKey(parsedAccount.mint);
-            
-            // Try to find associated pool data
-            const poolSeeds = [
-              Buffer.from('pool'),
-              mint.toBuffer()
-            ];
-            
-            const [poolPda] = PublicKey.findProgramAddressSync(poolSeeds, programId);
-            
-            try {
-              const poolAccount = await connection.getAccountInfo(poolPda);
-              if (poolAccount) {
-                // This appears to be a valid DBC position
-                const position: DbcPosition = {
-                  poolKeys: {
-                    pool: poolPda,
-                    feeVault: poolPda, // Will be updated with actual data
-                    tokenA: mint, // Placeholder
-                    tokenB: mint, // Placeholder  
-                    lpMint: mint,
-                    userLpToken: pubkey
-                  },
-                  lpAmount: amount,
-                  programId,
-                  estimatedValueUsd: 0
-                };
-                
-                positions.push(position);
-                console.log(`[DBC Scanner] Found position: ${amount.toString()} LP tokens`);
-              }
-            } catch (e) {
-              // Not a DBC position, continue scanning
-            }
+          const decoded = await decodeDbcPool(connection, poolPda);
+          if (decoded) {
+            feeVault = decoded.feeVault;
+            tokenA = decoded.baseMint;
+            tokenB = decoded.quoteMint;
+            if (decoded.lpMint) lpMintResolved = decoded.lpMint;
           }
-        } catch (e) {
-          // Failed to parse this account, continue
-        }
+        } catch { /* fallback stays */ }
+
+        const lpAmount = BigInt(amountStr);
+        result.push({
+          poolKeys: {
+            pool: poolPda,
+            feeVault,
+            tokenA,
+            tokenB,
+            lpMint: lpMintResolved,
+            userLpToken: pubkey,
+          },
+            lpAmount,
+          programId,
+          estimatedValueUsd: 0,
+        });
+        break; // do not duplicate across programs
+      } catch {
+        // ignore and try next program
       }
-    } catch (error) {
-      console.warn(`[DBC Scanner] Error scanning program ${programId.toString()}:`, error);
-      // Continue with next program ID - ultra-safe approach
     }
   }
 
-  console.log(`[DBC Scanner] Found ${positions.length} DBC positions total`);
-  return positions;
+  console.log(`[DBC Scanner] Discovered ${result.length} provisional DBC positions.`);
+  return result;
+}
+
+/**
+ * Discover migrated (or concentrated) pools indirectly when user only holds a Meteora position NFT
+ * and no direct LP SPL token balance. Uses DAMM v2 runtime position NFT helpers as heuristic.
+ */
+export async function discoverMigratedDbcPoolsViaNfts(args: {
+  connection: Connection;
+  wallet: PublicKey;
+}): Promise<PublicKey[]> {
+  const { connection, wallet } = args;
+  const damm = await importDammV2Runtime();
+  if (!damm) return [];
+  try {
+    const helper =
+      damm.getAllPositionNftAccountByOwner ||
+      damm.getAllUserPositionNftAccount ||
+      (damm.CpAmm && (damm.CpAmm.prototype.getAllPositionNftAccountByOwner || damm.CpAmm.prototype.getAllUserPositionNftAccount));
+    if (!helper) return [];
+    // Some runtimes expect an object param; others may bind 'this'. We'll attempt both styles.
+    let fetched: any[] = [];
+    try {
+      const direct = await helper({ owner: wallet });
+      if (Array.isArray(direct)) fetched = direct; else if (direct?.length) fetched = Array.from(direct);
+    } catch {
+      try {
+        // instantiate CpAmm if available
+        const Cp = damm.CpAmm ? new damm.CpAmm(connection) : null;
+        if (Cp && typeof helper === 'function') {
+          const alt = await helper.call(Cp, { owner: wallet });
+          if (Array.isArray(alt)) fetched = alt;
+        }
+      } catch { /* ignore */ }
+    }
+    const pools: PublicKey[] = [];
+    for (const p of fetched) {
+      const poolPk = p?.account?.pool || p?.pool;
+      if (poolPk && PublicKey.isOnCurve(poolPk.toBuffer ? poolPk.toBuffer() : new PublicKey(poolPk).toBuffer())) {
+        try {
+          const pk = poolPk instanceof PublicKey ? poolPk : new PublicKey(poolPk);
+          if (!pools.find(x => x.equals(pk))) pools.push(pk);
+        } catch { /* skip invalid */ }
+      }
+    }
+    if (pools.length) {
+      console.log(`[DBC NFT Discovery] Found ${pools.length} candidate pools via position NFTs.`);
+    }
+    return pools;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Lightweight on-chain metadata probe to find potential Meteora migration NFTs (without requiring the DAMM runtime).
+ * Heuristic markers (adjust if Meteora changes conventions):
+ *  - symbol or name contains 'MIGR', 'MTR', 'DBC'
+ *  - collection or creators include known Meteora creator addresses (left extensible)
+ * Once identified, we attempt to parse a pool or base mint reference from the name (e.g., [...POOL=...])
+ * Returns an array of candidate pool PublicKeys.
+ */
+export async function discoverMigratedDbcPoolsViaMetadata(args: {
+  connection: Connection;
+  wallet: PublicKey;
+  knownMeteoraCreators?: string[]; // optional override
+}): Promise<PublicKey[]> {
+  const { connection, wallet, knownMeteoraCreators = [] } = args;
+  const candidates: PublicKey[] = [];
+  try {
+    // Fetch all token accounts (parsed) owned by wallet and filter for amount 1 + decimals 0/0 or NFT standard.
+    const parsed = await connection.getParsedTokenAccountsByOwner(wallet, { programId: TOKEN_PROGRAM_ID });
+    for (const { account } of parsed.value) {
+      const info: any = (account.data as any)?.parsed?.info;
+      if (!info) continue;
+      const amountStr = info.tokenAmount?.amount ?? '0';
+      const decimals = info.tokenAmount?.decimals ?? 0;
+      if (amountStr !== '1' || decimals !== 0) continue; // Only singleton tokens likely to be NFTs
+      const mintStr = info.mint;
+      if (!mintStr) continue;
+      let metadataPda: PublicKey | null = null;
+      try {
+        const [pda] = PublicKey.findProgramAddressSync([
+          Buffer.from('metadata'),
+          TOKEN_METADATA_PROGRAM_ID.toBuffer(),
+          new PublicKey(mintStr).toBuffer(),
+        ], TOKEN_METADATA_PROGRAM_ID);
+        metadataPda = pda;
+      } catch { /* skip */ }
+      if (!metadataPda) continue;
+      const metaAcct = await connection.getAccountInfo(metadataPda);
+      if (!metaAcct) continue;
+      try {
+        const metadata = Metadata.deserialize(metaAcct.data)[0];
+        const name = (metadata.data?.name || '').trim();
+        const symbol = (metadata.data?.symbol || '').trim();
+        const creators = (metadata.data?.creators || []).map((c: any) => c.address.toBase58());
+        const lower = `${name} ${symbol}`.toLowerCase();
+        const meteoraLike = /dbc|meteora|migr|amm/i.test(lower) ||
+          creators.some(c => knownMeteoraCreators.includes(c));
+        if (!meteoraLike) continue;
+        // Attempt to find a base58 public key embedded in name (simple heuristic: split tokens and try decode)
+        const tokens = name.split(/[^A-Za-z0-9]+/).filter(Boolean);
+        for (const t of tokens) {
+          if (t.length < 32 || t.length > 44) continue;
+          try {
+            const maybe = new PublicKey(t);
+            if (!candidates.find(x => x.equals(maybe))) candidates.push(maybe);
+          } catch { /* not a key */ }
+        }
+      } catch { /* ignore decode failure */ }
+    }
+  } catch {
+    return [];
+  }
+  if (candidates.length) {
+    console.log(`[DBC NFT Meta Discovery] Found ${candidates.length} pool-like keys in NFT metadata.`);
+  }
+  return candidates;
 }
 
 /**

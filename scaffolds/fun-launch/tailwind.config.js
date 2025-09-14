@@ -1,5 +1,4 @@
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const _plugin = require('tailwindcss/plugin');
+import plugin from 'tailwindcss/plugin';
 import { addIconSelectors } from '@iconify/tailwind';
 
 /** @type {import('tailwindcss').Config} */

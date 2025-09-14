@@ -1,16 +1,19 @@
 /// <reference types="node" />
 /**
- * Smoke test for /api/dbc-one-click-exit using simulateOnly=true.
- * Run with: pnpm --filter @meteora-invent/scaffold/fun-launch exec ts-node src/tests/dbcExitSmoke.ts
+ * Fast mode smoke test for /api/dbc-one-click-exit (no simulation, with optional compute unit limit).
+ * Run with: pnpm --filter @meteora-invent/scaffold/fun-launch exec ts-node src/tests/dbcFastExitSmoke.ts
+ * Required env vars:
+ *   TEST_OWNER_PUBKEY=<owner>
+ *   TEST_DBC_POOL_KEYS='{"pool":"...","feeVault":"..."}'
  * Uses Node 18+ global fetch; no polyfill required.
  */
 
-const OWNER = process.env.TEST_OWNER_PUBKEY || ''; // set a known wallet with at least one DBC position for full test
+const OWNER = process.env.TEST_OWNER_PUBKEY || '';
 
 async function main() {
   const dbcPoolKeysEnv = process.env.TEST_DBC_POOL_KEYS; // JSON: { pool: string; feeVault: string }
   if (!OWNER || !dbcPoolKeysEnv) {
-    console.log('Set TEST_OWNER_PUBKEY and TEST_DBC_POOL_KEYS env vars to run this smoke test.');
+    console.log('Set TEST_OWNER_PUBKEY and TEST_DBC_POOL_KEYS env vars to run this fast mode smoke test.');
     return;
   }
   let dbcPoolKeys: { pool: string; feeVault: string };
@@ -20,8 +23,9 @@ async function main() {
     ownerPubkey: OWNER,
     dbcPoolKeys,
     priorityMicros: 250_000,
-    simulateOnly: true,
+    // fast mode: no simulateOnly, directly request tx build
     slippageBps: 50,
+    computeUnitLimit: 900_000,
   };
 
   const res = await fetch('http://localhost:3000/api/dbc-one-click-exit', {
@@ -32,8 +36,8 @@ async function main() {
   const json = await res.json();
   console.log('Status', res.status);
   console.log('Response keys', Object.keys(json));
-  if (json.logs) console.log('Log lines', json.logs.length);
-  if (json.err) console.error('Simulation error', json.err);
+  if (json.tx) console.log('Tx (base64) length', json.tx.length);
+  if (json.error) console.error('Build error', json.error);
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

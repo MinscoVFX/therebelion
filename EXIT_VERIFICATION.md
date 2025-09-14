@@ -49,6 +49,8 @@ Comprehensive checklist to ensure the DBC One-Click Exit flow is fully functiona
 | priority | localStorage dbc-exit-prefs | Reload page → value restored |
 | slippageBps | localStorage dbc-exit-prefs | Reload page → value restored |
 | simulateFirst | localStorage dbc-exit-prefs | Reload page → toggle consistent |
+| fastMode | localStorage dbc-exit-prefs | Toggle on → reload → remains on |
+| computeUnitLimit | localStorage dbc-exit-prefs | Set value → reload → value restored |
 
 ## 7. Error Mapping Spot Check
 | Raw Condition | Simulated Cause | Friendly Output |
@@ -65,14 +67,27 @@ pnpm --filter @meteora-invent/scaffold/fun-launch exec ts-node src/tests/dbcExit
 ```
 Expect: HTTP 200, fields: `simulated`, `logs[]`, `unitsConsumed`, `tx`.
 
-## 9. Security / Safety Observations
+## 9. Fast Mode Verification
+| Scenario | Action | Expected |
+|----------|--------|----------|
+| Enable Fast Mode (Single) | Toggle Fast Mode on single exit panel | Simulation toggle auto-disabled; CU limit optional field visible |
+| Processed Timing Capture | Perform exit | Timing grid shows Build/Sign/Send; Proc appears earlier than Conf (if processed confirm succeeded) |
+| CU Limit Applied | Set CU limit (e.g. 900000) then exit | Transaction succeeds (inspect explorer CU consumption ~<= limit) |
+| Skip Simulation | Fast Mode on with simulateFirst previously true | No simulation logs section rendered |
+| Abort Fast Mode | Start fast exit then click Abort quickly | status=error, error=Aborted; no lingering confirming state |
+| Preference Persistence | Enable fastMode + set CU limit then reload | Both settings retained |
+| Fallback to Confirmed Only | Force processed confirm failure (rare) | Proc column may remain '-' but Conf still populates |
+
+Safety Note: Fast Mode uses skipPreflight + processed-first confirmation. For critical value withdrawals use normal mode with simulation.
+
+## 10. Security / Safety Observations
 | Aspect | Current | Notes |
 |--------|---------|-------|
 | Input Validation | Server enforces priorityMicros, slippageBps ranges | Extend if adding new args |
 | Abort Handling | Hook abort sets state error=Aborted | Could surface toast distinct style |
 | Program Allowlist | Not enforced | Optional enhancement |
 
-## 10. Recommended Fast-Follow (Optional)
+## 11. Recommended Fast-Follow (Optional)
 1. Bounded concurrency (2–3) for batch to reduce wall time.
 2. Output token preview pre-exit (quote / share calc).
 3. More granular error decoding using on-chain program error tables.

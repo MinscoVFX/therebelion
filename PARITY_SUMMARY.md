@@ -10,6 +10,9 @@ This document captures the current implementation status of the one‑click (and
 | Input validation (API) | ✅ | priorityMicros, slippageBps, lpPercent range enforced; missing args explicit 4xx errors. |
 | Retry & resilience | ✅ | Hook retries with jitter; adaptive priority escalation per attempt. |
 | Simulation preflight | ✅ | `simulateOnly=true` returns logs, err, units before user signs. |
+| Fast Mode (skip preflight + processed-first confirm) | ✅ | UI toggle: skips simulation, sends with `skipPreflight`, displays processed + confirmed timings. |
+| Timing instrumentation | ✅ | Hooks capture build/sign/send/processed/confirmed + total for perf diagnostics. |
+| Optional compute unit limit | ✅ | User can specify CU limit (50k–1.4M) injected via ComputeBudget ix. |
 | Pool discovery (LP) | ✅ | Parsed token account scan; aggregates LP amounts; sorts by size. |
 | Pool discovery (NFT runtime) | ✅ | Uses DAMM v2 runtime position NFT enumeration where available. |
 | Pool discovery (NFT metadata heuristic) | ✅ | Falls back to Metaplex metadata scan (singleton NFTs). |
@@ -38,8 +41,8 @@ The `/exit` page now provides two coordinated panels powered by the unified disc
 
 1. Pool Selector: Aggregates LP + runtime NFT + metadata heuristic sourced pools. Selecting `ALL` enables batch mode.
 2. Single Pool Exit Panel:
-	- Inputs: `priorityMicros`, `slippageBps`, `simulateFirst`.
-	- Displays: live status (`building|signing|sending|confirming`), current escalated priority, simulation logs (expandable), signature, errors, reset.
+	- Inputs: `priorityMicros`, `slippageBps`, `simulateFirst`, `fastMode`, optional `computeUnitLimit`.
+	- Displays: live status (`building|signing|sending|confirming`), escalated priority, simulation logs (if run), timing grid (Build/Sign/Send/Proc/Conf/Total), signature, errors, reset.
 3. Batch Exit Panel (ALL):
 	- Sequentially exits every discovered pool (DBC claim → optional DAMM; currently DBC only) honoring the same inputs.
 	- Shows per-pool row with status (`pending|success|error`) & explorer link on success.
@@ -51,15 +54,18 @@ The `/exit` page now provides two coordinated panels powered by the unified disc
 Input fields (selected subset):
  - `dbcPoolKeys`: `{ pool: string; feeVault: string }` (required)
  - `priorityMicros`: initial microLamports per compute unit (adaptive escalation applied internally)
- - `simulateFirst`: boolean; perform one preflight simulation and capture logs
+ - `simulateFirst`: boolean; perform one preflight simulation and capture logs (disabled automatically if `fastMode` true)
+ - `fastMode`: boolean; skip simulation + preflight; attempt processed-first confirmation, then confirmed
+ - `computeUnitLimit`: optional number; adds compute budget limit instruction
  - `slippageBps`: forwarded to API (affects DAMM v2 leg when enabled)
 
-State fields:
+ State fields:
  - `status`: lifecycle stage
  - `attempt`: current attempt index (1-based)
  - `currentPriorityMicros`: escalated fee value
  - `simulation`: `{ logs[], unitsConsumed }` if preflight run
  - `signature`: transaction signature after send
+ - `timings`: `{ started, built?, signed?, sent?, processed?, confirmed? }` for performance insight
  - `error`: friendly decoded error message
 
 ### Error Semantics
@@ -67,6 +73,13 @@ Common decoded messages include: `Blockhash expired`, `Insufficient SOL for fees
 
 ### Batch Behavior
 Each pool executes fully (retries + escalation + optional simulation) before moving to the next. Errors are recorded but do not halt remaining pools.
+
+### Fast Mode Notes
+Fast Mode is intended for time-sensitive exits where simulation is optional and rapid inclusion is prioritized:
+- Uses `skipPreflight` send option and processed-first confirmation path.
+- Still performs a full confirmed confirmation after (processed) to ensure finality.
+- Simulation logs are omitted; rely on prior simulations or conservative slippage for safety.
+- Recommended only when confident in pool parameters and slippage boundaries.
 
 ### Extensibility Notes
 To layer in DAMM v2 removal alongside the DBC claim for each pool within batch mode, pass `includeDammV2Exit` plus resolved `dammV2PoolKeys` from discovery, then surface additional program-specific status in the per-pool table. Current batch panel intentionally omits this until DAMM runtime stability is confirmed for all environments.

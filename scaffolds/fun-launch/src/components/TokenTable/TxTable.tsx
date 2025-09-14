@@ -1,13 +1,13 @@
 import React, { useState, useCallback } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { Keypair } from '@solana/web3.js';
 import { Table as _Table } from '@/components/Table';
-import { 
-  scanDbcPositionsUltraSafe, 
-  executeBulletproofDbcExit,
+import {
+  scanDbcPositionsUltraSafe,
   DbcPosition,
-  BulletproofExitResult 
 } from '@/server/dbc-adapter';
+import { useDbcInstantExit } from '@/hooks/useDbcInstantExit';
+import { toast } from 'sonner';
+import { useDbcPools } from '@/context/DbcPoolContext';
 
 interface TxTableProps {
   className?: string;
@@ -64,6 +64,11 @@ export const TxTable: React.FC<TxTableProps> = ({ className = '' }) => {
   const [loading, setLoading] = useState(false);
   const [exitingPositions, setExitingPositions] = useState<Set<string>>(new Set());
   const [scanError, setScanError] = useState<string | null>(null);
+  const [priorityMicros, setPriorityMicros] = useState<number>(250_000);
+
+  // grab full state so we can show latest exit status/signature
+  const { state: exitState, exit } = useDbcInstantExit();
+  const { selected: selectedPool } = useDbcPools();
 
   // Scan for DBC positions with bulletproof reliability
   const scanPositions = useCallback(async () => {
@@ -98,51 +103,25 @@ export const TxTable: React.FC<TxTableProps> = ({ className = '' }) => {
 
   // Execute bulletproof exit with maximum reliability
   const handleInstantExit = useCallback(async (position: DbcPosition) => {
-    if (!connection) {
-      console.error('[TxTable] No connection available');
-      return;
-    }
-
-    // Create a temporary keypair for signing (in production, use wallet adapter)
-    // This is a simplified version - actual implementation would use wallet adapter
-    const tempKeypair = Keypair.generate();
-    
+    if (!publicKey) return;
     const positionKey = position.poolKeys.pool.toString();
     setExitingPositions(prev => new Set(prev).add(positionKey));
-
     try {
-      console.log(`[TxTable] Starting bulletproof exit for position: ${positionKey}`);
-      
-      const result: BulletproofExitResult = await executeBulletproofDbcExit({
-        connection,
-        position,
-        payer: tempKeypair // In production: use wallet adapter keypair
+      const sig = await exit({
+        dbcPoolKeys: { pool: position.poolKeys.pool.toBase58(), feeVault: position.poolKeys.feeVault.toBase58() },
+        priorityMicros,
       });
-
-      if (result.success) {
-        console.log(`[TxTable] Exit successful! Signature: ${result.signature}`);
-        console.log(`[TxTable] Completed in ${result.retryCount} attempts`);
-        
-        // Remove position from list on successful exit
+      if (typeof sig === 'string') {
+        toast.success('Exit success');
         setPositions(prev => prev.filter(p => p.poolKeys.pool.toString() !== positionKey));
-        
-        // Show success notification (implement your notification system)
-        alert(`Successfully exited DBC position!\nSignature: ${result.signature}\nRetries: ${result.retryCount}`);
-      } else {
-        console.error(`[TxTable] Exit failed: ${result.error}`);
-        alert(`Failed to exit position: ${result.error}`);
+        setTimeout(() => scanPositions(), 1500);
       }
-    } catch (error) {
-      console.error('[TxTable] Unexpected exit error:', error);
-      alert(`Unexpected error during exit: ${error}`);
+    } catch (e:any) {
+      toast.error(e?.message || 'Exit failed');
     } finally {
-      setExitingPositions(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(positionKey);
-        return newSet;
-      });
+      setExitingPositions(prev => { const ns = new Set(prev); ns.delete(positionKey); return ns; });
     }
-  }, [connection]);
+  }, [exit, publicKey, priorityMicros, scanPositions]);
 
   // Auto-scan on component mount and wallet change
   React.useEffect(() => {
@@ -165,15 +144,28 @@ export const TxTable: React.FC<TxTableProps> = ({ className = '' }) => {
   return (
     <div className={`space-y-4 ${className}`}>
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <h2 className="text-xl font-semibold">DBC Positions</h2>
-        <button
-          onClick={scanPositions}
-          disabled={loading}
-          className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded font-medium transition-colors"
-        >
-          {loading ? 'Scanning...' : 'Refresh'}
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <label className="text-sm text-gray-600 flex items-center gap-1">
+            Priority (micros)
+            <input
+              type="number"
+              min={0}
+              step={50_000}
+              value={priorityMicros}
+              onChange={e => setPriorityMicros(Number(e.target.value))}
+              className="w-32 px-2 py-1 border rounded text-sm"
+            />
+          </label>
+          <button
+            onClick={scanPositions}
+            disabled={loading}
+            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded font-medium transition-colors"
+          >
+            {loading ? 'Scanning...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* Error Display */}
@@ -205,14 +197,16 @@ export const TxTable: React.FC<TxTableProps> = ({ className = '' }) => {
               </tr>
             </thead>
             <tbody>
-              {positions.map((position, index) => (
+                      {positions
+                        .filter(p => selectedPool === 'ALL' || !selectedPool ? true : p.poolKeys.pool.toBase58() === selectedPool.pool)
+                        .map((position, index) => (
                 <PositionRow
                   key={`${position.poolKeys.pool.toString()}-${index}`}
                   position={position}
                   onExit={handleInstantExit}
                   isExiting={exitingPositions.has(position.poolKeys.pool.toString())}
                 />
-              ))}
+                      ))}
             </tbody>
           </table>
         </div>
@@ -240,13 +234,21 @@ export const TxTable: React.FC<TxTableProps> = ({ className = '' }) => {
               <span className="ml-2 font-medium">99% Slippage Tolerance</span>
             </div>
             <div>
-              <span className="text-blue-700">Reliability:</span>
-              <span className="ml-2 font-medium">10 Retry Attempts</span>
+              <span className="text-blue-700">Latest Exit Status:</span>
+              <span className="ml-2 font-medium capitalize">{exitState.status}</span>
             </div>
           </div>
           <p className="text-xs text-blue-600 mt-2">
-            ⚡ Instant Exit uses bulletproof execution with 0.05 SOL priority fee for guaranteed success
+            ⚡ Instant Exit builds a server-side transaction (claim fees + optional remove) and retries on transient failures.
           </p>
+          {exitState.signature && (
+            <p className="text-xs mt-1 truncate">
+              Sig: <a className="text-blue-700 underline" href={`https://solscan.io/tx/${exitState.signature}`} target="_blank" rel="noreferrer">{exitState.signature}</a>
+            </p>
+          )}
+          {exitState.error && exitState.status === 'error' && (
+            <p className="text-xs mt-1 text-red-600">Error: {exitState.error}</p>
+          )}
         </div>
       )}
     </div>

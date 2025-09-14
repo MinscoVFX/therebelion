@@ -12,6 +12,8 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
 } from '@solana/spl-token';
 import { getDammV2Runtime, getDbcRuntime } from '@/server/studioRuntime';
+import type { DammV2RemoveLiquidityArgs, DammV2RemoveLiquidityBuilder } from '@/types/dammV2';
+import { assertOneLiquiditySpecifier } from '@/types/dammV2';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,9 +61,7 @@ async function buildDbcClaimTradingFeeIx(args: {
   }
 }
 
-function getDammRemoveBuilder(): (
-  params: any
-) => Promise<TransactionInstruction | TransactionInstruction[]> {
+function getDammRemoveBuilder(): DammV2RemoveLiquidityBuilder {
   const mod = getDammV2Runtime();
   if (!mod) throw new Error('DAMM v2 runtime not found (studio dist missing).');
 
@@ -113,6 +113,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' });
 
+    const raw = (req.body ?? {}) as any;
     const {
       ownerPubkey,
       dbcPoolKeys,
@@ -120,10 +121,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       dammV2PoolKeys,
       priorityMicros = 250_000,
       positionPubkey,
-  lpAmount: _lpAmount,
+      lpAmount: _lpAmount,
       lpPercent,
       liquidityDelta,
-    } = (req.body ?? {}) as {
+      slippageBps = 50,
+      simulateOnly = false,
+      computeUnitLimit,
+    } = raw as {
       ownerPubkey?: string;
       dbcPoolKeys?: { pool: string; feeVault: string };
       includeDammV2Exit?: boolean;
@@ -142,10 +146,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       lpAmount?: string | number;
       lpPercent?: number;
       liquidityDelta?: string | number;
+      slippageBps?: number;
+      simulateOnly?: boolean;
+      computeUnitLimit?: number;
     };
 
     if (!ownerPubkey) return res.status(400).json({ error: 'Missing ownerPubkey' });
     if (!dbcPoolKeys) return res.status(400).json({ error: 'Missing dbcPoolKeys' });
+    if (typeof priorityMicros !== 'number' || priorityMicros < 0 || priorityMicros > 5_000_000) {
+      return res.status(400).json({ error: 'priorityMicros out of range (0 - 5,000,000)' });
+    }
+    if (typeof slippageBps !== 'number' || slippageBps < 1 || slippageBps > 10_000) {
+      return res.status(400).json({ error: 'slippageBps out of range (1 - 10_000)' });
+    }
+    if (lpPercent !== undefined && (lpPercent <= 0 || lpPercent > 100)) {
+      return res.status(400).json({ error: 'lpPercent must be (0,100]' });
+    }
+    if (computeUnitLimit !== undefined && (typeof computeUnitLimit !== 'number' || computeUnitLimit < 50_000 || computeUnitLimit > 1_400_000)) {
+      return res.status(400).json({ error: 'computeUnitLimit out of range (50k - 1.4M)' });
+    }
 
     const owner = new PublicKey(ownerPubkey);
     const parsedDbc = parseDbcPoolKeys(dbcPoolKeys);
@@ -154,6 +173,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ixs.push(
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Number(priorityMicros) || 0 })
     );
+    if (computeUnitLimit) {
+      ixs.push(ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnitLimit }));
+    }
 
     // 1) DBC fees
     ixs.push(
@@ -195,7 +217,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'No LP tokens found for the provided DAMM v2 pool.' });
       }
 
-      const removeArgs: any = {
+      const removeArgs: DammV2RemoveLiquidityArgs = {
         programId: parsedDamm.programId,
         pool: parsedDamm.pool,
         authorityPda: parsedDamm.authorityPda,
@@ -206,20 +228,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         userLpAccount: userLpAta,
         userAToken: getAssociatedTokenAddressSync(parsedDamm.tokenAMint, owner, false),
         userBToken: getAssociatedTokenAddressSync(parsedDamm.tokenBMint, owner, false),
-  lpAmount: _lpAmount !== undefined ? BigInt(_lpAmount as any) : undefined,
+        lpAmount: _lpAmount !== undefined ? BigInt(_lpAmount as any) : undefined,
         percent: lpPercent,
         liquidityDelta: liquidityDelta !== undefined ? BigInt(liquidityDelta as any) : undefined,
         positionPubkey: positionPubkey ? new PublicKey(positionPubkey) : undefined,
+        slippageBps,
       };
+      // If none specified, default to full balance (lpAmount = on-chain full) using fetched lpAmount.
       if (!removeArgs.lpAmount && !removeArgs.percent && !removeArgs.liquidityDelta) {
-        removeArgs.lpAmount = _lpAmount; // default (full balance value already fetched earlier)
+        removeArgs.lpAmount = lpAmount; // entire balance
       }
+      // Enforce only one specifier
+      assertOneLiquiditySpecifier(removeArgs);
       const dammIxs = await removeBuilder(removeArgs);
 
       ixs.push(...(Array.isArray(dammIxs) ? dammIxs : [dammIxs]));
     }
 
-    const { blockhash } = await connection.getLatestBlockhash('finalized');
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
     const msg = new TransactionMessage({
       payerKey: owner,
       recentBlockhash: blockhash,
@@ -228,8 +254,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const vtx = new VersionedTransaction(msg);
     const serialized = Buffer.from(vtx.serialize()).toString('base64');
+    if (simulateOnly) {
+      try {
+        const sim = await connection.simulateTransaction(vtx, { sigVerify: false });
+        return res.status(200).json({
+          simulated: true,
+          logs: sim.value.logs || [],
+          err: sim.value.err || null,
+          unitsConsumed: (sim.value.unitsConsumed as number) || null,
+          tx: serialized,
+          blockhash,
+          lastValidBlockHeight,
+        });
+      } catch (e: any) {
+        return res.status(500).json({ error: 'Simulation failed: ' + (e?.message || String(e)) });
+      }
+    }
 
-    return res.status(200).json({ tx: serialized, blockhash });
+    return res.status(200).json({ tx: serialized, blockhash, lastValidBlockHeight });
   } catch (e: any) {
     console.error('[api/dbc-one-click-exit] error:', e);
     return res.status(500).json({ error: e?.message ?? 'Internal error' });

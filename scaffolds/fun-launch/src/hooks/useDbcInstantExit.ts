@@ -22,6 +22,8 @@ export interface UseDbcInstantExitOptions {
   liquidityDelta?: string | number;
   simulateFirst?: boolean; // run a simulation before sending real tx
   slippageBps?: number; // forwarded to API (1-10_000)
+  fastMode?: boolean; // skips simulation, skipPreflight send, processed-first confirm
+  computeUnitLimit?: number; // optional compute unit limit to request in API
 }
 
 export interface ExitExecutionState {
@@ -31,16 +33,24 @@ export interface ExitExecutionState {
   attempt: number;
   currentPriorityMicros?: number;
   simulation?: { logs: string[]; unitsConsumed?: number | null } | null;
+  timings?: {
+    started: number;
+    built?: number;
+    signed?: number;
+    sent?: number;
+    processed?: number;
+    confirmed?: number;
+  };
 }
 
 export function useDbcInstantExit() {
   const { connection } = useConnection();
   const { publicKey, signTransaction, sendTransaction } = useWallet();
-  const [state, setState] = useState<ExitExecutionState>({ status: 'idle', attempt: 0, simulation: null });
+  const [state, setState] = useState<ExitExecutionState>({ status: 'idle', attempt: 0, simulation: null, timings: undefined });
   const abortRef = useRef(false);
 
   const reset = useCallback(() => {
-  setState({ status: 'idle', attempt: 0, simulation: null, currentPriorityMicros: undefined });
+  setState({ status: 'idle', attempt: 0, simulation: null, currentPriorityMicros: undefined, timings: undefined });
     abortRef.current = false;
   }, []);
 
@@ -55,6 +65,8 @@ export function useDbcInstantExit() {
       retryDelayMs = 800,
       simulateFirst = false,
       slippageBps,
+      fastMode = false,
+      computeUnitLimit,
       ...body
     } = opts;
 
@@ -62,17 +74,19 @@ export function useDbcInstantExit() {
       ownerPubkey: publicKey.toBase58(),
       includeDammV2Exit,
       ...(slippageBps !== undefined ? { slippageBps } : {}),
+      ...(computeUnitLimit ? { computeUnitLimit } : {}),
       ...body,
     };
 
     let currentPriority = priorityMicros;
     let simulated = false;
+    const started = performance.now();
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       if (abortRef.current) return;
-      setState(s => ({ ...s, status: 'building', attempt, currentPriorityMicros: currentPriority }));
+      setState(s => ({ ...s, status: 'building', attempt, currentPriorityMicros: currentPriority, timings: { ...(s.timings||{}), started } }));
       try {
         // Optional preflight simulation (only on first attempt)
-        if (simulateFirst && !simulated) {
+        if (!fastMode && simulateFirst && !simulated) {
           const simPayload = { ...basePayload, priorityMicros: currentPriority, simulateOnly: true };
           const rs = await fetch('/api/dbc-one-click-exit', {
             method: 'POST',
@@ -99,9 +113,9 @@ export function useDbcInstantExit() {
         }
   const { tx: base64Tx, blockhash, lastValidBlockHeight } = await r.json();
         if (!base64Tx) throw new Error('API returned no tx');
-
+        const builtAt = performance.now();
         if (abortRef.current) return;
-  setState(s => ({ ...s, status: 'signing', currentPriorityMicros: currentPriority }));
+  setState(s => ({ ...s, status: 'signing', currentPriorityMicros: currentPriority, timings: { ...(s.timings||{}), started, built: builtAt } }));
         const raw = Buffer.from(base64Tx, 'base64');
         let vtx: VersionedTransaction | Transaction;
         try {
@@ -113,18 +127,29 @@ export function useDbcInstantExit() {
 
         if (!signTransaction) throw new Error('Wallet cannot sign transactions directly');
         vtx = await signTransaction(vtx as any);
-
+        const signedAt = performance.now();
         if (abortRef.current) return;
-  setState(s => ({ ...s, status: 'sending', currentPriorityMicros: currentPriority }));
-    const sig = await sendTransaction(vtx as any, connection, { skipPreflight: false, maxRetries: 3 });
-
+  setState(s => ({ ...s, status: 'sending', currentPriorityMicros: currentPriority, timings: { ...(s.timings||{}), started, built: builtAt, signed: signedAt } }));
+    const sig = await sendTransaction(vtx as any, connection, { skipPreflight: fastMode, maxRetries: fastMode ? 0 : 3 });
+        const sentAt = performance.now();
         if (abortRef.current) return;
-  setState(s => ({ ...s, status: 'confirming', signature: sig, currentPriorityMicros: currentPriority }));
-  // refresh latest blockhash for confirmation context (prevent stale) while maintaining original blockhash field
+  setState(s => ({ ...s, status: 'confirming', signature: sig, currentPriorityMicros: currentPriority, timings: { ...(s.timings||{}), started, built: builtAt, signed: signedAt, sent: sentAt } }));
+    // Fast mode: processed-first then confirmed.
+    let processedAt: number | undefined;
+    try {
+      if (fastMode) {
+        const proc = await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'processed');
+        if (proc.value.err) throw new Error('Transaction error (processed): ' + JSON.stringify(proc.value.err));
+        processedAt = performance.now();
+  setState(s => ({ ...s, timings: { ...(s.timings||{}), started: s.timings?.started || started, processed: processedAt } }));
+      }
+    } catch (e) {
+      // processed failure will fall through to confirmed attempt
+    }
     const conf = await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
         if (conf.value.err) throw new Error('Transaction error: ' + JSON.stringify(conf.value.err));
-
-        setState(s => ({ ...s, status: 'success', signature: sig, currentPriorityMicros: currentPriority }));
+        const confirmedAt = performance.now();
+        setState(s => ({ ...s, status: 'success', signature: sig, currentPriorityMicros: currentPriority, timings: { ...(s.timings||{}), started, built: builtAt, signed: signedAt, sent: sentAt, processed: processedAt, confirmed: confirmedAt } }));
         notify('success', `Exit success: ${sig}`);
         return sig; // success
       } catch (e: any) {

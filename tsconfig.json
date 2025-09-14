@@ -6,13 +6,22 @@
       "@meteora-invent/config/*": ["./packages/config/*"],
       "@meteora-invent/studio": ["./studio"],
       "@meteora-invent/scaffold/*": ["./scaffolds/*"]
-    }
+    },
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "NodeNext",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowJs": false,
+    "noEmit": true,
+    "types": []
   },
-  "references": [
-    { "path": "./packages/config" },
-    { "path": "./packages/shared/utils" },
-    { "path": "./studio" },
-    { "path": "./scaffolds/fun-launch" }
-  ],
+  "files": [],
+  "references": [],
   "exclude": ["node_modules", "dist", "build", ".next", ".turbo"]
 }

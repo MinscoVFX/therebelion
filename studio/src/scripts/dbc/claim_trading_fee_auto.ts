@@ -6,16 +6,15 @@ import { DEFAULT_COMMITMENT_LEVEL } from '../../utils/constants';
 import { DbcConfig } from '../../utils/types';
 import { claimTradingFee } from '../../lib/dbc';
 
-function tryLoadSdk() {
+async function tryLoadSdk() {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const sdk = require('@meteora-ag/dynamic-bonding-curve-sdk');
-    const idl: Idl | undefined = sdk.IDL || sdk.DBC_IDL || sdk.DbcIDL || sdk.idl || undefined;
+    const sdk = await import('@meteora-ag/dynamic-bonding-curve-sdk');
+    const idl: Idl | undefined = (sdk as any).IDL || (sdk as any).DBC_IDL || (sdk as any).DbcIDL || (sdk as any).idl || undefined;
     const pidLike =
-      sdk.PROGRAM_ID ||
-      sdk.DBC_PROGRAM_ID ||
-      sdk.DYNAMIC_BONDING_CURVE_PROGRAM_ID ||
-      sdk.programId ||
+      (sdk as any).PROGRAM_ID ||
+      (sdk as any).DBC_PROGRAM_ID ||
+      (sdk as any).DYNAMIC_BONDING_CURVE_PROGRAM_ID ||
+      (sdk as any).programId ||
       undefined;
     const programId = pidLike ? new PublicKey(pidLike.toString()) : undefined;
     return { idl, programId };
@@ -40,7 +39,7 @@ function idlLooksUsable(idl: Idl | null | undefined): idl is Idl {
 }
 
 async function loadProgram(connection: Connection, wallet: AnchorWallet): Promise<Program> {
-  const { idl: sdkIdl, programId: sdkPid } = tryLoadSdk();
+  const { idl: sdkIdl, programId: sdkPid } = await tryLoadSdk();
   const programId = requireProgramId(sdkPid);
 
   const provider = new AnchorProvider(connection, wallet, { commitment: DEFAULT_COMMITMENT_LEVEL });
