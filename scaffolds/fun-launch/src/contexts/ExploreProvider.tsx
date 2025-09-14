@@ -25,9 +25,13 @@ type ExploreContextType = {
 
 const ExploreContext = createContext<ExploreContextType>({
   mobileTab: DEFAULT_TAB,
-  setMobileTab: () => {},
+  setMobileTab: () => {
+    // Default empty handler
+  },
   filters: undefined,
-  setFilters: () => {},
+  setFilters: () => {
+    // Default empty handler
+  },
   request: {
     [ExploreTab.NEW]: {
       timeframe: EXPLORE_FIXED_TIMEFRAME,
@@ -44,7 +48,9 @@ const ExploreContext = createContext<ExploreContextType>({
     [ExploreTab.GRADUATING]: false,
     [ExploreTab.GRADUATED]: false,
   },
-  setTabPaused: () => {},
+  setTabPaused: () => {
+    // Default empty handler
+  },
 });
 
 const ExploreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

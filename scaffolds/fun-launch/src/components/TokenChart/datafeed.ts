@@ -39,7 +39,9 @@ export function createDataFeed(
       );
     },
 
-    searchSymbols: async () => {},
+    searchSymbols: async () => {
+      // No symbol search functionality needed for this implementation
+    },
 
     // TV calls this function on init, and expects ISymbolInfo
     resolveSymbol: async (_, onSymbolResolvedCallback) => {
@@ -155,9 +157,9 @@ export function createDataFeed(
 
     subscribeBars: (
       _,
-      resolution,
+      _resolution,
       onRealtimeCallback,
-      subscriberUID,
+      _subscriberUID,
       onResetCacheNeededCallback
     ) => {
       const baseAssetId = baseAssetRef.current?.id;
@@ -269,6 +271,8 @@ export function createDataFeed(
       await Promise.allSettled(tasks);
       isMarksLoadingRef.current = false;
     },
-    unsubscribeBars: () => {},
+    unsubscribeBars: () => {
+      // Unsubscribe functionality handled by parent component
+    },
   };
 }

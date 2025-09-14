@@ -235,7 +235,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             return bad(res, 502, 'Preflight failed', { logs, mode: 'single' });
           }
         }
-      } catch {}
+      } catch (error) {
+        // Ignore preflight simulation errors and continue to fallback
+        console.warn('Preflight simulation failed:', error);
+      }
       // Fallback: simulate to dump logs (legacy overload — no config arg)
       try {
         const sim = await connection.simulateTransaction(tx);

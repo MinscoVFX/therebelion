@@ -29,9 +29,15 @@ type HoverPopoverContextType = {
 
 const HoverPopoverContext = createContext<HoverPopoverContextType>({
   open: false,
-  handleOpen: () => {},
-  handleMouseLeave: () => {},
-  handleMouseEnter: () => {},
+  handleOpen: () => {
+    // Default empty handler
+  },
+  handleMouseLeave: () => {
+    // Default empty handler
+  },
+  handleMouseEnter: () => {
+    // Default empty handler
+  },
 });
 
 type HoverPopoverProps = HoverPopoverTriggerProps &

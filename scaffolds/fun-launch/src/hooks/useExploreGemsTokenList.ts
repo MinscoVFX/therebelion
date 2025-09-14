@@ -1,5 +1,5 @@
-import { ApeQueries, GemsTokenListQueryArgs, QueryData } from '@/components/Explore/queries';
-import { TokenListTimeframe } from '@/components/Explore/types';
+import { ApeQueries, GemsTokenListQueryArgs as _GemsTokenListQueryArgs, QueryData } from '@/components/Explore/queries';
+import { TokenListTimeframe as _TokenListTimeframe } from '@/components/Explore/types';
 import { useExplore } from '@/contexts/ExploreProvider';
 import { useQuery } from '@tanstack/react-query';
 

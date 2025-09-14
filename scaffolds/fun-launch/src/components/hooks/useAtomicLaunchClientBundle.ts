@@ -163,9 +163,12 @@ export function useAtomicLaunchClientBundle() {
     }
 
     // ---------- 3) Sign both ----------
+    if (!buyTxV0) {
+      throw new Error('Failed to build buy transaction');
+    }
     const [signedCreate, signedBuy] = await Promise.all([
       signTransaction(createTx),
-      signTransaction(buyTxV0!),
+      signTransaction(buyTxV0),
     ]);
 
     // ---------- 4) Send bundle ----------

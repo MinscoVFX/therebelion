@@ -111,9 +111,9 @@ const TableCellForwardRef = React.forwardRef<HTMLTableCellElement, React.TdHTMLA
     />
   )
 );
-TableCellForwardRef.propTypes = {
-  className: PropTypes.string,
-};
+
+TableCellForwardRef.displayName = 'TableCell';
+
 const TableCell = React.memo(TableCellForwardRef);
 TableCell.displayName = 'TableCell';
 

@@ -53,11 +53,6 @@ export const ExploreColumn: React.FC<ExploreColumnProps> = ({ tab }) => {
     </div>
   );
 };
-ExploreColumn.propTypes = {
-};
-  ExploreColumn.propTypes = {
-    tab: require('prop-types').any.isRequired,
-  };
 
 type TokenCardListContainerProps = {
   tab: ExploreTab;

@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { VariantProps, cva } from 'class-variance-authority';
+import { cva, type VariantProps } from 'class-variance-authority';
 import PropTypes from 'prop-types';
 
 const skeletonVariants = cva('h-12 w-full rounded-lg bg-[var(--tw-gradient-from)]', {

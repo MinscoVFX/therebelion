@@ -5,6 +5,11 @@ module.exports = {
     ecmaVersion: 'latest',
     sourceType: 'module',
   },
+  env: {
+    node: true,
+    browser: true,
+    es2022: true,
+  },
   plugins: ['@typescript-eslint', 'react', 'react-hooks', 'import', '@next/next'],
   extends: [
     'eslint:recommended',
@@ -33,5 +38,7 @@ module.exports = {
     '@typescript-eslint/no-explicit-any': 'off',
     '@typescript-eslint/no-unused-vars': ['warn', { args: 'none', varsIgnorePattern: '^_' }],
     'react/react-in-jsx-scope': 'off',
+    // Disable prop-types since we use TypeScript
+    'react/prop-types': 'off',
   },
 };

@@ -19,7 +19,7 @@ import { isHoverableDevice } from '@/lib/device';
 import { SkeletonTableRows } from './columns';
 
 declare module '@tanstack/react-table' {
-  interface TableMeta<TData extends RowData> {
+  interface TableMeta<_TData extends RowData> {
     dateMode: DateMode;
     setDateMode: (mode: DateMode) => void;
     walletAddress: string | undefined;
@@ -29,18 +29,20 @@ declare module '@tanstack/react-table' {
 
 const ROW_HEIGHT = 36;
 
-type TxTableProps<TData, TValue> = {
-  symbol?: string | undefined;
-  columns: ColumnDef<TData, TValue>[];
-  data: TData[];
-  hasNextPage: boolean | undefined;
+type TxTableProps<_TData, TValue> = {
+  table: Table<Tx>;
+  columns: ColumnDef<_TData, TValue>[];
+  data: _TData[];
+  symbol: string;
+  hasNextPage: boolean;
   isFetching: boolean;
   fetchNextPage: () => void;
   paused: boolean;
   setPaused: (paused: boolean) => void;
+  walletAddress: string | undefined;
 };
 
-export function TxTable<TData, TValue>({
+export function TxTable<_TData, TValue>({
   symbol,
   columns,
   data,
@@ -49,7 +51,7 @@ export function TxTable<TData, TValue>({
   fetchNextPage,
   paused,
   setPaused,
-}: TxTableProps<TData, TValue>) {
+}: TxTableProps<_TData, TValue>) {
   // const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [dateMode, setDateMode] = useAtom(dateModeAtom);

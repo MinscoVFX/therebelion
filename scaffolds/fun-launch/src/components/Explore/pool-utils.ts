@@ -40,12 +40,13 @@ export function getSorterFieldValue(
       return (stats.numBuys ?? 0) - (stats.numSells ?? 0);
     case 'traders':
       return stats?.numTraders;
-    case 'numNetBuyers':
+    case 'numNetBuyers': {
       if (stats?.numNetBuyers === undefined || stats?.numTraders === undefined) {
         return undefined;
       }
       const numNetSellers = stats.numTraders - stats.numNetBuyers;
       return stats.numNetBuyers - numNetSellers;
+    }
     case 'usdPrice':
       return pool.baseAsset.usdPrice;
     case 'mcap':
@@ -54,8 +55,6 @@ export function getSorterFieldValue(
       return pool.baseAsset.fdv;
     case 'holderCount':
       return pool.baseAsset.holderCount;
-    case 'organicScore':
-      return pool.baseAsset.organicScore;
     case 'organicScore':
       return pool.baseAsset.organicScore;
     case 'numOrganicBuyers':
