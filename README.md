@@ -321,3 +321,31 @@ pnpm --filter @meteora-invent/scaffold/fun-launch build
 ## 📄 License
 
 ISC
+
+## 🔁 DBC One-Click Exit Workflow (/exit)
+
+The scaffold now ships with an advanced DBC (Dynamic Bonding Curve) one‑click exit page at `/exit` featuring:
+
+- Unified pool discovery (LP token accounts + runtime NFT + metadata heuristic)
+- Single pool exit with:
+    - Priority fee (microLamports per CU) & adaptive escalation on retries
+    - Optional preflight simulation (logs + CU usage)
+    - Slippage control (bps, forwarded to combined DAMM leg when enabled later)
+    - Structured lifecycle states (building → signing → sending → confirming → success)
+- Batch exit (ALL) executing each discovered pool sequentially with per‑pool status & explorer link
+- Simulation log viewer and signature display
+
+### Quick Use
+1. Connect wallet, navigate to `/exit`.
+2. Select a pool or choose ALL.
+3. (Optional) Enable Simulate First to capture logs prior to signing.
+4. Adjust priority (start modest; hook escalates automatically) & slippage.
+5. Execute exit. On success a signature link is provided; on failure a friendly decoded error message is shown (blockhash expired, slippage, insufficient funds, etc.).
+
+### Hook Reference
+`useDbcInstantExit().exit({ dbcPoolKeys, priorityMicros, simulateFirst, slippageBps })` returns a promise resolving to the signature on success. State includes `status`, `attempt`, `currentPriorityMicros`, `simulation`, `signature`, and `error`.
+
+### Batch Mode Notes
+Batch runs are sequential for deterministic retries and minimal RPC spike; each pool gets its own adaptive escalation cycle. Failures are recorded but don’t halt remaining pools.
+
+See `PARITY_SUMMARY.md` for deeper parity and architecture notes.
