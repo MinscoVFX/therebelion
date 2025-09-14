@@ -158,7 +158,7 @@ const TokenCardListContainer: React.FC<TokenCardListContainerProps> = memo(
 
     // Handle scroll pausing on mobile
     useEffect(() => {
-  if (!isMobile) return undefined;
+      if (!isMobile) return undefined;
 
       // Initial check
       handleScroll();

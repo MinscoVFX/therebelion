@@ -1,4 +1,3 @@
-
 import dynamic from 'next/dynamic';
 import { useEffect } from 'react';
 import { TokenPageMsgHandler } from '@/components/Token/TokenPageMsgHandler';

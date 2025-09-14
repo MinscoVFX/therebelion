@@ -387,8 +387,8 @@ export const TokenChart: React.FC<ChartProps> = memo(({ renderingId, style, opt 
           widgetRef.current = null;
         };
       } catch (error) {
-  console.error('Failed to initialize TradingView widget:', error);
-  return undefined;
+        console.error('Failed to initialize TradingView widget:', error);
+        return undefined;
       }
     };
     initializeWidget();

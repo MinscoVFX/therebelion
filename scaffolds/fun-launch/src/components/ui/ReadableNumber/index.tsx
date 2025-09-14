@@ -101,7 +101,7 @@ const AnimatedReadableNumber: React.FC<Omit<ReadableNumberProps, 'animated'>> = 
   const prevNum = useRef(num);
 
   useEffect(() => {
-  if (prevNum.current === num) return undefined;
+    if (prevNum.current === num) return undefined;
     const prev = prevNum.current;
     prevNum.current = num;
 
@@ -110,7 +110,7 @@ const AnimatedReadableNumber: React.FC<Omit<ReadableNumberProps, 'animated'>> = 
       setDirection(netChange > 0 ? 'up' : 'down');
     }
     if (prev === undefined) {
-  return undefined;
+      return undefined;
     }
 
     // Flash only when there was a prev number

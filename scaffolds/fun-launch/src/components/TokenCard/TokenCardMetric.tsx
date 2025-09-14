@@ -3,7 +3,7 @@ import { HoverPopover } from '../ui/HoverPopover';
 import { Pool } from '../Explore/types';
 import { cn } from '@/lib/utils';
 import { isAuditTopHoldersPass } from '../Explore/pool-utils';
-import { getNumberColorCn , ReadableNumber } from '../ui/ReadableNumber';
+import { getNumberColorCn, ReadableNumber } from '../ui/ReadableNumber';
 import { formatReadablePercentChange } from '@/lib/format/number';
 
 type MetricProps = {

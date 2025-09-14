@@ -1,4 +1,4 @@
-import { ExploreTab , TokenListFilters , TokenListTimeframe } from '@/components/Explore/types';
+import { ExploreTab, TokenListFilters, TokenListTimeframe } from '@/components/Explore/types';
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 import { useLocalStorage } from 'react-use';

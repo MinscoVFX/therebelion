@@ -70,10 +70,7 @@ export const formatNumber = {
 };
 
 // To find out the precision we should use
-export const getPrecisionTick = (
-  value: number,
-  maxSuffix = 6
-): [number, string, string] => {
+export const getPrecisionTick = (value: number, maxSuffix = 6): [number, string, string] => {
   if (value === 0) return [0, '0', '0'];
 
   const firstSD = Decimal.ceil(new Decimal(-1).mul(Decimal.log10(Decimal.abs(value)))).toNumber();

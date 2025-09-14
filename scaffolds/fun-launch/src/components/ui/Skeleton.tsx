@@ -30,8 +30,8 @@ Skeleton.propTypes = {
   color: PropTypes.string,
   className: PropTypes.string,
 };
-  Skeleton.propTypes = {
-    variant: PropTypes.string,
-    color: PropTypes.string,
-    className: PropTypes.string,
-  };
+Skeleton.propTypes = {
+  variant: PropTypes.string,
+  color: PropTypes.string,
+  className: PropTypes.string,
+};

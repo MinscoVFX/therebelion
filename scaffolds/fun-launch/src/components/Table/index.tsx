@@ -101,16 +101,17 @@ TableHead.propTypes = {
   className: PropTypes.string,
 };
 
-const TableCellForwardRef = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<HTMLTableCellElement>>(
-  ({ className, ...props }, ref) => (
-    <td
-      ref={ref}
-      // NOTE: table-cell required for `colSpan` attribute to work
-      className={cn('table-cell whitespace-nowrap px-1 align-middle sm:px-2', className)}
-      {...props}
-    />
-  )
-);
+const TableCellForwardRef = React.forwardRef<
+  HTMLTableCellElement,
+  React.TdHTMLAttributes<HTMLTableCellElement>
+>(({ className, ...props }, ref) => (
+  <td
+    ref={ref}
+    // NOTE: table-cell required for `colSpan` attribute to work
+    className={cn('table-cell whitespace-nowrap px-1 align-middle sm:px-2', className)}
+    {...props}
+  />
+));
 
 TableCellForwardRef.displayName = 'TableCell';
 
