@@ -2,18 +2,16 @@
  * Resolves a DAMM V2 pool address from token mints and config.
  * Returns the pool address if found, otherwise throws.
  */
-export async function resolveDammV2Pool({
-  connection,
-  tokenAMint,
-  tokenBMint,
-  _config,
-}: {
+/**
+ * Resolves a DAMM V2 pool address from token mints.
+ * Returns the pool address if found, otherwise throws.
+ * Matches Meteora doc export pattern.
+ */
+export async function resolvePool({ connection, tokenAMint, tokenBMint }: {
   connection: Connection;
   tokenAMint: PublicKey;
   tokenBMint: PublicKey;
-  _config: any;
 }): Promise<PublicKey> {
-  // Example: Use cp-amm-sdk to fetch all pools and match mints
   const cp = new CpAmm(connection);
   const pools = await cp.getAllPools();
   const found = pools.find(
