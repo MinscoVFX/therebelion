@@ -1,24 +1,5 @@
-/**
- * Try to load the shared workspace config by package name first.
- * When running in CI or unusual resolution contexts, fall back to a relative path.
- */
-const path = require('path');
-
-let baseConfig;
-try {
-  baseConfig = require.resolve('@meteora-invent/config-eslint');
-} catch {
-  baseConfig = path.join(__dirname, 'packages', 'config', 'eslint');
-const path = require('path');
-
-let base;
-try {
-  base = require.resolve('@meteora-invent/config-eslint');
-} catch (e) {
-  base = path.join(__dirname, 'packages', 'config', 'eslint');
-}
-
+/** @type {import('eslint').Linter.Config} */
 module.exports = {
   root: true,
-  extends: [base],
+  extends: ['@meteora-invent/config-eslint'],
 };

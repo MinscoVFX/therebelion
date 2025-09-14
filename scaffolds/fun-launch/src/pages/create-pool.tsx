@@ -194,7 +194,7 @@ export default function CreatePool() {
 
           // (Optional) add a tiny Jito tip to the swap tx
           try {
-            const tips = await getJitoTipAccounts().catch(() => []);
+            const tips = await getJitoTipAccounts().catch((): string[] => []);
             const firstTip: string | undefined = Array.isArray(tips)
               ? tips.find((t) => typeof t === 'string' && t.length > 0)
               : undefined;

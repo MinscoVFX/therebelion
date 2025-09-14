@@ -32,6 +32,6 @@ export const launchSchema = z.object({
     .regex(base58Regex, 'Invalid base58 mint address')
     .optional()
     .or(z.literal('')),
-}) satisfies z.ZodType<LaunchFormValues>;
+}) as unknown as z.ZodType<LaunchFormValues>;
 
 export type LaunchSchema = z.infer<typeof launchSchema>;

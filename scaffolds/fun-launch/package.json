@@ -66,7 +66,7 @@
     "dev": "next dev --turbopack",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "next lint",
+    "lint": "eslint . --ext .ts,.tsx,.js --max-warnings=1000",
     "start": "next start"
   }
 }
