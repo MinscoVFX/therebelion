@@ -12,9 +12,7 @@ import {
   getAssociatedTokenAddressSync,
   createAssociatedTokenAccountIdempotentInstruction,
 } from '@solana/spl-token';
-import path from 'path';
-import fs from 'fs';
-import { createRequire } from 'module';
+import { getDammV2Runtime } from '@/server/studioRuntime';
 
 // Keep on Node runtime & avoid static optimization
 export const dynamic = 'force-dynamic';
@@ -22,24 +20,7 @@ export const dynamic = 'force-dynamic';
 const RPC_URL = process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com';
 const connection = new Connection(RPC_URL, 'confirmed');
 
-const requireNode = createRequire(import.meta.url);
-
-/** Resolve a file inside @meteora-invent/studio/dist reliably in serverless. */
-function resolveStudioDist(subpath: string): string | null {
-  try {
-    const pkg = requireNode.resolve('@meteora-invent/studio/package.json');
-    const base = path.dirname(pkg);
-    const candidate = path.join(base, 'dist', subpath);
-    return fs.existsSync(candidate) ? candidate : null;
-  } catch {
-    return null;
-  }
-}
-function requireStudioModule(subpath: string): any | null {
-  const target = resolveStudioDist(subpath);
-  if (!target) return null;
-  return requireNode(target);
-}
+// Runtime modules now resolved via centralized helper to avoid dynamic expression warnings.
 
 function pickPoolResolver(mod: any): ((args: any) => Promise<any>) | null {
   return (
@@ -78,7 +59,7 @@ async function findBestDammLpAndPool(
   conn: Connection,
   owner: PublicKey
 ): Promise<{ lpMint: PublicKey; lpAmount: bigint; poolKeys: any } | null> {
-  const damm = requireStudioModule('lib/damm_v2/index.js');
+  const damm = getDammV2Runtime();
   if (!damm) throw new Error('Studio DAMM v2 runtime not found (studio dist missing).');
   const resolvePool = pickPoolResolver(damm);
   if (!resolvePool) throw new Error('Missing pool resolver export in Studio DAMM v2 runtime.');
@@ -138,7 +119,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const best = await findBestDammLpAndPool(connection, owner);
     if (!best) return res.status(404).json({ error: 'No DAMM v2 LP found for this wallet.' });
 
-    const damm = requireStudioModule('lib/damm_v2/index.js');
+  const damm = getDammV2Runtime();
     if (!damm) throw new Error('Studio DAMM v2 runtime not found (studio dist missing).');
     const removeBuilder = pickRemoveBuilder(damm);
     if (!removeBuilder)

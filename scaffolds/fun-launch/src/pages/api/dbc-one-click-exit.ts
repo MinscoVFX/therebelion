@@ -11,9 +11,7 @@ import {
   getAssociatedTokenAddressSync,
   createAssociatedTokenAccountIdempotentInstruction,
 } from '@solana/spl-token';
-import path from 'path';
-import fs from 'fs';
-import { createRequire } from 'module';
+import { getDammV2Runtime, getDbcRuntime } from '@/server/studioRuntime';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,30 +30,14 @@ type DammV2PoolKeys = {
   authorityPda: PublicKey;
 };
 
-const requireNode = createRequire(import.meta.url);
-
-function resolveStudioDist(subpath: string): string | null {
-  try {
-    const pkg = requireNode.resolve('@meteora-invent/studio/package.json');
-    const base = path.dirname(pkg);
-    const candidate = path.join(base, 'dist', subpath);
-    return fs.existsSync(candidate) ? candidate : null;
-  } catch {
-    return null;
-  }
-}
-function requireStudioModule(subpath: string): any | null {
-  const target = resolveStudioDist(subpath);
-  if (!target) return null;
-  return requireNode(target);
-}
+// Studio runtime now accessed through centralized helper.
 
 async function buildDbcClaimTradingFeeIx(args: {
   connection: Connection;
   poolKeys: DbcPoolKeys;
   feeClaimer: PublicKey;
 }): Promise<TransactionInstruction> {
-  const mod = requireStudioModule('lib/dbc/index.js');
+  const mod = getDbcRuntime();
   if (!mod) throw new Error('DBC runtime not found (studio dist missing).');
 
   const builder =
@@ -80,7 +62,7 @@ async function buildDbcClaimTradingFeeIx(args: {
 function getDammRemoveBuilder(): (
   params: any
 ) => Promise<TransactionInstruction | TransactionInstruction[]> {
-  const mod = requireStudioModule('lib/damm_v2/index.js');
+  const mod = getDammV2Runtime();
   if (!mod) throw new Error('DAMM v2 runtime not found (studio dist missing).');
 
   const builder =

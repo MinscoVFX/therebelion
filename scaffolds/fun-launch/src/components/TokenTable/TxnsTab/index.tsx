@@ -23,9 +23,9 @@ export const TxnsTab: React.FC<TxnsTabProps> = ({ symbol, data, table, walletAdd
   // Fixing type assignment issues
   const {
     data: txData,
-  isFetching,
-  fetchNextPage,
-  hasNextPage: _hasNextPageQuery,
+    isFetching,
+    fetchNextPage,
+    hasNextPage: _hasNextPageQuery,
   } = useInfiniteQuery({
     ...ApeQueries.tokenTxs({ id: tokenId || '' }),
     enabled: !!tokenId,
@@ -34,7 +34,7 @@ export const TxnsTab: React.FC<TxnsTabProps> = ({ symbol, data, table, walletAdd
   // Ensure symbol and paused have default values
   const symbolValue: string = symbol || tokenSymbol || '';
   const pausedValue: boolean = paused || false;
-  const hasNextPage: boolean = data.length > 0; // Ensure hasNextPage is always a boolean
+  const hasNextPage: boolean = Array.isArray(data) ? data.length > 0 : false; // Safe guard
 
   const allRows = useMemo(
     () => (txData && txData.pages ? txData.pages.flatMap((d) => d?.txs ?? []) : []),
