@@ -9,9 +9,16 @@ try {
   baseConfig = require.resolve('@meteora-invent/config-eslint');
 } catch {
   baseConfig = path.join(__dirname, 'packages', 'config', 'eslint');
+const path = require('path');
+
+let base;
+try {
+  base = require.resolve('@meteora-invent/config-eslint');
+} catch (e) {
+  base = path.join(__dirname, 'packages', 'config', 'eslint');
 }
 
 module.exports = {
   root: true,
-  extends: [baseConfig],
+  extends: [base],
 };
