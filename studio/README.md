@@ -98,6 +98,38 @@ pnpm damm-v2-create-balanced-pool --config ./config/damm_v2_config.jsonc
 pnpm damm-v2-create-one-sided-pool --config ./config/damm_v2_config.jsonc
 ```
 
+**Remove Liquidity (Programmatic Builder)**
+
+While removal is typically handled by frontends, a low-level helper `buildRemoveLiquidityIx` is
+exported by `@meteora-invent/studio/lib/damm_v2` to compose removal instructions server-side.
+
+Example (pseudo-code):
+
+```ts
+import { buildRemoveLiquidityIx } from '@meteora-invent/studio/lib/damm_v2';
+// ... obtain connection & all required public keys ...
+const ixs = await buildRemoveLiquidityIx({
+	connection,
+	programId,      // DAMM v2 program id
+	pool,           // pool address
+	lpMint,         // LP mint
+	user,           // wallet owner
+	userLpAccount,  // user's LP token account
+	userAToken,     // user's token A ATA
+	userBToken,     // user's token B ATA
+	tokenAMint,
+	tokenBMint,
+	tokenAVault,
+	tokenBVault,
+	lpAmount: 1000n, // raw LP amount to burn
+});
+```
+
+Returned value is an array of `TransactionInstruction` you can embed into a transaction.
+
+> NOTE: The helper discovers a position NFT associated with the pool under the hood. Adapt as
+> needed if you manage multiple positions explicitly.
+
 ### DAMM v1 Scripts
 
 **Create a Constant Product Pool**
@@ -161,6 +193,18 @@ pnpm dbc-migrate-to-damm-v2 --config ./config/dbc_config.jsonc
 ```bash
 pnpm dbc-swap --config ./config/dbc_config.jsonc
 ```
+
+## 🩺 Runtime Health (Scaffold)
+
+In the `fun-launch` scaffold a `/api/runtime-health` endpoint reports availability of the Studio
+runtime submodules (`damm_v2`, `dbc`). This is useful for deployment diagnostics when dynamic
+imports fail. The endpoint returns a JSON object like:
+
+```json
+{ "damm_v2": true, "dbc": true }
+```
+
+If a value is `false`, ensure the Studio package is built (`pnpm --filter @meteora-invent/studio build`).
 
 ## 📖 Program Details
 

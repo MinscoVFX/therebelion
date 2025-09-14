@@ -1,47 +1,25 @@
-import path from 'path';
-import fs from 'fs';
-import { createRequire } from 'module';
-
-// Centralized Studio runtime loader to avoid dynamic expression-based requires scattered in API routes.
-// This reduces webpack "Critical dependency" warnings by constraining resolution to a known static map.
-
-const requireNode = createRequire(import.meta.url);
-
-let studioBaseDir: string | null = null;
-function resolveStudioBase(): string | null {
-  if (studioBaseDir) return studioBaseDir;
-  try {
-    const pkgPath = requireNode.resolve('@meteora-invent/studio/package.json');
-    studioBaseDir = path.dirname(pkgPath);
-    return studioBaseDir;
-  } catch {
-    return null;
-  }
-}
-
-const MODULE_MAP: Record<string, string> = {
-  damm_v2: 'dist/lib/damm_v2/index.js',
-  dbc: 'dist/lib/dbc/index.js',
-};
-
-function loadModule(key: keyof typeof MODULE_MAP): any | null {
-  const base = resolveStudioBase();
-  if (!base) return null;
-  const rel = MODULE_MAP[key];
-  const target = path.join(base, rel);
-  if (!fs.existsSync(target)) return null;
-  try {
-    return requireNode(target);
-  } catch {
-    return null;
-  }
-}
+// Static optional imports allow bundler to see concrete specifiers, avoiding critical dependency warnings.
+// If package or subpath missing, we catch and return null.
+let dammCache: any | undefined;
+let dbcCache: any | undefined;
 
 export function getDammV2Runtime() {
-  return loadModule('damm_v2');
+  if (dammCache !== undefined) return dammCache;
+  try {
+    dammCache = require('@meteora-invent/studio/lib/damm_v2');
+  } catch {
+    dammCache = null;
+  }
+  return dammCache;
 }
 export function getDbcRuntime() {
-  return loadModule('dbc');
+  if (dbcCache !== undefined) return dbcCache;
+  try {
+    dbcCache = require('@meteora-invent/studio/lib/dbc');
+  } catch {
+    dbcCache = null;
+  }
+  return dbcCache;
 }
 
 export function getRuntimeHealth() {
