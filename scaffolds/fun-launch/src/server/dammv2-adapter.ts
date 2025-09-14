@@ -1,15 +1,18 @@
 // scaffolds/fun-launch/src/server/dammv2-adapter.ts
-
-import type { Connection, PublicKey, TransactionInstruction } from '@solana/web3.js';
+import {
+  Connection,
+  PublicKey,
+  TransactionInstruction,
+  ComputeBudgetProgram,
+} from '@solana/web3.js';
 import {
   getAssociatedTokenAddressSync,
   createAssociatedTokenAccountIdempotentInstruction,
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
+import path from 'path';
 
-// Import the Studio DAMM v2 runtime via package exports
-import * as damm from '@meteora-invent/studio/lib/damm_v2';
-
+/** DAMM v2 pool keys we care about */
 export type DammV2PoolKeys = {
   programId: PublicKey;
   pool: PublicKey;
@@ -21,17 +24,38 @@ export type DammV2PoolKeys = {
   authorityPda: PublicKey;
 };
 
-function pickPoolResolver(mod: any): ((args: any) => Promise<any>) | null {
-  return (
-    mod?.getPoolByLpMint ||
-    mod?.resolvePoolByLpMint ||
-    mod?.poolFromLpMint ||
-    (mod?.helpers && (mod.helpers.getPoolByLpMint || mod.helpers.resolvePoolByLpMint)) ||
-    null
-  );
+function resolveStudioDammV2(): string | null {
+  const candidates = [
+    '@meteora-invent/studio/dist/lib/damm_v2/index.js',
+    path.join(process.cwd(), '../../studio/dist/lib/damm_v2/index.js'),
+    path.join(process.cwd(), '../../studio/src/lib/damm_v2/index.ts'),
+  ];
+  for (const c of candidates) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      return require.resolve(c);
+    } catch {
+      /* skip */
+    }
+  }
+  return null;
 }
 
-function pickRemoveBuilder(mod: any): ((args: any) => Promise<any>) | null {
+async function importDammRuntime(): Promise<any> {
+  const target = resolveStudioDammV2();
+  if (!target)
+    throw new Error('Studio DAMM v2 module not found (build studio or keep it in the monorepo).');
+  // @ts-expect-error webpackIgnore lets Next import a file path on the server
+  const mod = await import(/* webpackIgnore: true */ target);
+  if (!mod) throw new Error('Failed to import DAMM v2 runtime.');
+  return mod;
+}
+
+function pickRemoveBuilder(
+  mod: any
+):
+  | ((args: Record<string, unknown>) => Promise<TransactionInstruction | TransactionInstruction[]>)
+  | null {
   return (
     mod?.buildRemoveLiquidityIx ||
     mod?.removeLiquidityIx ||
@@ -40,43 +64,62 @@ function pickRemoveBuilder(mod: any): ((args: any) => Promise<any>) | null {
   );
 }
 
+async function getUserLpAmount(
+  conn: Connection,
+  owner: PublicKey,
+  lpMint: PublicKey
+): Promise<bigint> {
+  try {
+    const ata = getAssociatedTokenAddressSync(lpMint, owner, false);
+    const info = await conn.getTokenAccountBalance(ata);
+    const raw = info?.value?.amount ?? '0';
+    return BigInt(raw);
+  } catch {
+    return 0n;
+  }
+}
+
+/**
+ * Build all instructions to remove **ALL** lp for the provided DAMM v2 pool.
+ * Also ensures ATAs for token A/B exist.
+ */
 export async function buildDammV2RemoveAllLpIxs(args: {
   connection: Connection;
   owner: PublicKey;
   poolKeys: DammV2PoolKeys;
   priorityMicros?: number;
 }): Promise<TransactionInstruction[]> {
-  const { connection, owner, poolKeys } = args;
+  const { connection, owner, poolKeys, priorityMicros = 250_000 } = args;
 
+  const damm = await importDammRuntime();
   const removeBuilder = pickRemoveBuilder(damm);
-  if (!removeBuilder) {
-    throw new Error('Studio DAMM v2: remove-liquidity builder not found in package exports.');
-  }
+  if (!removeBuilder)
+    throw new Error('DAMM v2 remove-liquidity function not found in studio runtime.');
 
-  // Ensure user has ATAs ready for token A & B
   const ixs: TransactionInstruction[] = [];
 
+  if (priorityMicros && priorityMicros > 0) {
+    ixs.push(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Number(priorityMicros) }));
+  }
+
+  const userAToken = getAssociatedTokenAddressSync(poolKeys.tokenAMint, owner, false);
+  const userBToken = getAssociatedTokenAddressSync(poolKeys.tokenBMint, owner, false);
+
   ixs.push(
-    createAssociatedTokenAccountIdempotentInstruction(
-      owner,
-      getAssociatedTokenAddressSync(poolKeys.tokenAMint, owner, false),
-      owner,
-      poolKeys.tokenAMint
-    )
+    createAssociatedTokenAccountIdempotentInstruction(owner, userAToken, owner, poolKeys.tokenAMint)
   );
   ixs.push(
-    createAssociatedTokenAccountIdempotentInstruction(
-      owner,
-      getAssociatedTokenAddressSync(poolKeys.tokenBMint, owner, false),
-      owner,
-      poolKeys.tokenBMint
-    )
+    createAssociatedTokenAccountIdempotentInstruction(owner, userBToken, owner, poolKeys.tokenBMint)
   );
 
-  const userLpAta = getAssociatedTokenAddressSync(poolKeys.lpMint, owner, false);
+  const lpAmount = await getUserLpAmount(connection, owner, poolKeys.lpMint);
+  if (lpAmount <= 0n) {
+    throw new Error('No LP tokens found for this pool in the wallet.');
+  }
 
-  // Ask Studio to build the actual remove-liquidity instruction(s)
-  const removeIxs: TransactionInstruction | TransactionInstruction[] = await removeBuilder({
+  const userLpAccount = getAssociatedTokenAddressSync(poolKeys.lpMint, owner, false);
+
+  const removeIxs = await removeBuilder({
     programId: poolKeys.programId,
     pool: poolKeys.pool,
     authorityPda: poolKeys.authorityPda,
@@ -84,13 +127,15 @@ export async function buildDammV2RemoveAllLpIxs(args: {
     tokenAVault: poolKeys.tokenAVault,
     tokenBVault: poolKeys.tokenBVault,
     user: owner,
-    userLpAccount: userLpAta,
-    userAToken: getAssociatedTokenAddressSync(poolKeys.tokenAMint, owner, false),
-    userBToken: getAssociatedTokenAddressSync(poolKeys.tokenBMint, owner, false),
-    // LP amount: for "remove all" cases, most Studio builders accept full balance by reading ATA internally,
-    // or you can pass a large bigint. If your builder *requires* an amount, wire the ATA balance here.
+    userLpAccount,
+    userAToken,
+    userBToken,
+    lpAmount,
+    tokenProgram: TOKEN_PROGRAM_ID,
   });
 
+  if (!removeIxs) throw new Error('Remove LP builder returned no instructions.');
   ixs.push(...(Array.isArray(removeIxs) ? removeIxs : [removeIxs]));
+
   return ixs;
 }

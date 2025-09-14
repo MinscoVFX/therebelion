@@ -47,11 +47,5 @@
     "studio/**/*.ts",
     "studio/**/*.tsx"
   ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "build",
-    ".next",
-    ".turbo"
-  ]
+  "exclude": ["node_modules", "dist", "build", ".next", ".turbo"]
 }

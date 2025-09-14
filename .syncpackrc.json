@@ -27,10 +27,5 @@
     "devDependencies",
     "peerDependencies"
   ],
-  "sortAz": [
-    "scripts",
-    "dependencies",
-    "devDependencies",
-    "peerDependencies"
-  ]
+  "sortAz": ["scripts", "dependencies", "devDependencies", "peerDependencies"]
 }

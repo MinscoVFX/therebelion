@@ -3,7 +3,7 @@ name: Claim DBC Bonding-Curve Leftovers
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "15 * * * *"   # hourly at :15 (UTC)
+    - cron: '15 * * * *' # hourly at :15 (UTC)
 
 concurrency:
   group: claim-dbc-leftovers

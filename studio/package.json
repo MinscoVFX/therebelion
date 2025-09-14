@@ -47,18 +47,20 @@
     },
     "./lib/damm_v2": {
       "types": "./dist/lib/damm_v2/index.d.ts",
-      "require": "./dist/lib/damm_v2/index.js",
       "default": "./dist/lib/damm_v2/index.js"
     },
     "./lib/dbc": {
       "types": "./dist/lib/dbc/index.d.ts",
-      "require": "./dist/lib/dbc/index.js",
       "default": "./dist/lib/dbc/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist/**/*",
-    "README.md"
+    "README.md",
+    "dist",
+    "src",
+    "package.json"
   ],
   "keywords": [
     "build",
