@@ -1,7 +1,7 @@
 import {
   ColumnDef,
   ColumnFiltersState,
-  RowData,
+  RowData as _RowData,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -37,7 +37,7 @@ type TxTableProps<_TData, TValue> = {
 
 // Fixing TableMeta declaration to ensure identical type parameters
 declare module '@tanstack/react-table' {
-  interface TableMeta<TData extends RowData> {
+  interface TableMeta {
     dateMode: DateMode;
     setDateMode: (mode: DateMode) => void;
     walletAddress: string | undefined;

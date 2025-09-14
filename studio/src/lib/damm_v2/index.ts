@@ -157,7 +157,7 @@ export async function buildRemoveLiquidityIx({
         tokenBAmountThreshold,
       });
     } else {
-      const liquidityDelta = finalLiquidityDeltaBn!;
+  const liquidityDelta = finalLiquidityDeltaBn;
       txBuilder = (cp as any).removeLiquidity({
         owner: user,
         position: resolvedPositionPubkey,
