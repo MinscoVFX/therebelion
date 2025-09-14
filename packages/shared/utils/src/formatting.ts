@@ -22,7 +22,7 @@ export function formatAddress(address: string, chars = 4): string {
 /**
  * Format a number with thousand separators
  */
-export function formatNumber(num, decimals = 2): string {
+export function formatNumber(num: string | number, decimals = 2): string {
   const number = typeof num === 'string' ? parseFloat(num) : num;
 
   if (isNaN(number)) return '0';
@@ -64,7 +64,7 @@ export function formatCompact(num: number): string {
 /**
  * Format a percentage value
  */
-export function formatPercentage(value, decimals = 2): string {
+export function formatPercentage(value: string | number, decimals = 2): string {
   return `${formatNumber(value, decimals)}%`;
 }
 

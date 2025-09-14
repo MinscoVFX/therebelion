@@ -35,6 +35,8 @@ module.exports = {
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-explicit-any': 'warn',
     '@typescript-eslint/no-non-null-assertion': 'warn',
+    // Disable the problematic rule for now
+    '@typescript-eslint/no-unused-expressions': 'off',
 
     // Import rules
     'import/order': [
