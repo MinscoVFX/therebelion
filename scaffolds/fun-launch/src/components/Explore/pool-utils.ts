@@ -3,14 +3,12 @@ import {
   Asset,
   normalizeSortByField,
   Pool,
-  TokenListFilters,
   TokenListSortBy,
   TokenListSortByField,
   TokenListSortDir,
   TokenListTab,
   TokenListTimeframe,
 } from '@/components/Explore/types';
-import { Launchpad } from '@/contexts/types';
 
 export function getSorterFieldValue(
   field: TokenListSortByField,
@@ -27,24 +25,24 @@ export function getSorterFieldValue(
       return pool.baseAsset.liquidity;
     case 'volume':
       if (stats?.buyVolume === undefined && stats?.sellVolume === undefined) {
-        return;
+        return undefined;
       }
       return (stats.buyVolume ?? 0) + (stats.sellVolume ?? 0);
     case 'txs':
       if (stats?.numBuys === undefined && stats?.numSells === undefined) {
-        return;
+        return undefined;
       }
       return (stats.numBuys ?? 0) + (stats.numSells ?? 0);
     case 'netTxs':
       if (stats?.numBuys === undefined && stats?.numSells === undefined) {
-        return;
+        return undefined;
       }
       return (stats.numBuys ?? 0) - (stats.numSells ?? 0);
     case 'traders':
       return stats?.numTraders;
     case 'numNetBuyers':
       if (stats?.numNetBuyers === undefined || stats?.numTraders === undefined) {
-        return;
+        return undefined;
       }
       const numNetSellers = stats.numTraders - stats.numNetBuyers;
       return stats.numNetBuyers - numNetSellers;
@@ -70,17 +68,17 @@ export function getSorterFieldValue(
       return stats?.holderChange;
     case 'netVolume':
       if (stats?.buyVolume === undefined && stats?.sellVolume === undefined) {
-        return;
+        return undefined;
       }
       return (stats?.buyVolume ?? 0) - (stats?.sellVolume ?? 0);
     case 'organicVolume':
       if (stats?.buyOrganicVolume === undefined && stats?.sellOrganicVolume === undefined) {
-        return;
+        return undefined;
       }
       return (stats?.buyOrganicVolume ?? 0) + (stats?.sellOrganicVolume ?? 0);
     case 'netOrganicVolume':
       if (stats?.buyOrganicVolume === undefined && stats?.sellOrganicVolume === undefined) {
-        return;
+        return undefined;
       }
       return (stats?.buyOrganicVolume ?? 0) - (stats?.sellOrganicVolume ?? 0);
     case 'bondingCurve':
@@ -132,7 +130,7 @@ export function watchlistSortBy(timeframe: TokenListTimeframe): TokenListSortBy 
 
 export function categorySortBy(
   category: TokenListTab,
-  timeframe: TokenListTimeframe
+  _timeframe: TokenListTimeframe
 ): TokenListSortBy | undefined {
   switch (category) {
     case TokenListTab.NEW:
@@ -183,7 +181,7 @@ export function isAuditTopHoldersPass(audit: Audit) {
 }
 
 export function getAuditScore(audit?: Audit) {
-  if (!audit) return;
+  if (!audit) return undefined;
 
   return (
     (audit.mintAuthorityDisabled ? 1 : 0) +

@@ -9,8 +9,7 @@ import { intlDate } from '@/lib/format/date';
 import { ReadableNumber } from '../../ui/ReadableNumber';
 import { TruncatedAddress } from '../../TruncatedAddress/TruncatedAddress';
 import { ExternalLink } from '../../ui/ExternalLink';
-import { TableCell } from '../../Table';
-import { TableRow } from '../../Table';
+import { TableCell , TableRow } from '../../Table';
 import { Skeleton } from '../../ui/Skeleton';
 import ExternalIcon from '@/icons/ExternalIcon';
 

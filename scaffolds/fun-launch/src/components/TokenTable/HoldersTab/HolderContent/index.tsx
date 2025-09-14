@@ -1,5 +1,3 @@
-import { atom, useAtom } from 'jotai';
-
 import { HolderTable } from '../HoldersTable';
 import { columns } from '../HoldersTable/columns';
 import { HolderInfo } from '../HoldersTable/utils';

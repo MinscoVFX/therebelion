@@ -11,7 +11,7 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
       xmlns="http://www.w3.org/2000/svg"
       {...props}
     >
-      <g clip-path="url(#clip0_390_417927)">
+      <g clipPath="url(#clip0_390_417927)">
         <g filter="url(#filter0_d_390_417927)">
           <g filter="url(#filter1_i_390_417927)">
             <path
@@ -65,9 +65,9 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           width="445.245"
           height="453.113"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feColorMatrix
             in="SourceAlpha"
             type="matrix"
@@ -93,9 +93,9 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           width="127.188"
           height="110.319"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feColorMatrix
             in="SourceAlpha"
@@ -116,9 +116,9 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           width="127.188"
           height="110.319"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feColorMatrix
             in="SourceAlpha"
@@ -139,9 +139,9 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           width="359.219"
           height="299.382"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feColorMatrix
             in="SourceAlpha"
@@ -162,9 +162,9 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           width="302.5"
           height="221.498"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
           <feColorMatrix
             in="SourceAlpha"
@@ -200,9 +200,9 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           width="90.6522"
           height="37.0517"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feColorMatrix
             in="SourceAlpha"
             type="matrix"
@@ -231,9 +231,9 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           width="98.9003"
           height="87.2147"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feColorMatrix
             in="SourceAlpha"
             type="matrix"
@@ -262,9 +262,9 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           width="98.9013"
           height="87.2147"
           filterUnits="userSpaceOnUse"
-          color-interpolation-filters="sRGB"
+          colorInterpolationFilters="sRGB"
         >
-          <feFlood flood-opacity="0" result="BackgroundImageFix" />
+          <feFlood floodOpacity="0" result="BackgroundImageFix" />
           <feColorMatrix
             in="SourceAlpha"
             type="matrix"
@@ -294,8 +294,8 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           y2="146.781"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="#37CAF9" />
-          <stop offset="1" stop-color="#0190C8" />
+          <stop stopColor="#37CAF9" />
+          <stop offset="1" stopColor="#0190C8" />
         </linearGradient>
         <linearGradient
           id="paint1_linear_390_417927"
@@ -305,8 +305,8 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           y2="146.781"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="#37CAF9" />
-          <stop offset="1" stop-color="#0190C8" />
+          <stop stopColor="#37CAF9" />
+          <stop offset="1" stopColor="#0190C8" />
         </linearGradient>
         <linearGradient
           id="paint2_linear_390_417927"
@@ -316,8 +316,8 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           y2="377.094"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="#37CAF9" />
-          <stop offset="1" stop-color="#0190C8" />
+          <stop stopColor="#37CAF9" />
+          <stop offset="1" stopColor="#0190C8" />
         </linearGradient>
         <linearGradient
           id="paint3_linear_390_417927"
@@ -327,8 +327,8 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           y2="319.529"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="#4D5358" />
-          <stop offset="1" stop-color="#21252B" />
+          <stop stopColor="#4D5358" />
+          <stop offset="1" stopColor="#21252B" />
         </linearGradient>
         <linearGradient
           id="paint4_linear_390_417927"
@@ -338,8 +338,8 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           y2="277.726"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="#9B8AFB" />
-          <stop offset="1" stop-color="#99F4E0" />
+          <stop stopColor="#9B8AFB" />
+          <stop offset="1" stopColor="#99F4E0" />
         </linearGradient>
         <linearGradient
           id="paint5_linear_390_417927"
@@ -349,8 +349,8 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           y2="263.116"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="#9B8AFB" />
-          <stop offset="1" stop-color="#99F4E0" />
+          <stop stopColor="#9B8AFB" />
+          <stop offset="1" stopColor="#99F4E0" />
         </linearGradient>
         <linearGradient
           id="paint6_linear_390_417927"
@@ -360,8 +360,8 @@ export const BoopIcon: React.FC<IconProps> = (props) => {
           y2="263.116"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stop-color="#9B8AFB" />
-          <stop offset="1" stop-color="#99F4E0" />
+          <stop stopColor="#9B8AFB" />
+          <stop offset="1" stopColor="#99F4E0" />
         </linearGradient>
         <clipPath id="clip0_390_417927">
           <rect width="440" height="440" fill="white" />

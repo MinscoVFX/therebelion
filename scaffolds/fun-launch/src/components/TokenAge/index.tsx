@@ -2,6 +2,7 @@ import { useCurrentDate } from '@/lib/environment/date';
 import { formatAge } from '@/lib/format/date';
 import { cn } from '@/lib/utils';
 import React, { memo } from 'react';
+import PropTypes from 'prop-types';
 
 const RECENT_AGE_THRESHOLD = 1000 * 60 * 60 * 2; // 2h
 
@@ -32,5 +33,9 @@ export const TokenAge: React.FC<TokenAgeProps> = memo(({ date: dateStr, classNam
     </span>
   );
 });
+TokenAge.propTypes = {
+  date: PropTypes.string,
+  className: PropTypes.string,
+};
 
 TokenAge.displayName = 'TokenAge';

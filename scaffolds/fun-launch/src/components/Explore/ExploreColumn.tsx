@@ -53,6 +53,11 @@ export const ExploreColumn: React.FC<ExploreColumnProps> = ({ tab }) => {
     </div>
   );
 };
+ExploreColumn.propTypes = {
+};
+  ExploreColumn.propTypes = {
+    tab: require('prop-types').any.isRequired,
+  };
 
 type TokenCardListContainerProps = {
   tab: ExploreTab;
@@ -103,7 +108,7 @@ const TokenCardListContainer: React.FC<TokenCardListContainerProps> = memo(
         },
         (prev?: QueryData<typeof ApeQueries.gemsTokenList>) => {
           const prevPools = prev?.[tab]?.pools;
-          if (!prevPools) return;
+          if (!prevPools) return undefined;
 
           const pools = [...prevPools];
 
@@ -158,7 +163,7 @@ const TokenCardListContainer: React.FC<TokenCardListContainerProps> = memo(
 
     // Handle scroll pausing on mobile
     useEffect(() => {
-      if (!isMobile) return;
+  if (!isMobile) return undefined;
 
       // Initial check
       handleScroll();

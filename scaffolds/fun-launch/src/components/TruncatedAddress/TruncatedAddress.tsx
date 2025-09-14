@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import PropTypes from 'prop-types';
 
 const ELLIPSIS = '…';
 
@@ -30,4 +31,11 @@ export const TruncatedAddress: React.FC<TruncatedAddressProps> = ({
       {address.slice(-charsEnd)}
     </span>
   );
+};
+
+TruncatedAddress.propTypes = {
+  address: PropTypes.string.isRequired,
+  charsStart: PropTypes.number,
+  charsEnd: PropTypes.number,
+  className: PropTypes.string,
 };

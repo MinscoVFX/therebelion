@@ -505,7 +505,7 @@ export default function CreatePool() {
                           className="w-full p-3 bg-white/5 border border-white/10 rounded-lg text-white"
                           value={field.state.value}
                           onChange={(e) => field.handleChange(e.target.value)}
-                          disabled={!Boolean((form as any).state?.values?.devPrebuy)}
+                          disabled={!(form as any).state?.values?.devPrebuy}
                         />
                       ),
                     })}

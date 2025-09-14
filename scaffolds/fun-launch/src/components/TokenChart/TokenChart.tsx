@@ -1,13 +1,11 @@
 import { CSSProperties, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocalStorage } from 'react-use';
-
 import { createDataFeed } from './datafeed';
 import { formatChartPrice, getPrecisionTickSizeText } from './formatter';
 import { CHART_BG_COLOR, CHART_GRID_LINE_COLOR } from './constants';
 import { ChartConfig, DEFAULT_CHART_CONFIG } from './config';
 import { FAVORITE_INTERVALS } from './intervals';
 import { loadChartState, saveChartState } from './chartstate';
-
 import {
   ChartingLibraryWidgetConstructor,
   ChartingLibraryWidgetOptions,
@@ -389,8 +387,8 @@ export const TokenChart: React.FC<ChartProps> = memo(({ renderingId, style, opt 
           widgetRef.current = null;
         };
       } catch (error) {
-        console.error('Failed to initialize TradingView widget:', error);
-        return;
+  console.error('Failed to initialize TradingView widget:', error);
+  return undefined;
       }
     };
     initializeWidget();
@@ -501,3 +499,4 @@ export const TokenChart: React.FC<ChartProps> = memo(({ renderingId, style, opt 
 });
 
 TokenChart.displayName = 'TokenChart';
+// TokenChart.propTypes has been removed

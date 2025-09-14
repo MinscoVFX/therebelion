@@ -61,7 +61,7 @@ export function TxTable<TData, TValue>({
   const table = useReactTable({
     // Data
     data,
-    columns,
+  columns,
     getCoreRowModel: getCoreRowModel(),
     // // Sorting
     // onSortingChange: setSorting,

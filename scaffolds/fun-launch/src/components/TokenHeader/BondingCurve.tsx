@@ -27,6 +27,9 @@ export const BondingCurve: React.FC<BondingCurveProps> = ({ className }) => {
     </div>
   );
 };
+  BondingCurve.propTypes = {
+    className: require('prop-types').string,
+  };
 
 export const MobileBondingCurve: React.FC<BondingCurveProps> = ({ className }) => {
   const { data: bondingCurve } = useTokenInfo((data) => data?.bondingCurve);
@@ -49,3 +52,6 @@ export const MobileBondingCurve: React.FC<BondingCurveProps> = ({ className }) =
     </div>
   );
 };
+  MobileBondingCurve.propTypes = {
+    className: require('prop-types').string,
+  };

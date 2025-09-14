@@ -1,5 +1,6 @@
 import Header from '@/components/Header';
 import { cn } from '@/lib/utils';
+import PropTypes from 'prop-types';
 
 interface IProps {
   containerClassName?: string;
@@ -31,4 +32,9 @@ const Page: React.FC<React.PropsWithChildren<IProps>> = ({
   );
 };
 
+Page.propTypes = {
+  containerClassName: PropTypes.string,
+  pageClassName: PropTypes.string,
+  children: PropTypes.node,
+};
 export default Page;

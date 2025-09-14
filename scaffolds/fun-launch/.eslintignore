@@ -1,4 +1,4 @@
-src/components/AdvancedTradingView/charting_library.d.ts
-src/**/*.d.ts
 src/components/AdvancedTradingView/**
 **/*.d.ts
+dist/**
+.next/**

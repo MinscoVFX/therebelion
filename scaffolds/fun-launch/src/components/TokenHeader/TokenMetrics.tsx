@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { MetricFdv, MetricHolders, MetricLiquidity, MetricMcap } from './TokenMetric/TokenMetric';
 import { cn } from '@/lib/utils';
+import PropTypes from 'prop-types';
 
 type TokenMetricsProps = {
   className?: string;
@@ -18,3 +19,6 @@ export const TokenMetrics: React.FC<TokenMetricsProps> = memo(({ className }) =>
 });
 
 TokenMetrics.displayName = 'TokenMetrics';
+TokenMetrics.propTypes = {
+  className: PropTypes.string,
+};

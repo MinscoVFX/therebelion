@@ -4,8 +4,7 @@ import React, { forwardRef, memo, useCallback, useEffect, useRef, useState } fro
 import { Pool, TokenListTimeframe } from '../Explore/types';
 import { useDataStream } from '@/contexts/DataStreamProvider';
 import { cn } from '@/lib/utils';
-import { TokenCard } from './TokenCard';
-import { TokenCardSkeleton } from './TokenCard';
+import { TokenCard , TokenCardSkeleton } from './TokenCard';
 
 const ROWS_OVERSCAN = 0;
 const ROW_HEIGHT_ESTIMATE = 90; // px for cards

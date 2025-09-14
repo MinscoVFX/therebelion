@@ -1,12 +1,7 @@
 import Link from 'next/link';
-import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
 
-type CreatePoolButtonProps = {
-  className?: string;
-};
-
-export const CreatePoolButton = ({ className }: CreatePoolButtonProps) => {
+export const CreatePoolButton = () => {
   return (
     <Button>
       <Link href="/create-pool" className="flex items-center gap-1">

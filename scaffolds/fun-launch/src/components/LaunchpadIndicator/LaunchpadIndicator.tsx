@@ -4,6 +4,7 @@ import { useTrenchesTokenIconContext } from '../TokenIcon/Context';
 import { cn } from '@/lib/utils';
 import { Asset } from '../Explore/types';
 import { getLaunchpadInfo } from './info';
+import PropTypes from 'prop-types';
 
 type LaunchpadIndicatorProps = {
   launchpad: Asset['launchpad'];
@@ -33,6 +34,9 @@ export const TrenchesTokenIconLaunchpad: React.FC<TrenchesTokenIconLaunchpadProp
     />
   );
 };
+TrenchesTokenIconLaunchpad.propTypes = {
+  className: PropTypes.string,
+};
 
 export const LaunchpadIndicator: React.FC<LaunchpadIndicatorProps> = ({ launchpad, className }) => {
   const config = useMemo(() => getLaunchpadInfo(launchpad), [launchpad]);
@@ -53,4 +57,8 @@ export const LaunchpadIndicator: React.FC<LaunchpadIndicatorProps> = ({ launchpa
       <Icon className="h-2 w-2" />
     </div>
   );
+};
+LaunchpadIndicator.propTypes = {
+  launchpad: PropTypes.any.isRequired,
+  className: PropTypes.string,
 };
