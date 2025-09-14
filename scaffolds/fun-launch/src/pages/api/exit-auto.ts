@@ -108,9 +108,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Use POST' });
 
-    const { ownerPubkey, priorityMicros = 250_000 } = (req.body ?? {}) as {
+    const { ownerPubkey, priorityMicros = 250_000, positionPubkey, lpAmount, lpPercent, liquidityDelta } = (req.body ?? {}) as {
       ownerPubkey?: string;
       priorityMicros?: number;
+      positionPubkey?: string; // optional explicit position NFT
+      lpAmount?: string | number; // optional override raw amount (string for bigint safety)
+      lpPercent?: number; // optional percent of position liquidity to remove
+      liquidityDelta?: string | number; // advanced override
     };
     if (!ownerPubkey) return res.status(400).json({ error: 'Missing ownerPubkey' });
 
@@ -149,7 +153,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const userLpAta = getAssociatedTokenAddressSync(best.poolKeys.lpMint, owner, false);
 
-    const removeIxs: TransactionInstruction | TransactionInstruction[] = await removeBuilder({
+    const removeArgs: any = {
       programId: best.poolKeys.programId,
       pool: best.poolKeys.pool,
       authorityPda: best.poolKeys.authorityPda,
@@ -160,8 +164,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       userLpAccount: userLpAta,
       userAToken: getAssociatedTokenAddressSync(best.poolKeys.tokenAMint, owner, false),
       userBToken: getAssociatedTokenAddressSync(best.poolKeys.tokenBMint, owner, false),
-      lpAmount: best.lpAmount,
-    });
+      // backward compatibility: if user provided a specific lpAmount use it, else default to balance
+      lpAmount: lpAmount !== undefined ? BigInt(lpAmount as any) : undefined,
+      percent: lpPercent,
+      liquidityDelta: liquidityDelta !== undefined ? BigInt(liquidityDelta as any) : undefined,
+      positionPubkey: positionPubkey ? new PublicKey(positionPubkey) : undefined,
+    };
+    if (!removeArgs.lpAmount && !removeArgs.percent && !removeArgs.liquidityDelta) {
+      // default to entire balance if no partial indicators provided
+      removeArgs.lpAmount = best.lpAmount;
+    }
+    const removeIxs: TransactionInstruction | TransactionInstruction[] = await removeBuilder(removeArgs);
 
     ixs.push(...(Array.isArray(removeIxs) ? removeIxs : [removeIxs]));
 

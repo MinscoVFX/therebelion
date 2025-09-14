@@ -121,14 +121,24 @@ const ixs = await buildRemoveLiquidityIx({
 	tokenBMint,
 	tokenAVault,
 	tokenBVault,
-	lpAmount: 1000n, // raw LP amount to burn
+	// Removal amount can be specified in one of four ways (priority order):
+	// 1. liquidityDelta (advanced raw liquidity units)
+	// 2. percent (e.g. 25 for 25%)
+	// 3. lpAmount (legacy param kept for backward compatibility)
+	// 4. omit all -> remove 100% of discovered position liquidity
+	percent: 25, // remove 25% of position liquidity
+	// lpAmount: 1000n,
+	// liquidityDelta: 123456789n,
+	// positionPubkey: someSpecificPosition, // optional explicit position; skips discovery
 });
 ```
 
 Returned value is an array of `TransactionInstruction` you can embed into a transaction.
 
-> NOTE: The helper discovers a position NFT associated with the pool under the hood. Adapt as
-> needed if you manage multiple positions explicitly.
+> NOTES:
+> - If `positionPubkey` is provided discovery is skipped.
+> - If multiple sizing fields are provided, precedence is: `liquidityDelta` > `percent` > `lpAmount`.
+> - If none of `lpAmount | percent | liquidityDelta` are provided the builder removes 100% of the position liquidity.
 
 ### DAMM v1 Scripts
 
@@ -137,6 +147,25 @@ Returned value is an array of `TransactionInstruction` you can embed into a tran
 ```bash
 pnpm damm-v1-create-pool --config ./config/damm_v1_config.jsonc
 ```
+
+### Performance & Native Binding Notes
+
+During builds you may observe messages related to loading `next-swc` native bindings or wasm fallbacks. This originates from Next.js attempting to load platform-specific Rust compiled binaries. If it falls back to wasm you still get correct behavior, only slightly slower incremental builds.
+
+Tips:
+1. Keep your workspace architecture aligned with the lockfile generation platform (avoid mixing arm64 vs x64 artifacts).
+2. To force wasm only (diagnostic) you can set `NEXT_DISABLE_SWC_WASM=1` but generally you want native.
+3. Ensure no container volume permissions prevent loading `.node` binary files inside `@next/swc-*` packages.
+4. For CI, prefer a clean `pnpm install --frozen-lockfile` per architecture to avoid stale native artifacts.
+
+You can introspect which flavor loaded at runtime by adding a small check (example only):
+
+```ts
+import { getBinaryMetadata } from 'next/dist/build/swc';
+console.log('swc target triple:', getBinaryMetadata().target);
+```
+
+If `target` is undefined you are likely on the wasm fallback.
 
 **Lock Liquidity**
 

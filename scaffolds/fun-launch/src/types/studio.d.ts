@@ -34,6 +34,9 @@ declare module '@meteora-invent/studio/lib/damm_v2' {
     userLpAccount: PublicKey;
     userAToken: PublicKey;
     userBToken: PublicKey;
-    lpAmount: bigint;
+    lpAmount?: bigint;
+    positionPubkey?: PublicKey;
+    percent?: number;
+    liquidityDelta?: bigint;
   }): Promise<TransactionInstruction | TransactionInstruction[]>;
 }

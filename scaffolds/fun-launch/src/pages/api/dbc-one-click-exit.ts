@@ -119,6 +119,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       includeDammV2Exit = false,
       dammV2PoolKeys,
       priorityMicros = 250_000,
+      positionPubkey,
+  lpAmount: _lpAmount,
+      lpPercent,
+      liquidityDelta,
     } = (req.body ?? {}) as {
       ownerPubkey?: string;
       dbcPoolKeys?: { pool: string; feeVault: string };
@@ -134,6 +138,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         authorityPda: string;
       };
       priorityMicros?: number;
+      positionPubkey?: string;
+      lpAmount?: string | number;
+      lpPercent?: number;
+      liquidityDelta?: string | number;
     };
 
     if (!ownerPubkey) return res.status(400).json({ error: 'Missing ownerPubkey' });
@@ -187,7 +195,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(400).json({ error: 'No LP tokens found for the provided DAMM v2 pool.' });
       }
 
-      const dammIxs = await removeBuilder({
+      const removeArgs: any = {
         programId: parsedDamm.programId,
         pool: parsedDamm.pool,
         authorityPda: parsedDamm.authorityPda,
@@ -198,8 +206,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         userLpAccount: userLpAta,
         userAToken: getAssociatedTokenAddressSync(parsedDamm.tokenAMint, owner, false),
         userBToken: getAssociatedTokenAddressSync(parsedDamm.tokenBMint, owner, false),
-        lpAmount,
-      });
+  lpAmount: _lpAmount !== undefined ? BigInt(_lpAmount as any) : undefined,
+        percent: lpPercent,
+        liquidityDelta: liquidityDelta !== undefined ? BigInt(liquidityDelta as any) : undefined,
+        positionPubkey: positionPubkey ? new PublicKey(positionPubkey) : undefined,
+      };
+      if (!removeArgs.lpAmount && !removeArgs.percent && !removeArgs.liquidityDelta) {
+        removeArgs.lpAmount = _lpAmount; // default (full balance value already fetched earlier)
+      }
+      const dammIxs = await removeBuilder(removeArgs);
 
       ixs.push(...(Array.isArray(dammIxs) ? dammIxs : [dammIxs]));
     }

@@ -22,6 +22,10 @@ export async function buildRemoveLiquidityIx({
   tokenAVault,
   tokenBVault,
   lpAmount,
+  // New optional overrides:
+  positionPubkey, // explicitly specify a position (skip discovery)
+  percent, // percentage (0-100] of the position liquidity to remove (ignored if lpAmount provided)
+  liquidityDelta, // raw liquidity delta override (BigInt) takes precedence over percent if provided
   slippageBps = 50, // 0.50% default
 }: {
   connection: Connection;
@@ -36,39 +40,58 @@ export async function buildRemoveLiquidityIx({
   tokenBMint: PublicKey;
   tokenAVault: PublicKey;
   tokenBVault: PublicKey;
-  lpAmount: bigint;
+  lpAmount?: bigint; // kept for backward compatibility (full amount or partial explicit amount)
+  positionPubkey?: PublicKey;
+  percent?: number; // 0 < percent <= 100
+  liquidityDelta?: bigint; // direct override of liquidity delta (advanced)
   slippageBps?: number;
 }): Promise<TransactionInstruction[]> {
   const cp = new CpAmm(connection);
 
-  // 1. Discover user's position NFT(s) for this pool. For simplicity choose first position with liquidity.
-  // SDK does not expose typed helper in d.ts we can rely on here without deeper inspection; attempt generic fetch
-  const positions: any[] = [];
-  // Attempt to use internal exported helper via (cp as any)
-  try {
-    const helper = (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
-    if (helper) {
-      const fetched = await helper({ owner: user });
-      if (Array.isArray(fetched)) positions.push(...fetched);
+  // 1. Resolve position(s)
+  let discoveredPositions: any[] = [];
+  let chosenPosition: any | null = null;
+  let resolvedPositionPubkey: PublicKey | undefined = positionPubkey;
+
+  // Discover only if user did not explicitly pass a position
+  if (!resolvedPositionPubkey) {
+    try {
+      const helper = (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
+      if (helper) {
+        const fetched = await helper({ owner: user });
+        if (Array.isArray(fetched)) discoveredPositions = fetched;
+      }
+    } catch {
+      // ignore discovery errors
     }
-  } catch {
-    // ignore
+    const poolPositions = discoveredPositions.filter((p: any) => p.account?.pool?.toBase58?.() === pool.toBase58());
+    if (!poolPositions.length) throw new Error('No position NFT found for pool when removing liquidity.');
+    poolPositions.sort((a: any, b: any) => {
+      const la = a.account?.liquidity ?? new BN(0);
+      const lb = b.account?.liquidity ?? new BN(0);
+      if (la.lt(lb)) return 1;
+      if (la.gt(lb)) return -1;
+      return 0;
+    });
+    chosenPosition = poolPositions[0];
+    resolvedPositionPubkey = chosenPosition.publicKey ?? chosenPosition.account?.publicKey;
+  } else {
+    // If positionPubkey provided, try to fetch its account (best-effort) for liquidity & quoting.
+    try {
+      const fetchOne = (cp as any).getPositionAccount || (cp as any).getUserPositionAccount;
+      if (fetchOne) {
+        const acct = await fetchOne({ position: resolvedPositionPubkey });
+        if (acct) chosenPosition = { publicKey: resolvedPositionPubkey, account: acct };
+      }
+    } catch {
+      // ignore failed single fetch; we'll proceed with limited info.
+    }
   }
-  const poolPositions = positions.filter((p: any) => p.account?.pool?.toBase58?.() === pool.toBase58());
-  if (!poolPositions.length) throw new Error('No position NFT found for pool when removing liquidity.');
+  if (!resolvedPositionPubkey) throw new Error('Unable to resolve position public key for remove liquidity.');
 
-  // Heuristic: choose the position with highest liquidity (or first if single)
-  poolPositions.sort((a: any, b: any) => {
-    const la = a.account?.liquidity ?? new BN(0);
-    const lb = b.account?.liquidity ?? new BN(0);
-    if (la.lt(lb)) return 1;
-    if (la.gt(lb)) return -1;
-    return 0;
-  });
-  const position = poolPositions[0];
-
-  const positionPubkey: PublicKey = position.publicKey ?? position.account?.publicKey;
-  if (!positionPubkey) throw new Error('Unable to resolve position public key for remove liquidity.');
+  const positionLiquidity: BN | null = chosenPosition?.account?.liquidity
+    ? new BN(chosenPosition.account.liquidity.toString())
+    : null;
 
   // 2. Compute withdraw quote to derive min token amounts with slippage cushion.
   // Fallback if sdk shape differs.
@@ -79,8 +102,8 @@ export async function buildRemoveLiquidityIx({
     if (quoteFn) {
       const quote = await quoteFn({
         pool,
-        position: positionPubkey,
-        liquidityDelta: position.account?.liquidity ?? new BN(0),
+        position: resolvedPositionPubkey,
+        liquidityDelta: positionLiquidity ?? new BN(0),
         slippageBps,
         owner: user,
       });
@@ -94,23 +117,34 @@ export async function buildRemoveLiquidityIx({
   const tokenBProgram = TOKEN_PROGRAM_ID;
 
   // 4. Build remove liquidity TxBuilder from SDK. If lpAmount covers all, we could call removeAllLiquidity.
-  const removingAll = (() => {
-    try {
-      const liq: BN = position.account?.liquidity || new BN(0);
-      return liq.eq(new BN(lpAmount.toString()));
-    } catch {
-      return false;
-    }
-  })();
+  // Determine desired liquidity delta
+  let finalLiquidityDeltaBn: BN | null = null;
+  if (typeof liquidityDelta === 'bigint') {
+    finalLiquidityDeltaBn = new BN(liquidityDelta.toString());
+  } else if (typeof lpAmount === 'bigint') {
+    finalLiquidityDeltaBn = new BN(lpAmount.toString());
+  } else if (typeof percent === 'number' && percent > 0 && percent <= 100) {
+    if (!positionLiquidity) throw new Error('Percent-based removal requested but position liquidity unknown.');
+    // Convert percent to basis points (two decimals) to avoid float precision issues.
+    const bps = Math.round(percent * 100); // e.g. 25.37% -> 2537 bps
+    finalLiquidityDeltaBn = positionLiquidity.mul(new BN(bps)).div(new BN(100 * 100));
+  } else if (positionLiquidity) {
+    // default remove-all
+    finalLiquidityDeltaBn = positionLiquidity;
+  } else {
+    throw new Error('Must provide lpAmount, liquidityDelta, percent, or discoverable position liquidity.');
+  }
+
+  const removingAll = positionLiquidity ? positionLiquidity.eq(finalLiquidityDeltaBn) : false;
 
   let txBuilder: any;
   try {
     if (removingAll && (cp as any).removeAllLiquidity) {
       txBuilder = (cp as any).removeAllLiquidity({
         owner: user,
-        position: positionPubkey,
+        position: resolvedPositionPubkey,
         pool,
-        positionNftAccount: position.account?.positionNftAccount ?? positionPubkey,
+        positionNftAccount: chosenPosition?.account?.positionNftAccount ?? resolvedPositionPubkey,
         tokenAMint,
         tokenBMint,
         tokenAVault,
@@ -123,12 +157,12 @@ export async function buildRemoveLiquidityIx({
         tokenBAmountThreshold,
       });
     } else {
-      const liquidityDelta = new BN(lpAmount.toString());
+      const liquidityDelta = finalLiquidityDeltaBn!;
       txBuilder = (cp as any).removeLiquidity({
         owner: user,
-        position: positionPubkey,
+        position: resolvedPositionPubkey,
         pool,
-        positionNftAccount: position.account?.positionNftAccount ?? positionPubkey,
+        positionNftAccount: chosenPosition?.account?.positionNftAccount ?? resolvedPositionPubkey,
         liquidityDelta,
         tokenAAmountThreshold,
         tokenBAmountThreshold,
