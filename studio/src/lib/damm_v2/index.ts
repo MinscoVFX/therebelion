@@ -1,3 +1,18 @@
+/**
+ * Resolves a DAMM V2 pool address from LP mint.
+ * Returns the pool address if found, otherwise throws.
+ * Matches Meteora doc export pattern for launchpad integration.
+ */
+export async function resolvePoolByLpMint({ connection, lpMint }: {
+  connection: Connection;
+  lpMint: PublicKey;
+}): Promise<PublicKey> {
+  const cp = new CpAmm(connection);
+  const pools = await cp.getAllPools();
+  const found = pools.find((p: any) => p.lpMint.toBase58() === lpMint.toBase58());
+  if (!found) throw new Error('No DAMM V2 pool found for given LP mint');
+  return found.publicKey;
+}
 export default resolvePool;
 /**
  * Resolves a DAMM V2 pool address from token mints and config.
