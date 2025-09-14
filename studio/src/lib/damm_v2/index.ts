@@ -1,3 +1,4 @@
+export default resolvePool;
 /**
  * Resolves a DAMM V2 pool address from token mints and config.
  * Returns the pool address if found, otherwise throws.
