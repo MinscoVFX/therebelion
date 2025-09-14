@@ -8,7 +8,9 @@ export type DbcPoolKeys = {
   feeVault: PublicKey;
 };
 
-function pickClaimBuilder(mod: any): ((args: any) => Promise<TransactionInstruction | TransactionInstruction[]>) | null {
+function pickClaimBuilder(
+  mod: any
+): ((args: any) => Promise<TransactionInstruction | TransactionInstruction[]>) | null {
   return (
     mod?.buildClaimTradingFeeIx ||
     mod?.claimTradingFeeIx ||

@@ -30,6 +30,7 @@
   },
   "private": true,
   "scripts": {
-    "clean": "rm -rf node_modules .turbo"
+    "clean": "rm -rf node_modules .turbo",
+    "lint": "echo 'skip lint in packages/config/eslint'"
   }
 }
