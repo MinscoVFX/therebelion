@@ -1,3 +1,53 @@
+import { TransactionInstruction } from '@solana/web3.js';
+// Remove liquidity builder for DAMM v2 pools (Meteora DBC docs pattern)
+export async function buildRemoveLiquidityIx({ 
+  programId,
+  pool,
+  authorityPda,
+  lpMint,
+  tokenAVault,
+  tokenBVault,
+  user,
+  userLpAccount,
+  userAToken,
+  userBToken,
+  _lpAmount,
+  _priorityMicros = 250_000,
+}: {
+  programId: PublicKey;
+  pool: PublicKey;
+  authorityPda: PublicKey;
+  lpMint: PublicKey;
+  tokenAVault: PublicKey;
+  tokenBVault: PublicKey;
+  user: PublicKey;
+  userLpAccount: PublicKey;
+  userAToken: PublicKey;
+  userBToken: PublicKey;
+  _lpAmount: bigint;
+  _priorityMicros?: number;
+}) {
+  // This is a simplified builder. Replace with full logic from Meteora DBC docs as needed.
+  // Typically, you would use the SDK or construct the instruction manually.
+  // Example:
+  // return CpAmm.buildRemoveLiquidityIx({ ... });
+  // For now, return a placeholder TransactionInstruction.
+  return new TransactionInstruction({
+    keys: [
+      { pubkey: pool, isSigner: false, isWritable: true },
+      { pubkey: authorityPda, isSigner: false, isWritable: false },
+      { pubkey: lpMint, isSigner: false, isWritable: true },
+      { pubkey: tokenAVault, isSigner: false, isWritable: true },
+      { pubkey: tokenBVault, isSigner: false, isWritable: true },
+      { pubkey: user, isSigner: true, isWritable: false },
+      { pubkey: userLpAccount, isSigner: false, isWritable: true },
+      { pubkey: userAToken, isSigner: false, isWritable: true },
+      { pubkey: userBToken, isSigner: false, isWritable: true },
+    ],
+    programId,
+    data: Buffer.alloc(0), // Replace with proper instruction data per DBC docs
+  });
+}
 import { BN, Wallet } from '@coral-xyz/anchor';
 import {
   BaseFee,

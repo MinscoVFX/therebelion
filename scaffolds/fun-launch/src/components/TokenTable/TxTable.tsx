@@ -1,1 +1,1 @@
-import Table from '@/components/Table';
+import { Table as _Table } from '@/components/Table';

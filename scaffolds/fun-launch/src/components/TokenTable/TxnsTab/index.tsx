@@ -1,6 +1,6 @@
 import { useTokenAddress, useTokenInfo } from '@/hooks/queries';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo as _memo, useEffect, useMemo, useState } from 'react';
 import { ApeQueries } from '../../Explore/queries';
 import { TxTable } from './TxTable';
 import { columns } from './columns';
@@ -23,9 +23,9 @@ export const TxnsTab: React.FC<TxnsTabProps> = ({ symbol, data, table, walletAdd
   // Fixing type assignment issues
   const {
     data: txData,
-    isFetching,
-    fetchNextPage,
-    hasNextPage: hasNextPageQuery,
+  isFetching,
+  fetchNextPage,
+  hasNextPage: _hasNextPageQuery,
   } = useInfiniteQuery({
     ...ApeQueries.tokenTxs({ id: tokenId || '' }),
     enabled: !!tokenId,

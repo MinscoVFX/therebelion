@@ -9,7 +9,7 @@ import {
 } from '@tanstack/react-table';
 import { notUndefined, useVirtualizer } from '@tanstack/react-virtual';
 import { useAtom } from 'jotai';
-import { PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PropsWithChildren, useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { DateMode, dateModeAtom } from './datemode';
 import { useWallet } from '@jup-ag/wallet-adapter';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/Table';
@@ -17,13 +17,15 @@ import { cn } from '@/lib/utils';
 import { PausedIndicator } from '../../Explore/PausedIndicator';
 import { isHoverableDevice } from '@/lib/device';
 import { SkeletonTableRows } from './columns';
-
-interface Tx { /* define properties */ }
+  // Removed unused top-level useRef
+// Removed empty interface Tx
 
 type TxTableProps<_TData, TValue> = {
-  table: Table<Tx>;
+  table: ReturnType<typeof useReactTable<_TData>>;
   columns: ColumnDef<_TData, TValue>[];
   data: _TData[];
+  // _TData is unused, prefix to resolve lint warning
+  // _TData is unused, prefix to resolve lint warning
   symbol: string;
   hasNextPage: boolean;
   isFetching: boolean;
