@@ -12,22 +12,13 @@ import { useAtom } from 'jotai';
 import { PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DateMode, dateModeAtom } from './datemode';
 import { useWallet } from '@jup-ag/wallet-adapter';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../Table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/Table';
 import { cn } from '@/lib/utils';
 import { PausedIndicator } from '../../Explore/PausedIndicator';
 import { isHoverableDevice } from '@/lib/device';
 import { SkeletonTableRows } from './columns';
 
-declare module '@tanstack/react-table' {
-  interface TableMeta<_TData extends RowData> {
-    dateMode: DateMode;
-    setDateMode: (mode: DateMode) => void;
-    walletAddress: string | undefined;
-    symbol: string | undefined;
-  }
-}
-
-const ROW_HEIGHT = 36;
+interface Tx { /* define properties */ }
 
 type TxTableProps<_TData, TValue> = {
   table: Table<Tx>;
@@ -41,6 +32,18 @@ type TxTableProps<_TData, TValue> = {
   setPaused: (paused: boolean) => void;
   walletAddress: string | undefined;
 };
+
+// Fixing TableMeta declaration to ensure identical type parameters
+declare module '@tanstack/react-table' {
+  interface TableMeta<TData extends RowData> {
+    dateMode: DateMode;
+    setDateMode: (mode: DateMode) => void;
+    walletAddress: string | undefined;
+    symbol: string | undefined;
+  }
+}
+
+const ROW_HEIGHT = 36;
 
 export function TxTable<_TData, TValue>({
   symbol,
