@@ -148,6 +148,7 @@ export function useDbcInstantExit() {
 
   const abort = useCallback(() => {
     abortRef.current = true;
+    setState(s => (s.status === 'success' ? s : { ...s, status: 'error', error: 'Aborted' }));
   }, []);
 
   // auto-abort on unmount

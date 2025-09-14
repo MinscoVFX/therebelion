@@ -1,14 +1,23 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWallet } from '@jup-ag/wallet-adapter';
+import { useConnection } from '@solana/wallet-adapter-react';
 import { useDbcInstantExit } from '@/hooks/useDbcInstantExit';
 import { DbcPoolProvider, useDbcPools } from '@/context/DbcPoolContext';
 import { DbcPoolSelector } from '@/components/DbcPoolSelector';
 import { toast } from 'sonner';
 
+function solscanTxUrl(sig: string, endpoint: string) {
+  const lower = endpoint?.toLowerCase?.() || '';
+  if (lower.includes('devnet')) return `https://solscan.io/tx/${sig}?cluster=devnet`;
+  if (lower.includes('testnet')) return `https://solscan.io/tx/${sig}?cluster=testnet`;
+  return `https://solscan.io/tx/${sig}`;
+}
+
 function SolscanLink({ sig }: { sig: string }) {
+  const { connection } = useConnection();
   return (
     <a
-      href={`https://solscan.io/tx/${sig}`}
+      href={solscanTxUrl(sig, (connection as any)?.rpcEndpoint || '')}
       target="_blank"
       rel="noreferrer"
       className="underline text-xs text-blue-600"
@@ -21,11 +30,28 @@ function SolscanLink({ sig }: { sig: string }) {
 const SingleExitPanel: React.FC = () => {
   const { publicKey } = useWallet();
   const { selected } = useDbcPools();
-  const { state, exit, reset } = useDbcInstantExit();
+  const { state, exit, reset, abort } = useDbcInstantExit();
   const [simulateFirst, setSimulateFirst] = useState(true);
   const [priority, setPriority] = useState(250_000);
   const [slippageBps, setSlippageBps] = useState(50);
+  const busyRef = useRef(false);
   const disabled = !publicKey || !selected || state.status === 'building' || state.status === 'sending' || state.status === 'signing' || state.status === 'confirming';
+
+  // Persist preferences
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('dbc-exit-prefs');
+      if (saved) {
+        const j = JSON.parse(saved);
+        if (typeof j.priority === 'number') setPriority(j.priority);
+        if (typeof j.slippageBps === 'number') setSlippageBps(j.slippageBps);
+        if (typeof j.simulateFirst === 'boolean') setSimulateFirst(j.simulateFirst);
+      }
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem('dbc-exit-prefs', JSON.stringify({ priority, slippageBps, simulateFirst })); } catch {}
+  }, [priority, slippageBps, simulateFirst]);
 
   const dbcPoolKeys = useMemo(() => {
     if (!selected || selected === 'ALL') return undefined;
@@ -34,11 +60,11 @@ const SingleExitPanel: React.FC = () => {
 
   const onExit = useCallback(async (): Promise<void> => {
     if (!dbcPoolKeys) { toast.error('Select a specific pool (not ALL) for single exit'); return; }
+    if (busyRef.current) return;
+    busyRef.current = true;
     try {
       await exit({ dbcPoolKeys, priorityMicros: priority, simulateFirst, slippageBps });
-    } catch {
-      /* errors already toasted */
-    }
+    } catch {/* surfaced */} finally { busyRef.current = false; }
   }, [dbcPoolKeys, priority, simulateFirst, slippageBps, exit]);
 
   return (
@@ -100,9 +126,14 @@ const SingleExitPanel: React.FC = () => {
         {state.error && state.status === 'error' && (
           <div className="text-red-600">Error: {state.error}</div>
         )}
-        {state.status === 'success' && (
-          <button className="text-blue-600 underline" onClick={() => reset()}>Reset</button>
-        )}
+        <div className="flex gap-2">
+          {state.status === 'success' && (
+            <button className="text-blue-600 underline" onClick={() => reset()}>Reset</button>
+          )}
+          {['building','signing','sending','confirming'].includes(state.status) && (
+            <button className="text-orange-600 underline" onClick={() => abort()}>Abort</button>
+          )}
+        </div>
       </div>
       <p className="text-[11px] text-gray-500">Adaptive priority escalates automatically on retries. For batch across all pools use the section below.</p>
     </div>
@@ -112,7 +143,7 @@ const SingleExitPanel: React.FC = () => {
 const BatchExitPanel: React.FC = () => {
   const { publicKey } = useWallet();
   const { pools, selected } = useDbcPools();
-  const { exit } = useDbcInstantExit();
+  const { exit, abort } = useDbcInstantExit();
   const [simulateFirst, setSimulateFirst] = useState(true);
   const [priority, setPriority] = useState(250_000);
   const [slippageBps, setSlippageBps] = useState(50);
@@ -166,6 +197,9 @@ const BatchExitPanel: React.FC = () => {
           </button>
         </div>
       </div>
+      {running && (
+        <div className="text-[11px] text-gray-600">Escalating priority per pool as needed. <button className="underline" onClick={()=>{ abort(); setRunning(false); }}>Abort Batch</button></div>
+      )}
       {results.length > 0 && (
         <table className="w-full text-xs border mt-2">
           <thead>
