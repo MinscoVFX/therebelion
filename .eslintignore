@@ -1,2 +1,4 @@
 **/*.d.ts
 scaffolds/fun-launch/src/components/AdvancedTradingView/**
+scaffolds/fun-launch/.next/**
+node_modules/**
