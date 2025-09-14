@@ -276,7 +276,7 @@ export async function createDammV2BalancedPool(
   }
 
   let quoteTokenInfo = null;
-  let quoteTokenProgram = TOKEN_PROGRAM_ID;
+  let _quoteTokenProgram = TOKEN_PROGRAM_ID;
 
   const quoteMintAccountInfo = await connection.getAccountInfo(
     new PublicKey(quoteTokenMint),
@@ -295,7 +295,7 @@ export async function createDammV2BalancedPool(
       mint: quoteMint,
       currentEpoch: epochInfo.epoch,
     };
-    quoteTokenProgram = TOKEN_2022_PROGRAM_ID;
+    _quoteTokenProgram = TOKEN_2022_PROGRAM_ID;
   }
 
   const baseDecimals = baseMint.decimals;

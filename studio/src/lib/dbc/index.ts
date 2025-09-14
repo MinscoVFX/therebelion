@@ -3,7 +3,6 @@ import {
   Keypair,
   PublicKey,
   Transaction,
-  ComputeBudgetProgram,
   Signer,
   Commitment, // <-- important: accept full Commitment union
 } from '@solana/web3.js';

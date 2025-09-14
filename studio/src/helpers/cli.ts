@@ -26,7 +26,7 @@ export async function parseConfigFromCli(): Promise<MeteoraConfig> {
   if (!cliArguments.config) {
     throw new Error('Please provide a config file path to --config flag');
   }
-  let configFilePath = cliArguments.config!;
+  let configFilePath = cliArguments.config;
 
   // If the path is relative, resolve it appropriately based on where we're running from
   if (!path.isAbsolute(configFilePath)) {
