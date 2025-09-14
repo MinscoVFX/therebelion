@@ -45,7 +45,6 @@ async function importDammRuntime(): Promise<any> {
   const target = resolveStudioDammV2();
   if (!target)
     throw new Error('Studio DAMM v2 module not found (build studio or keep it in the monorepo).');
-  // @ts-expect-error webpackIgnore lets Next import a file path on the server
   const mod = await import(/* webpackIgnore: true */ target);
   if (!mod) throw new Error('Failed to import DAMM v2 runtime.');
   return mod;

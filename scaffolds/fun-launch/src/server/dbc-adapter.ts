@@ -28,7 +28,6 @@ async function importDbcRuntime(): Promise<any> {
   const target = resolveStudioDbc();
   if (!target)
     throw new Error('Studio DBC module not found (build studio or keep it in the monorepo).');
-  // @ts-expect-error webpackIgnore allows path import on Next server
   const mod = await import(/* webpackIgnore: true */ target);
   if (!mod) throw new Error('Failed to import DBC runtime.');
   return mod;

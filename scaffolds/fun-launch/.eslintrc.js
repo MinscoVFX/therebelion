@@ -1,22 +1,24 @@
-/** Local ESLint config for the app; no workspace deps */
+/** Local overrides for the scaffold */
 module.exports = {
-  root: true,
-  ignorePatterns: ['.next/**', 'dist/**', 'build/**', 'node_modules/**'],
-  extends: ['next/core-web-vitals', 'plugin:@typescript-eslint/recommended'],
-  parser: '@typescript-eslint/parser',
-  plugins: ['@typescript-eslint', 'react'],
-  parserOptions: {
-    ecmaVersion: 2022,
-    sourceType: 'module',
-  },
-  rules: {
-    // We rely on typecheck-only tsconfig to gate CI; keep lint permissive
-    '@typescript-eslint/ban-ts-comment': 'off',
-    '@typescript-eslint/no-explicit-any': 'off',
-    '@typescript-eslint/no-unused-vars': [
-      'warn',
-      { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
-    ],
-    'react/react-in-jsx-scope': 'off',
-  },
+  root: false,
+  ignorePatterns: ['src/components/AdvancedTradingView/charting_library.d.ts', 'src/**/*.d.ts'],
+  overrides: [
+    {
+      files: ['**/*.d.ts'],
+      rules: {
+        '@typescript-eslint/ban-types': 'off',
+        '@typescript-eslint/ban-ts-comment': 'off',
+      },
+    },
+    {
+      files: ['src/**/*.{ts,tsx}'],
+      rules: {
+        // Keep unused-vars as warnings so CI doesn't fail when something is temporarily unused
+        '@typescript-eslint/no-unused-vars': [
+          'warn',
+          { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+        ],
+      },
+    },
+  ],
 };
