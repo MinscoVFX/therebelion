@@ -6,12 +6,12 @@ export async function resolveDammV2Pool({
   connection,
   tokenAMint,
   tokenBMint,
-  config,
+  _config,
 }: {
   connection: Connection;
   tokenAMint: PublicKey;
   tokenBMint: PublicKey;
-  config: any;
+  _config: any;
 }): Promise<PublicKey> {
   // Example: Use cp-amm-sdk to fetch all pools and match mints
   const cp = new CpAmm(connection);
