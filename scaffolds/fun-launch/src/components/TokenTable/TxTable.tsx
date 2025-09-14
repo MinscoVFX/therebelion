@@ -1,1 +1,1 @@
-import { Table as _Table } from '@/components/Table';
+import { Table as _Table } from '@/components/Table'; // No generics used; prior unused generic suppressed

@@ -10,13 +10,13 @@ import { CpAmm, type RemoveLiquidityParams } from '@meteora-ag/cp-amm-sdk';
  */
 export async function buildRemoveLiquidityIx({
   connection,
-  programId, // kept for forward-compat though CpAmm derives internally
+  programId: _programId, // reserved for potential future use
   pool,
-  lpMint,
+  lpMint: _lpMint,
   user,
-  userLpAccount,
-  userAToken,
-  userBToken,
+  userLpAccount: _userLpAccount,
+  userAToken: _userAToken,
+  userBToken: _userBToken,
   tokenAMint,
   tokenBMint,
   tokenAVault,
@@ -25,7 +25,7 @@ export async function buildRemoveLiquidityIx({
   slippageBps = 50, // 0.50% default
 }: {
   connection: Connection;
-  programId: PublicKey; // not directly used now
+  programId: PublicKey;
   pool: PublicKey;
   lpMint: PublicKey;
   user: PublicKey;
@@ -36,7 +36,7 @@ export async function buildRemoveLiquidityIx({
   tokenBMint: PublicKey;
   tokenAVault: PublicKey;
   tokenBVault: PublicKey;
-  lpAmount: bigint; // raw LP amount (no decimals conversion required here)
+  lpAmount: bigint;
   slippageBps?: number;
 }): Promise<TransactionInstruction[]> {
   const cp = new CpAmm(connection);
