@@ -10,7 +10,7 @@ import {
 import { notUndefined, useVirtualizer } from '@tanstack/react-virtual';
 import { useAtom } from 'jotai';
 import { PropsWithChildren, useCallback, useEffect, useMemo, useState, useRef } from 'react';
-import { DateMode, dateModeAtom } from './datemode';
+import { dateModeAtom } from './datemode';
 import { useWallet } from '@jup-ag/wallet-adapter';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/Table';
 import { cn } from '@/lib/utils';
@@ -35,15 +35,6 @@ type TxTableProps<_TData, TValue> = {
   walletAddress: string | undefined;
 };
 
-// Fixing TableMeta declaration to ensure identical type parameters
-declare module '@tanstack/react-table' {
-  interface TableMeta {
-    dateMode: DateMode;
-    setDateMode: (mode: DateMode) => void;
-    walletAddress: string | undefined;
-    symbol: string | undefined;
-  }
-}
 
 const ROW_HEIGHT = 36;
 

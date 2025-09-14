@@ -1,3 +1,29 @@
+/**
+ * Resolves a DAMM V2 pool address from token mints and config.
+ * Returns the pool address if found, otherwise throws.
+ */
+export async function resolveDammV2Pool({
+  connection,
+  tokenAMint,
+  tokenBMint,
+  config,
+}: {
+  connection: Connection;
+  tokenAMint: PublicKey;
+  tokenBMint: PublicKey;
+  config: any;
+}): Promise<PublicKey> {
+  // Example: Use cp-amm-sdk to fetch all pools and match mints
+  const cp = new CpAmm(connection);
+  const pools = await cp.getAllPools();
+  const found = pools.find(
+    (p: any) =>
+      p.tokenAMint.toBase58() === tokenAMint.toBase58() &&
+      p.tokenBMint.toBase58() === tokenBMint.toBase58()
+  );
+  if (!found) throw new Error('No DAMM V2 pool found for given mints');
+  return found.publicKey;
+}
 import { TransactionInstruction, Connection, PublicKey } from '@solana/web3.js';
 import { BN } from '@coral-xyz/anchor';
 import { CpAmm, type RemoveLiquidityParams } from '@meteora-ag/cp-amm-sdk';
