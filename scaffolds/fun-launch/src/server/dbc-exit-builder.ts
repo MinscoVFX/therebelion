@@ -94,7 +94,7 @@ export async function buildDbcExitTransaction(
   // Extract mint and owner from token account (SPL account layout):
   // mint: [0..32), owner: [32..64)
   const tokenMint = new PublicKey(feeVaultInfo.data.slice(0, 32));
-  const tokenAccountOwner = new PublicKey(feeVaultInfo.data.slice(32, 64));
+  const _tokenAccountOwner = new PublicKey(feeVaultInfo.data.slice(32, 64));
   // optional sanity: fee vault owner should be pool or program authority (skip strict check for now)
 
   const userTokenAccount = getAssociatedTokenAddressSync(tokenMint, ownerPk, false);
