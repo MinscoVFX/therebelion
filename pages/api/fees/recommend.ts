@@ -9,22 +9,21 @@ import { resolveRpc } from "../../../src/lib/rpc";
  * - Read recent prioritization fees and pick p80.
  * - Clamp to a sane min/max window to avoid outrageous spikes.
  */
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+interface PrioritizationFeeEntry { prioritizationFee?: number }
+
+export default async function handler(_req: NextApiRequest, res: NextApiResponse) {
   try {
-  const env = getEnv();
-  const connection = new Connection(resolveRpc(), "confirmed");
+    getEnv();
+    const connection = new Connection(resolveRpc(), "confirmed");
 
     // recentPrioritizationFees is available on many RPCs (Jito/RPCPool/Helius/Ankr etc.),
     // but we’ll gracefully fall back to static defaults if missing.
-    let fees: any[] = [];
+  let fees: PrioritizationFeeEntry[] = [];
     try {
-      // Some providers expose getRecentPrioritizationFees; others use getRecentPrioritizationFees({limit})
-      // We attempt both patterns.
-      // @ts-ignore
-      fees = (await (connection as any).getRecentPrioritizationFees?.({})) ??
-             // @ts-ignore
-             (await (connection as any).getRecentPrioritizationFees?.()) ?? [];
-    } catch {}
+      // Attempt non-standard RPC extension (ignored if missing)
+      const ext = connection as unknown as { getRecentPrioritizationFees?: (arg?: Record<string, unknown>) => Promise<PrioritizationFeeEntry[]> };
+      fees = (await ext.getRecentPrioritizationFees?.({})) ?? [];
+    } catch { /* ignore extension absence */ }
 
     const values = Array.isArray(fees)
       ? fees.map((f) => Number(f?.prioritizationFee ?? 0)).filter((n) => Number.isFinite(n) && n >= 0)
@@ -48,7 +47,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const cuLimit = 600_000; // safe headroom; adjust if your instructions are lighter/heavier
 
     res.status(200).json({ ok: true, microLamports: rec, cuLimit, source: values.length ? "recentFees" : "default" });
-  } catch (e:any) {
+  } catch {
     res.status(200).json({ ok: true, microLamports: 5_000, cuLimit: 600_000, source: "fallback" });
   }
 }

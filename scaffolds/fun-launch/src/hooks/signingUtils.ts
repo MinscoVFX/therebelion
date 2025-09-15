@@ -41,6 +41,12 @@ export async function signTransactionsAdaptive(wallet: WalletLike, txs: Versione
   const errors: (string | null)[] = [];
   for (let i = 0; i < txs.length; i++) {
     const tx = txs[i];
+    if (!tx) {
+      // Should not happen, but keep array alignment.
+      result.push(tx as any);
+      errors.push('missing transaction');
+      continue;
+    }
     try {
       if (!wallet.signTransaction) throw new Error('signTransaction not supported by wallet');
       const signed = await wallet.signTransaction(tx);

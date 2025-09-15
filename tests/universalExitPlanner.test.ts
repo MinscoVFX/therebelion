@@ -6,7 +6,7 @@ import { planUniversalExits } from '../scaffolds/fun-launch/src/hooks/universalE
 const mockTxBase64 = 'AQAAAA=='; // minimal base64 (not a real versioned tx, but planner not validating here)
 
 function mockFetchFactory() {
-  return vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+  return vi.fn(async (url: RequestInfo | URL) => {
     const u = String(url);
     if (u.endsWith('/api/dbc-discover')) {
       return new Response(JSON.stringify({ positions: [{ pool: 'PoolAAA', feeVault: 'FeeAAA' }] }), { status: 200 });
@@ -26,7 +26,6 @@ function mockFetchFactory() {
 
 describe('universal exit planner', () => {
   it('plans dbc and dammv2 tasks', async () => {
-    // @ts-ignore override global fetch
     global.fetch = mockFetchFactory();
     const tasks = await planUniversalExits({ owner: 'WalletABC' });
     expect(tasks.length).toBe(2);
@@ -35,7 +34,6 @@ describe('universal exit planner', () => {
   });
 
   it('respects include flags', async () => {
-    // @ts-ignore override global fetch
     global.fetch = mockFetchFactory();
     const tasks = await planUniversalExits({ owner: 'WalletABC', include: { dbc: false } });
     expect(tasks.length).toBe(1);

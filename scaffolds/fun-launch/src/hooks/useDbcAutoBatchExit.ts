@@ -92,14 +92,29 @@ export function useDbcAutoBatchExit() {
       }));
 
       // Adaptive signing: attempt batch sign first.
-      const deserialized = built.map(b => VersionedTransaction.deserialize(Buffer.from(b.tx, 'base64')));
-      let signedTxs: VersionedTransaction[] = [];
-      if ((signTransaction as any).signAllTransactions) {
-        // Some adapters attach signAllTransactions to the same object; adapt that shape.
+      const deserialized: VersionedTransaction[] = built
+        .map(b => {
+          try {
+            return VersionedTransaction.deserialize(Buffer.from(b.tx, 'base64'));
+          } catch {
+            return undefined;
+          }
+        })
+        .filter((v): v is VersionedTransaction => !!v);
+
+      // If any failed to deserialize we abort early to avoid mismatched indexing.
+      if (deserialized.length !== built.length) {
+        setState(s => ({
+          ...s,
+          running: false,
+          items: s.items.map(it => ({ ...it, status: 'error', error: 'deserialize failed' })),
+          finishedAt: Date.now(),
+        }));
+        return;
       }
+
       const walletLike: any = { signTransaction, signAllTransactions: (signTransaction as any)?.signAllTransactions };
-  const { signed, errors } = await signTransactionsAdaptive(walletLike, deserialized);
-  signedTxs = signed;
+      const { signed: signedTxs, errors } = await signTransactionsAdaptive(walletLike, deserialized);
 
       for (let i = 0; i < built.length; i++) {
         if (controller.signal.aborted) break;
@@ -109,9 +124,14 @@ export function useDbcAutoBatchExit() {
         }
         try {
           setState(s => ({ ...s, currentIndex: i, items: s.items.map((it, idx) => idx === i ? { ...it, status: 'signed' } : it) }));
-          const sig = await connection.sendRawTransaction(signedTxs[i].serialize(), { skipPreflight: false, maxRetries: 0 });
+          const txToSend = signedTxs[i];
+          if (!txToSend) throw new Error('missing signed transaction');
+          const sig = await connection.sendRawTransaction(txToSend.serialize(), { skipPreflight: false, maxRetries: 0 });
           setState(s => ({ ...s, items: s.items.map((it, idx) => idx === i ? { ...it, status: 'sent', signature: sig } : it) }));
-          await connection.confirmTransaction({ signature: sig, blockhash: deserialized[i].message.recentBlockhash!, lastValidBlockHeight: built[i].lastValidBlockHeight }, 'confirmed');
+          const confirmedTx = deserialized[i];
+          const builtMeta = built[i];
+          if (!confirmedTx || !builtMeta) throw new Error('confirmation data missing');
+          await connection.confirmTransaction({ signature: sig, blockhash: confirmedTx.message.recentBlockhash!, lastValidBlockHeight: builtMeta.lastValidBlockHeight }, 'confirmed');
           setState(s => ({ ...s, items: s.items.map((it, idx) => idx === i ? { ...it, status: 'confirmed' } : it) }));
         } catch (e: any) {
           setState(s => ({ ...s, items: s.items.map((it, idx) => idx === i ? { ...it, status: 'error', error: e?.message || 'failed' } : it) }));

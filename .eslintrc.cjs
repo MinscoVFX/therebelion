@@ -24,8 +24,18 @@ module.exports = {
       }
     }
   },
-  ignorePatterns: ['**/node_modules/**', '**/dist/**', '**/.next/**', 'scaffolds/**'],
+  ignorePatterns: ['**/node_modules/**', '**/dist/**', '**/.next/**', 'scaffolds/**', 'packages/config/eslint/**', 'packages/config/prettier/**'],
   rules: {
     'react/react-in-jsx-scope': 'off',
+    '@typescript-eslint/no-explicit-any': 'error',
+    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }]
   },
+  overrides: [
+    {
+      files: ['tests/**/*.ts'],
+      rules: {
+        '@typescript-eslint/no-explicit-any': 'off'
+      }
+    }
+  ]
 };

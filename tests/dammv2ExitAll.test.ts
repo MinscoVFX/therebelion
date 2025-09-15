@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 
 // Helper to monkey patch CpAmm for controlled responses
-function withPatchedCpAmm(mockPositions: any[], fn: () => Promise<void>) {
-  const real = require('@meteora-ag/cp-amm-sdk');
+async function withPatchedCpAmm(mockPositions: unknown[], fn: () => Promise<void>) {
+  const real: any = await import('@meteora-ag/cp-amm-sdk');
   const original = real.CpAmm;
   real.CpAmm = class MockCp {
     connection: any;
-    constructor(c: any) { this.connection = c; }
+    constructor(c: unknown) { this.connection = c; }
     getAllPositionNftAccountByOwner = async () => mockPositions;
   } as any;
   return fn().finally(() => { real.CpAmm = original; });
@@ -17,16 +17,16 @@ function withPatchedCpAmm(mockPositions: any[], fn: () => Promise<void>) {
 
 describe('dammv2-exit-all route', () => {
   it('returns error when owner missing', async () => {
-    const mod = await import('../scaffolds/fun-launch/src/app/api/dammv2-exit-all/route');
+    const mod: any = await import('../scaffolds/fun-launch/src/app/api/dammv2-exit-all/route');
     const req: any = { json: async () => ({}) };
-    const res = await mod.POST(req);
+    const res: any = await mod.POST(req);
     const json = await res.json();
     expect(res.status).toBe(400);
     expect(json.error).toMatch(/owner required/);
   });
 
   it('returns empty when no positions (simulate env without RPC real scan)', async () => {
-    const mod = await import('../scaffolds/fun-launch/src/app/api/dammv2-exit-all/route');
+  const mod: any = await import('../scaffolds/fun-launch/src/app/api/dammv2-exit-all/route');
     // Provide a random owner; underlying helper likely to fail if SDK not mocked. We catch graceful error cases.
     const randomOwner = '11111111111111111111111111111111';
     const req: any = { json: async () => ({ owner: randomOwner }) };
@@ -40,14 +40,14 @@ describe('dammv2-exit-all route', () => {
         expect(Array.isArray(json.positions)).toBe(true);
         expect(Array.isArray(json.txs)).toBe(true);
       }
-    } catch (e) {
+    } catch {
       // Should not throw hard; treat as failure.
       expect(false, 'route threw unexpected exception').toBe(true);
     }
   });
 
   it('skips locked vesting & owner mismatch', async () => {
-    const mod = await import('../scaffolds/fun-launch/src/app/api/dammv2-exit-all/route');
+  const mod: any = await import('../scaffolds/fun-launch/src/app/api/dammv2-exit-all/route');
     const owner = '11111111111111111111111111111111';
     const other = '22222222222222222222222222222222';
     // Fake PublicKey objects with toBase58
@@ -64,7 +64,7 @@ describe('dammv2-exit-all route', () => {
     ];
     await withPatchedCpAmm(positions as any, async () => {
       const req: any = { json: async () => ({ owner }) };
-      const res = await mod.POST(req);
+      const res: any = await mod.POST(req);
       const json = await res.json();
       if (json.error) {
         // Acceptable fallback path if runtime shape differs; ensure message is descriptive
