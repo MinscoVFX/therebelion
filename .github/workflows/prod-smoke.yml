@@ -26,13 +26,21 @@ jobs:
       - name: Run smoke tests
         run: |
           set -euo pipefail
-          node scripts/prod-smoke.mjs > smoke-report.json || {
-            echo 'Smoke script failed; partial report (if any):'
-            if [ -f smoke-report.json ]; then sed -n '1,160p' smoke-report.json; fi
-            exit 1
-          }
+          node scripts/prod-smoke.mjs || true
+          # Script writes scripts/prod-smoke-report.json
+          if [ ! -f scripts/prod-smoke-report.json ]; then echo 'Missing prod-smoke-report.json'; exit 1; fi
+          cp scripts/prod-smoke-report.json smoke-report.json
+          # Determine pass/fail from JSON
+          pass=$(jq -r '.allPassed' smoke-report.json || echo 'false')
+          sed -n '1,160p' smoke-report.json
+          if [ "$pass" != "true" ]; then echo 'Smoke tests reported failure'; exit 1; fi
       - name: Show first 120 lines
         run: sed -n '1,120p' smoke-report.json
+      - name: Always print (debug)
+        if: always()
+        run: |
+          echo '--- ALWAYS PRINT (first 120 lines) ---'
+          if [ -f smoke-report.json ]; then sed -n '1,120p' smoke-report.json; else echo 'smoke-report.json missing'; fi
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
