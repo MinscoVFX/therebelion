@@ -44,21 +44,21 @@ async function run() {
   });
 
   await stepWrap('dbc-exit simulate claim GET', async step => {
-    const { res, json } = await fetchJson(`${APP_URL}/api/exit/dbc-exit?action=claim&simulateOnly=true`);
+    const { res, json } = await fetchJson(`${APP_URL}/api/dbc-exit?action=claim&simulateOnly=true`);
     assertStatus(res, 200, 'dbc-exit claim GET');
     assert.ok(json, 'claim simulate json exists');
     step.ok = true; step.status = res.status; step.json = json;
   });
 
   await stepWrap('dbc-exit simulate claim POST', async step => {
-    const { res, json } = await fetchJson(`${APP_URL}/api/exit/dbc-exit?action=claim&simulateOnly=true`, { method: 'POST' });
+    const { res, json } = await fetchJson(`${APP_URL}/api/dbc-exit?action=claim&simulateOnly=true`, { method: 'POST' });
     assertStatus(res, 200, 'dbc-exit claim POST');
     assert.ok(json, 'claim simulate json exists');
     step.ok = true; step.status = res.status; step.json = json;
   });
 
   await stepWrap('dbc-exit withdraw disabled', async step => {
-    const { res, json } = await fetchJson(`${APP_URL}/api/exit/dbc-exit?action=withdraw&simulateOnly=true`);
+    const { res, json } = await fetchJson(`${APP_URL}/api/dbc-exit?action=withdraw&simulateOnly=true`);
     assertStatus(res, 501, 'dbc-exit withdraw');
     step.ok = true; step.status = res.status; step.json = json;
   });
