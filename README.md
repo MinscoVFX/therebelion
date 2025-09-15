@@ -52,6 +52,28 @@ Status code is 200 when `ok=true` else 500 if any blocking errors (e.g., placeho
 
 Add this route to uptime monitoring for early detection of misconfiguration before users hit /exit.
 
+## Vercel Setup (RPC Aliases)
+
+Set the following Environment Variables in Vercel (Project → Settings → Environment Variables) for all environments (Preview + Production):
+
+| Key | Value | Notes |
+| --- | ----- | ----- |
+| `RPC_ENDPOINT` | (Your Helius RPC URL) | Primary server-side resolution key |
+| `NEXT_PUBLIC_RPC_URL` | (Same Helius RPC URL) | Exposed to client where needed |
+| `RPC_URL` | (Same Helius RPC URL) | Optional legacy; resolver accepts any of the three |
+| `DBC_USE_IDL` | `true` | Enables IDL-based discriminator derivation in production |
+| `POOL_CONFIG_KEY` | `<base58>` | Required existing variable (kept for exit logic) |
+
+Runtime now resolves the RPC via:
+
+```ts
+process.env.RPC_ENDPOINT || process.env.RPC_URL || process.env.NEXT_PUBLIC_RPC_URL
+```
+
+If none are set the server throws: `RPC endpoint missing (RPC_ENDPOINT/RPC_URL/NEXT_PUBLIC_RPC_URL)`.
+
+After setting variables trigger a redeploy. Verify with `GET /api/health` that at least one `HAS_RPC_*` flag is `true` and `env.ok` is `true`.
+
 ## DBC One-Click Exit Overview
 
 Reference docs: Meteora DBC – https://docs.meteora.ag/overview/products/dbc/what-is-dbc

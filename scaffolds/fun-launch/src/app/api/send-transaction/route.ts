@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import { Connection, VersionedTransaction, Transaction } from '@solana/web3.js';
+// Local scaffold RPC resolver mirrors root resolver logic
+import { resolveRpc } from '@/lib/rpc';
+const _resolveRpc = resolveRpc;
 
 function decodeTx(b64: string): VersionedTransaction | Transaction {
   const buf = Buffer.from(b64, 'base64');
@@ -12,7 +15,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const { signedTransaction, signedTransactions, waitForLanded } = body;
-    const connection = new Connection(process.env.NEXT_PUBLIC_RPC_URL || process.env.RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
+  const connection = new Connection(_resolveRpc(), 'confirmed');
 
     const txs: (VersionedTransaction | Transaction)[] = [];
     if (signedTransaction) txs.push(decodeTx(signedTransaction));

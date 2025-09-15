@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { Connection } from "@solana/web3.js";
 import { getEnv } from "../../../src/env/required";
+import { resolveRpc } from "../../../src/lib/rpc";
 
 /**
  * Recommends microLamports per CU using recent block priorities.
@@ -10,8 +11,8 @@ import { getEnv } from "../../../src/env/required";
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const env = getEnv();
-    const connection = new Connection(env.RPC_URL, "confirmed");
+  const env = getEnv();
+  const connection = new Connection(resolveRpc(), "confirmed");
 
     // recentPrioritizationFees is available on many RPCs (Jito/RPCPool/Helius/Ankr etc.),
     // but we’ll gracefully fall back to static defaults if missing.
