@@ -1,5 +1,4 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-
 export const runtime = 'nodejs';
 
 export default async function handler(_req: NextApiRequest, res: NextApiResponse) {
