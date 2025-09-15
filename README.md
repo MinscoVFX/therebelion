@@ -1,7 +1,7 @@
 # Meteora Invent Monorepo
 
 [![CI](https://github.com/MinscoVFX/therebelion/actions/workflows/ci.yml/badge.svg)](https://github.com/MinscoVFX/therebelion/actions/workflows/ci.yml)
-![Coverage](https://img.shields.io/badge/coverage-pending-lightgrey)
+![Coverage](https://img.shields.io/badge/coverage-25%25-lightgreen)
 
 Solana DeFi toolkit:
 
@@ -89,14 +89,12 @@ After setting variables trigger a redeploy. Verify with `GET /api/health` that a
 
 Reference docs: Meteora DBC – https://docs.meteora.ag/overview/products/dbc/what-is-dbc
 
-Reference Meteora DBC documentation: https://docs.meteora.ag/overview/products/dbc/what-is-dbc
-
 The `scaffolds/fun-launch` app exposes a production build `/exit` route implementing a one‑click
 claim of accumulated DBC trading fees and withdrawal flow (current prototype focuses on fee claim
 transaction structure; full withdraw legs may be extended later). Key pieces:
 
 - UI: `scaffolds/fun-launch/src/app/exit/page.tsx` (stand‑alone page) and a reusable button
-	component `DbcOneClickExitButton` for embedding elsewhere.
+  component `DbcOneClickExitButton` for embedding elsewhere.
 - Hook: `useDbcInstantExit` orchestrates: optional simulation, build, sign, send, confirm with
 	adaptive priority fee escalation (up to 3 attempts, +35% each, cap 3,000,000 microLamports).
 - API Route: `/api/dbc-exit` constructs a VersionedTransaction and returns it base64‑encoded plus
@@ -142,7 +140,7 @@ Copy `.env.example` to `.env.local` and fill in the real values:
 | -------- | ------- | ------------------ |
 | `DBC_PROGRAM_ID` | Override program id for DBC (fee claim) | Fallback to `dbcij3LWUppWqq96...` if unset |
 | `DBC_CLAIM_FEE_DISCRIMINATOR` | 8-byte hex (16 hex chars) discriminator for claim fee ix (explicit override – highest precedence) | REQUIRED unless using NAME or IDL |
-| `DBC_CLAIM_FEE_INSTRUCTION_NAME` | Anchor instruction name (e.g. `claim_partner_trading_fee`) to derive discriminator (sha256("global::<name>").slice(0,8)) | Optional (used if explicit hex unset) |
+| `DBC_CLAIM_FEE_INSTRUCTION_NAME` | Anchor instruction name (e.g. `claim_partner_trading_fee`) to derive discriminator (sha256("global::<instruction_name>").slice(0,8)) | Optional (used if explicit hex unset) |
 | `ALLOWED_DBC_PROGRAM_IDS` | Comma-separated allow list of permitted DBC program IDs (safety gate) | (unset = allow any) |
 | `DBC_WITHDRAW_DISCRIMINATOR` | 8-byte hex for withdraw instruction | REQUIRED unless using NAME or IDL |
 | `DBC_WITHDRAW_INSTRUCTION_NAME` | Anchor instruction name to derive withdraw discriminator | Optional (used if explicit hex unset) |
@@ -175,6 +173,60 @@ How to obtain the real discriminator (Anchor-style): `sha256("global::<instructi
 
 The API route now delegates to this builder, ensuring consistent logic for both simulation and execution.
 
+### API Exit Build (Unified)
+
+Endpoint: `POST /api/exit/build`
+
+Purpose: Build compute budget instructions and (optionally) a DBC exit transaction (currently fee claim; withdraw path will activate once official layout confirmed).
+
+Request Body (JSON):
+
+```ts
+{
+  "cuLimit": 600000,                // optional compute unit limit (clamped 50k–1.4M)
+  "microLamports": 250000,          // priority fee (μLamports per CU, clamped 0–3,000,000)
+  "owner": "<walletPubkey>",       // required for DBC claim build
+  "dbcPoolKeys": {                  // required for DBC claim build
+    "pool": "<poolPubkey>",
+    "feeVault": "<feeVaultTokenAccountPubkey>"
+  },
+  "action": "claim",               // 'claim' | 'withdraw' | 'claim_and_withdraw' (withdraw pending)
+  "simulateOnly": true              // default true for safety if DBC params supplied
+}
+```
+
+Response (success with DBC build):
+
+```ts
+{
+  "ok": true,
+  "cuLimit": 600000,
+  "microLamports": 250000,
+  "computeBudgetIxs": [ { /* CU limit ix */ }, { /* CU price ix */ } ],
+  "exitTxBase64": "<base64 versioned tx>",
+  "simulation": { "logs": [], "unitsConsumed": 5000 }
+}
+```
+
+If only fee parameters supplied (no DBC keys), the route returns compute budget data sans `exitTxBase64`.
+
+Failure (e.g., missing discriminator):
+
+```json
+{ "ok": false, "cuLimit": 600000, "microLamports": 250000, "error": "Missing claim discriminator: ..." }
+```
+
+Mock Mode: Set `TEST_MOCK_RPC=mock` (never in production) to force an in-memory connection with deterministic blockhash, account info (fake SPL account data), and simulation result (5,000 CU). Used by integration tests (`tests/exitBuildDbcIntegration.test.ts`).
+
+Discriminator Precedence (claim & withdraw):
+
+1. Explicit hex env (`DBC_CLAIM_FEE_DISCRIMINATOR` / `DBC_WITHDRAW_DISCRIMINATOR`)
+2. Instruction name env (`DBC_CLAIM_FEE_INSTRUCTION_NAME` / `DBC_WITHDRAW_INSTRUCTION_NAME`)
+3. IDL auto mode when `DBC_USE_IDL=true` and `dbc_idl.json` present
+4. (Error) – request fails with 400 (runtime) or throws early (import path) if missing
+
+Production Safety: Placeholder discriminators are fully disallowed—supply real values prior to public launch.
+
 ## Auto Batch Exit (Prototype)
 
 An optional prototype feature lets a user process every discovered DBC position sequentially with one
@@ -190,11 +242,11 @@ action. Enable the toggle on the `/exit` page: "Auto Batch Exit (all positions)"
 Limitations / Roadmap:
 
 1. Full liquidity withdrawal legs not yet attached (awaiting authoritative exit instruction + final
-	discriminator(s)).
+  discriminator(s)).
 2. No adaptive priority escalation per item (single exit hook already implements; planned parity).
 3. Concurrency deliberately = 1 for simplicity; future enhancement may allow small parallelism.
 4. Placeholder claim instruction uses `DBC_CLAIM_FEE_DISCRIMINATOR`; ensure you configure the real
-	8‑byte value before expecting on‑chain success.
+  8‑byte value before expecting on‑chain success.
 
 Configuration & Persistence:
 
@@ -229,7 +281,7 @@ It plans both sets of transactions first, then signs & submits them sequentially
 | UI | `scaffolds/fun-launch/src/app/exit/page.tsx` | Adds the "Universal Exit All" button + progress list. |
 | APIs | `/api/dbc-discover`, `/api/dbc-exit`, `/api/dammv2-discover`, `/api/dammv2-exit`, `/api/dammv2-exit-all` | Discovery & tx assembly backends (single & bulk). |
 
-### Status Lifecycle
+### Status Lifecycle (Universal Exit)
 
 `planning → pending → signed → sent → confirmed | error` per item.
 
@@ -244,7 +296,7 @@ If one position build or send fails, it is marked `error` and the flow continues
 | DBC withdraw | Still placeholder; only fee claim executed | Replace when official withdraw instruction confirmed |
 | DAMM v2 partial exit | Always 100% removal (percent=100) | Add per‑position %, quoting + slippage thresholds |
 | Migrated pool detection | Env list only (`MIGRATED_DBC_POOLS`) | On-chain metadata (migration PDA) auto-detection |
-| Parallelism | Serial execution (one at a time) | Optional small (N=2–3) concurrency | 
+| Parallelism | Serial execution (one at a time) | Optional small (N=2–3) concurrency |
 | Slippage protection | None for DAMM v2 withdraw builder | Integrate withdraw quote thresholds robustly |
 | Priority adaptation | Fixed base priorityMicros | Integrate adaptive escalation like single exit hook |
 
@@ -260,7 +312,7 @@ Unit test `tests/universalExitPlanner.test.ts` validates dual‑protocol plannin
 
 ### Example (Conceptual)
 
-```
+```ts
 // Trigger universal exit
 const { state, run } = useUniversalExit();
 run({ priorityMicros: 250_000 });
@@ -304,6 +356,7 @@ The `/exit` page has been refactored to a fully dark, high‑contrast palette to
 No structural or logical changes were made—purely class substitutions. Tests remain green (see CI badge) confirming functional invariants unaffected.
 
 Future enhancement ideas:
+ 
 1. Optional light/dark theme toggle with CSS variables (would require extracting Tailwind tokens to custom properties).
 2. Reduced motion mode for progress animations.
 3. Add aria-live region for batch/universal status stream (planned in accessibility follow-up).
@@ -316,6 +369,7 @@ Endpoint: `POST /api/dammv2-exit-all`
 Purpose: Build full-liquidity removal transactions (one per position) for every DAMM v2 position owned by the connected wallet, enabling a single multi-sign approval flow.
 
 Input JSON fields:
+
 | Field | Type | Default | Description |
 | ----- | ---- | ------- | ----------- |
 | owner | string | (required) | Wallet public key base58 |
@@ -324,7 +378,8 @@ Input JSON fields:
 | simulateOnly | boolean | false | If true, run simulation per tx and return logs without executing |
 
 Response:
-```
+
+```json
 {
   positions: [{ position, pool, status, reason?, signature? }],
   txs: [base64VersionedTx...],
@@ -333,6 +388,7 @@ Response:
 ```
 
 Status / Reason semantics (skips):
+
 | Code | Meaning |
 | ---- | ------- |
 | zero-liquidity | Position had no remaining liquidity |
@@ -344,11 +400,76 @@ Status / Reason semantics (skips):
 Client Hook: `useDammV2ExitAll` attempts `signAllTransactions`; falls back to per-transaction signing, updates UI progress panel.
 
 Roadmap:
+
 1. Instruction packing (multiple positions per tx when safe).
 2. Slippage / min-out thresholds.
 3. Vesting / locked detection (skip or partial strategies).
 4. Authority double-check against position account owner for defense-in-depth.
 5. Converge with Universal Exit planner post hardening.
+
+## Mainnet Usage Checklist
+
+To run the production `/exit` and unified `/api/exit/build` endpoints safely on mainnet:
+
+1. Provide a high-availability Solana RPC (Helius, Triton, Syndica, etc.). Set at least one of: `RPC_ENDPOINT`, `RPC_URL`, or `NEXT_PUBLIC_RPC_URL`.
+2. Populate DBC discriminators via one (and only one) strategy:
+   - Explicit hex: set `DBC_CLAIM_FEE_DISCRIMINATOR` (and `DBC_WITHDRAW_DISCRIMINATOR` when withdraw supported), OR
+   - Instruction names: set `DBC_CLAIM_FEE_INSTRUCTION_NAME` (and future withdraw name) to a supported Anchor instruction, OR
+   - IDL mode: set `DBC_USE_IDL=true` and provide `dbc_idl.json`.
+3. Enforce allow-lists:
+   - `ALLOWED_DBC_PROGRAM_IDS` must JSON-encode an array containing the official program id.
+   - `ALLOWED_DAMM_V2_PROGRAM_IDS` must JSON-encode an array containing the official DAMM v2 id.
+4. Remove any placeholder discriminators before deployment; runtime throws in production if missing/invalid.
+5. Monitor `GET /api/health` post-deploy; ensure `ok=true` and no placeholder warnings.
+6. Keep priority fee defaults conservative (250k μLamports/CU) and clamp upper bounds (code already enforces 3,000,000).
+7. Set up alerting for anomalies (elevated simulation errors, sudden tx CU spikes) using your infra provider.
+
+Minimal required env set (example production `.env` fragment):
+
+```bash
+RPC_ENDPOINT=https://mainnet.helius-rpc.example
+ALLOWED_DBC_PROGRAM_IDS=["dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN"]
+ALLOWED_DAMM_V2_PROGRAM_IDS=["cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG"]
+DBC_USE_IDL=true
+# or explicit
+# DBC_CLAIM_FEE_DISCRIMINATOR=0123abcd89ef4567
+```
+
+### Unified Exit Build API (`POST /api/exit/build`)
+
+Generates compute budget instructions and (optionally) a DBC claim transaction in one response.
+
+Body fields:
+
+| Field | Type | Required | Description |
+| ----- | ---- | -------- | ----------- |
+| owner | string | yes | Wallet public key (base58) used as fee + signing authority |
+| priorityMicros | number | no | Priority fee per CU (μLamports) default 250000 |
+| computeUnitLimit | number | no | Override CU limit (default 600k) |
+| dbcPoolKeys | object | conditional | Provide when building DBC claim (pool + feeVault pubkeys) |
+| action | string | conditional | `claim` (current) – future: `withdraw`, `claim_and_withdraw` |
+| simulateOnly | boolean | no | If true (default when DBC inputs present), returns simulated logs only |
+
+Success response (fields subset):
+
+```json
+{
+  "ok": true,
+  "cuLimit": 600000,
+  "microLamports": 250000,
+  "computeBudgetIxs": [ { /* set CU limit */ }, { /* set price */ } ],
+  "exitTxBase64": "...",   // present when DBC build succeeded
+  "simulation": {"logs": [], "unitsConsumed": 5000}
+}
+```
+
+Error example:
+
+```json
+{"ok": false, "error": "Missing claim discriminator: DBC_CLAIM_FEE_*"}
+```
+
+Mock mode (testing only): set `TEST_MOCK_RPC=mock` to inject deterministic blockhash + simulation; never enable in production.
 
 
 

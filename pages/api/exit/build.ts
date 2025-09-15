@@ -37,8 +37,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   let exitTxBase64: string | undefined;
   let simulation: { logs: string[]; unitsConsumed: number; error?: unknown } | undefined;
     if (parsed.owner && parsed.dbcPoolKeys?.pool && parsed.dbcPoolKeys?.feeVault) {
-  const rpc = process.env.RPC_URL || process.env.RPC_ENDPOINT || process.env.NEXT_PUBLIC_RPC_URL || process.env.TEST_MOCK_RPC || 'https://api.mainnet-beta.solana.com';
-      // Allow mock connection for tests when TEST_MOCK_RPC === 'mock'
+      const rpc = process.env.TEST_MOCK_RPC === 'mock'
+        ? 'mock'
+        : (process.env.RPC_URL || process.env.RPC_ENDPOINT || process.env.NEXT_PUBLIC_RPC_URL || 'https://api.mainnet-beta.solana.com');
+      // Allow mock connection for tests when TEST_MOCK_RPC === 'mock'. Provides deterministic account + simulation.
       const connection = rpc === 'mock'
         ? ({
             getAccountInfo: async () => ({ data: Buffer.alloc(165, 1) }),

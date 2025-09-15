@@ -102,6 +102,10 @@ jobs:
       - name: Lint code
         run: pnpm ci:lint
 
+      - name: Markdown lint
+        run: |
+          npx --yes markdownlint-cli '**/*.md' -c .markdownlint.json || npx --yes markdownlint-cli '**/*.md'
+
       # TODO: Fix version mismatches before re-enabling
       # - name: Check dependency versions
       #   run: pnpm syncpack:check
