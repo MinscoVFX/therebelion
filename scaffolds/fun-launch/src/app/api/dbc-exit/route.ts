@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
     const built = await buildDbcExitTransaction(connection, {
       owner: body.owner,
       dbcPoolKeys: body.dbcPoolKeys,
+      action: body.action, // default handled inside builder
       priorityMicros: body.priorityMicros,
       slippageBps: body.slippageBps,
       computeUnitLimit: body.computeUnitLimit,

@@ -18,9 +18,39 @@ pnpm dev
 
 ## Scripts
 
-build • dev • type-check • lint • lint:fix • format • format:check • clean • ci
+build • dev • type-check • lint • lint:fix • format • format:check • clean • ci • health • env:check • health:full
+
+`pnpm health` runs a consolidated preflight: typecheck + lint + tests (run mode) and serves as a quick
+verification gate before commits or deployments. `pnpm env:check` performs static environment validation
+(placeholder discriminator, required variables, allow‑list formatting). `pnpm health:full` runs both in sequence.
+
+Environment template: see `.env.example` for all supported variables (including
+`DBC_SUPPRESS_PLACEHOLDER_WARNING` for local development log noise suppression).
 
 /exit verification: see EXIT_VERIFICATION.md and PARITY_SUMMARY.md.
+
+### Health API
+
+A lightweight runtime health endpoint is exposed at: `GET /api/health` within the fun-launch Next.js app.
+It returns JSON:
+
+```json
+{
+  "service": "fun-launch",
+  "time": "2025-09-15T00:00:00.000Z",
+  "commit": "abcdef1",
+  "env": {
+    "ok": true,
+    "warnings": ["Using placeholder DBC_CLAIM_FEE_DISCRIMINATOR"],
+    "errors": [],
+    "details": {"RPC_ENDPOINT": "present"}
+  }
+}
+```
+
+Status code is 200 when `ok=true` else 500 if any blocking errors (e.g., placeholder discriminator in production or missing required envs).
+
+Add this route to uptime monitoring for early detection of misconfiguration before users hit /exit.
 
 ## DBC One-Click Exit Overview
 
@@ -79,9 +109,23 @@ Copy `.env.example` to `.env.local` and fill in the real values:
 | -------- | ------- | ------------------ |
 | `DBC_PROGRAM_ID` | Override program id for DBC (fee claim) | Fallback to `dbcij3LWUppWqq96...` if unset |
 | `DBC_CLAIM_FEE_DISCRIMINATOR` | 8-byte hex (little-endian) discriminator for claim fee ix | Placeholder `0102030405060708` if unset |
+| `DBC_SUPPRESS_PLACEHOLDER_WARNING` | If `true`, silences console warning when placeholder discriminator is in use (dev only) | `false` |
+| `ALLOWED_DBC_PROGRAM_IDS` | Comma-separated allow list of permitted DBC program IDs (safety gate) | (unset = allow any) |
+| (future) `DBC_WITHDRAW_LIQUIDITY_DISCRIMINATOR` | 8-byte hex for withdraw instruction (not yet active) | (unset) |
 | `ALLOW_PLACEHOLDER_DBC` | Bypass prod guard (NOT recommended) | Must be set to `true` explicitly |
+| `DBC_USE_IDL` | If `true`, attempt to load `dbc_idl.json` and auto-derive discriminators | `false` |
+| `dbc_idl.json` | Optional Anchor-style IDL file at repo root | Not present by default |
 
 Production Guard: In `NODE_ENV=production`, if the placeholder discriminator is still present the builder throws an error unless you deliberately set `ALLOW_PLACEHOLDER_DBC=true`. This prevents accidentally shipping a non-functional claim instruction.
+
+Action Parameter (`claim` | `withdraw`): The builder & API accept an `action` field. `withdraw` currently throws `DBC withdraw (liquidity removal) is not implemented yet` until the official DBC IDL / instruction layout is supplied. UI presents the option disabled for clarity.
+
+IDL Auto Mode: When `DBC_USE_IDL=true` and a `dbc_idl.json` file exists:
+
+1. The builder parses the IDL and derives each instruction discriminator with Anchor formula `sha256("global::<name>").slice(0,8)`.
+2. For the generic `claim` action it prefers `claim_partner_trading_fee` then `claim_creator_trading_fee`.
+3. The withdraw stub error includes any withdraw-like instruction name & listed accounts to guide integration.
+4. If IDL load fails it silently falls back to env / placeholder behavior.
 
 How to obtain the real discriminator (Anchor-style): `sha256("global::<instruction_name>")` → take first 16 hex chars (8 bytes). Confirm via official Meteora IDL / docs.
 
@@ -92,7 +136,7 @@ How to obtain the real discriminator (Anchor-style): `sha256("global::<instructi
 - Validates pool + fee vault and extracts SPL token mint.
 - Creates (idempotent) destination ATA for claimer.
 - Applies optional compute budget (price + limit) instructions.
-- Inserts DBC claim fee instruction (placeholder discriminator until real one configured).
+- Inserts DBC claim fee instruction (placeholder discriminator until real one configured). A withdraw path stub exists but is intentionally guarded.
 - Supports simulation mode; returns logs + CU usage.
 
 The API route now delegates to this builder, ensuring consistent logic for both simulation and execution.
@@ -132,3 +176,96 @@ we simply stop building/sending the next ones and mark batch `running=false`.
 
 Security Note: Because multiple signed transactions are dispatched, ensure the page is trusted and the
 builder never introduces unvetted program IDs. A future enhancement will implement an allow‑list.
+
+## Universal Exit (DBC + DAMM v2)
+
+The beta Universal Exit flow extends the original DBC one‑click claim to also:
+
+1. Claim DBC trading fees for every discovered DBC position (as before).
+2. Remove 100% liquidity from each discovered DAMM v2 position (full withdrawal) using the cp‑amm SDK.
+
+It plans both sets of transactions first, then signs & submits them sequentially, tracking per‑tx status.
+
+### Components
+
+| Component | Path | Purpose |
+| --------- | ---- | ------- |
+| Planner | `scaffolds/fun-launch/src/hooks/universalExitPlanner.ts` | Discovers positions (DBC + DAMM v2) and builds transactions via server APIs. |
+| Hook | `scaffolds/fun-launch/src/hooks/useUniversalExit.ts` | Executes planned transactions sequentially (sign → send → confirm). |
+| UI | `scaffolds/fun-launch/src/app/exit/page.tsx` | Adds the "Universal Exit All" button + progress list. |
+| APIs | `/api/dbc-discover`, `/api/dbc-exit`, `/api/dammv2-discover`, `/api/dammv2-exit` | Discovery & tx assembly backends. |
+
+### Status Lifecycle
+
+`planning → pending → signed → sent → confirmed | error` per item.
+
+### Failure Isolation
+
+If one position build or send fails, it is marked `error` and the flow continues with remaining tasks (best‑effort philosophy). Abort stops further processing after the in‑flight transaction completes (cannot cancel already sent tx on Solana).
+
+### Current Limitations
+
+| Area | Limitation | Planned Improvement |
+| ---- | ---------- | ------------------ |
+| DBC withdraw | Still placeholder; only fee claim executed | Replace when official withdraw instruction confirmed |
+| DAMM v2 partial exit | Always 100% removal (percent=100) | Add per‑position %, quoting + slippage thresholds |
+| Parallelism | Serial execution (one at a time) | Optional small (N=2–3) concurrency | 
+| Slippage protection | None for DAMM v2 withdraw builder | Integrate withdraw quote thresholds robustly |
+| Priority adaptation | Fixed base priorityMicros | Integrate adaptive escalation like single exit hook |
+
+### Safety Guards
+
+- DBC claim still blocked in production if placeholder discriminator unless `ALLOW_PLACEHOLDER_DBC=true`.
+- Builder clamps priority fee microLamports to `[0, 3_000_000]`.
+- Invalid / failing build requests are skipped with console warnings (not fatal to whole batch).
+
+### Testing
+
+Unit test `tests/universalExitPlanner.test.ts` validates dual‑protocol planning and include filters. Full end‑to‑end requires connected wallet & real chain accounts (see `EXIT_VERIFICATION.md` for manual checklist; universal exit semantics mirror batch + single flows combined).
+
+### Example (Conceptual)
+
+```
+// Trigger universal exit
+const { state, run } = useUniversalExit();
+run({ priorityMicros: 250_000 });
+```
+
+`state.items` will populate with mixed `dbc` (claim) and `dammv2` (withdraw) tasks.
+
+### Environment Variables (Additional)
+
+No new variables introduced specifically for Universal Exit; it reuses existing DBC env (see above) and RPC URL detection. Future additions (e.g., `UNIVERSAL_EXIT_MAX_CONCURRENCY`) may be added when parallelism is implemented.
+
+### Roadmap (Universal Exit)
+
+1. Add DBC withdraw once authoritative instruction layout (IDL) available.
+2. Add per‑protocol adaptive priority escalation.
+3. Persist per‑session summary (success/fail counts + signatures) to localStorage for audit.
+4. Optional safe‑mode simulation pass for DAMM v2 before executing (opt‑in).
+5. Program allow‑list + signature domain tagging for enhanced safety.
+
+### Wallet Batch Signing Optimization
+
+If the connected wallet (e.g., Phantom, Solflare, Backpack) supports `signAllTransactions`, the batch + universal exit flows automatically attempt a single approval for all prepared transactions. If the batch call fails or isn’t supported, the code falls back to individual `signTransaction` prompts per transaction. Individual failures in fallback mode do not abort the rest of the batch; they are recorded with status `error` and execution proceeds.
+
+## Dark Theme Exit UI
+
+The `/exit` page has been refactored to a fully dark, high‑contrast palette to meet production accessibility and branding goals (no white panels or low‑contrast gray text). Key design notes:
+
+- Base surfaces: `neutral-900` (page) and `neutral-850` (cards) with subtle `neutral-700/60` borders.
+- Accent feedback: indigo (info / in‑progress), emerald (success), rose (error), amber (pending / attention).
+- Status chips & badges use translucent overlays (e.g. `bg-indigo-500/10` + border) for better layering on dark backgrounds without harsh saturation.
+- Radio inputs & checkboxes adopt `accent-indigo-500` for consistent interaction color.
+- Error & simulation log panels replaced red/blue light backgrounds with tinted overlays (e.g. `bg-rose-500/10`).
+- All interactive elements retain visible focus (`focus:ring-indigo-400/60` etc.) for keyboard accessibility.
+
+No structural or logical changes were made—purely class substitutions. Tests remain green (see CI badge) confirming functional invariants unaffected.
+
+Future enhancement ideas:
+1. Optional light/dark theme toggle with CSS variables (would require extracting Tailwind tokens to custom properties).
+2. Reduced motion mode for progress animations.
+3. Add aria-live region for batch/universal status stream (planned in accessibility follow-up).
+
+
+

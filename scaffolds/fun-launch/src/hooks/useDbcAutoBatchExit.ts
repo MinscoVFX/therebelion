@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
+import { signTransactionsAdaptive } from './signingUtils';
 
 export interface AutoBatchStatusItem {
   pool: string;
@@ -61,7 +62,7 @@ export function useDbcAutoBatchExit() {
         return;
       }
 
-      // Build a claim tx per position (future: differentiate full vs claim)
+      // Build a claim tx per position (future: differentiate withdraw vs claim)
       const buildPromises = positions.map(async (p) => {
         const buildResp = await fetch('/api/dbc-exit', {
           method: 'POST',
@@ -69,6 +70,7 @@ export function useDbcAutoBatchExit() {
           body: JSON.stringify({
             owner: publicKey.toBase58(),
             dbcPoolKeys: { pool: p.pool, feeVault: p.feeVault },
+            action: 'claim',
             priorityMicros: opts.priorityMicros,
             computeUnitLimit: opts.computeUnitLimit,
             simulateOnly: false,
@@ -88,16 +90,27 @@ export function useDbcAutoBatchExit() {
         items: built.map(b => ({ pool: b.pool, feeVault: b.feeVault, lpMint: b.lpMint, mode: b.mode, status: 'pending' })),
       }));
 
+      // Adaptive signing: attempt batch sign first.
+      const deserialized = built.map(b => VersionedTransaction.deserialize(Buffer.from(b.tx, 'base64')));
+      let signedTxs: VersionedTransaction[] = [];
+      if ((signTransaction as any).signAllTransactions) {
+        // Some adapters attach signAllTransactions to the same object; adapt that shape.
+      }
+      const walletLike: any = { signTransaction, signAllTransactions: (signTransaction as any)?.signAllTransactions };
+  const { signed, errors } = await signTransactionsAdaptive(walletLike, deserialized);
+  signedTxs = signed;
+
       for (let i = 0; i < built.length; i++) {
         if (controller.signal.aborted) break;
-        const item = built[i];
+        if (errors[i]) {
+          setState(s => ({ ...s, items: s.items.map((it, idx) => idx === i ? { ...it, status: 'error', error: errors[i] || 'sign failed' } : it) }));
+          continue;
+        }
         try {
-          const tx = VersionedTransaction.deserialize(Buffer.from(item.tx, 'base64'));
-          const signed = await signTransaction(tx);
           setState(s => ({ ...s, currentIndex: i, items: s.items.map((it, idx) => idx === i ? { ...it, status: 'signed' } : it) }));
-          const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, maxRetries: 0 });
+          const sig = await connection.sendRawTransaction(signedTxs[i].serialize(), { skipPreflight: false, maxRetries: 0 });
           setState(s => ({ ...s, items: s.items.map((it, idx) => idx === i ? { ...it, status: 'sent', signature: sig } : it) }));
-          await connection.confirmTransaction({ signature: sig, blockhash: tx.message.recentBlockhash!, lastValidBlockHeight: item.lastValidBlockHeight }, 'confirmed');
+          await connection.confirmTransaction({ signature: sig, blockhash: deserialized[i].message.recentBlockhash!, lastValidBlockHeight: built[i].lastValidBlockHeight }, 'confirmed');
           setState(s => ({ ...s, items: s.items.map((it, idx) => idx === i ? { ...it, status: 'confirmed' } : it) }));
         } catch (e: any) {
           setState(s => ({ ...s, items: s.items.map((it, idx) => idx === i ? { ...it, status: 'error', error: e?.message || 'failed' } : it) }));

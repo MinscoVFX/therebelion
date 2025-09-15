@@ -16,7 +16,11 @@
     "format:check": "prettier --check . && turbo format:check",
     "syncpack:check": "syncpack list-mismatches",
     "clean": "rimraf dist",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "env:check": "node scripts/env-check.mjs",
+    "preflight": "pnpm typecheck && pnpm lint && pnpm test:run",
+    "health": "pnpm preflight",
+    "health:full": "pnpm env:check && pnpm health"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1",

@@ -127,3 +127,68 @@ soon as the official value is confirmed from Meteora documentation / IDL.
 ---
 
 Updated automatically as part of exit verification hardening.
+
+---
+
+## 12. Universal Exit (DBC + DAMM v2) Verification
+
+This section complements earlier checks by validating the new combined multi‑protocol flow.
+
+### 12.1 Planning Phase
+
+| Scenario | Steps | Expected |
+| -------- | ----- | -------- |
+| Mixed Positions | Wallet holds at least one DBC & one DAMM v2 position | Planner produces >=2 tasks (protocol set contains dbc & dammv2) |
+| DBC Only | Remove DAMM v2 position(s) | Only dbc tasks created |
+| DAMM v2 Only | Remove DBC positions | Only dammv2 tasks created |
+| None | Empty wallet | Planner returns 0 tasks; no execution started |
+
+### 12.2 Execution Sequencing
+
+| Stage | Observation |
+| ----- | ----------- |
+| After Plan | Items list populated with status=pending |
+| Signing | First item status→signed before any second item mutation |
+| Send | signed→sent with transient absence of signature link until confirm |
+| Confirm | sent→confirmed; signature link (explorer) works |
+| Progression | Index increments strictly (no interleaving) |
+
+### 12.3 Error Isolation
+
+Induce failure (e.g., tamper with one tx base64 in dev tools before signing): row transitions to error while subsequent rows continue to process.
+
+| Test | Steps | Expected |
+| ---- | ----- | -------- |
+| Single Failure | Modify one serialized tx to corrupt bytes | That row = error; others unaffected |
+| Abort Midway | Click Abort after N confirmations | Remaining rows keep status=pending (not processed) |
+
+### 12.4 DAMM v2 Withdraw Specific
+
+| Scenario | Expected |
+| -------- | -------- |
+| Full Removal | Position after confirm shows 0 liquidity (RPC refresh) |
+| Explorer CU | Transaction CU usage within reasonable bounds (no runaway) |
+
+### 12.5 DBC Claim Coexistence
+
+| Scenario | Expected |
+| -------- | -------- |
+| Mixed Batch | Both claim & withdraw signatures present in chronological order |
+| Placeholder Discriminator (dev) | Claim tx may fail; withdraw continues |
+
+### 12.6 Post-Run Summary (Manual)
+
+Record: total tasks, successes, failures, abort flag, wall time (end-start). Future enhancement: automatic persisted JSON summary.
+
+### 12.7 Safety Checks
+
+| Check | Expectation |
+| ----- | ----------- |
+| Program IDs | All DBC transactions use configured `DBC_PROGRAM_ID` | 
+| Priority Clamp | microLamports never exceed 3,000,000 |
+| Serialization | No task with invalid base64 (planner would have thrown) |
+
+### 12.8 Regression Guard Ideas
+
+Automated integration test (future): mock fetch endpoints returning deterministic tx; assert sequential status transitions.
+
