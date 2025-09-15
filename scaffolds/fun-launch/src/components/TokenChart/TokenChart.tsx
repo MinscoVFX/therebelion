@@ -436,7 +436,7 @@ export const TokenChart: React.FC<ChartProps> = memo(({ renderingId, style, opt 
     let activeChart: IChartWidgetApi | undefined;
     try {
       activeChart = widget.activeChart();
-    } catch (err) {
+    } catch {
       console.error('failed to get active chart, breaking');
       return;
     }

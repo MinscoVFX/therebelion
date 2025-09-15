@@ -1,5 +1,4 @@
 #!/usr/bin/env sh
-. "$(dirname "$0")/_/husky.sh"
-
-echo "[husky] pre-commit: skipping (no lint-staged configured)"
+# Minimal pre-commit stub (lint-staged intentionally disabled)
+echo "[husky] pre-commit: allow commit (no checks)"
 exit 0

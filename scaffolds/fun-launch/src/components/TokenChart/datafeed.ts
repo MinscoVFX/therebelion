@@ -215,7 +215,7 @@ export function createDataFeed(
             onDataCallback(devMarks);
           });
           tasks.push(devTask);
-        } catch (err) {
+        } catch {
           console.error(`getMarks: error getting marks from ${fromDate} to ${toDate}`);
         }
       }

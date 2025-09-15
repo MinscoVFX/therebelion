@@ -40,7 +40,8 @@ export default function DbcOneClickExitButton({
     errors: number;
   }>({ running: false, total: 0, done: 0, errors: 0 });
   const [priority, setPriority] = useState<number>(priorityMicros);
-  const [includeDamm, setIncludeDamm] = useState(false);
+  // In earlier iterations we considered optional DAMM exit inclusion; not implemented currently
+  // const [includeDamm, setIncludeDamm] = useState(false);
   const [slippageBps, setSlippageBps] = useState(50); // 0.50%
   const [simulateFirst, setSimulateFirst] = useState(true);
   const [fastMode, setFastMode] = useState(false);
@@ -113,7 +114,6 @@ export default function DbcOneClickExitButton({
                 pool: target.poolKeys.pool.toBase58(),
                 feeVault: target.poolKeys.feeVault.toBase58(),
               },
-              includeDammV2Exit: false,
               priorityMicros: priority,
               simulateFirst: fastMode ? false : simulateFirst,
               slippageBps,
@@ -125,23 +125,23 @@ export default function DbcOneClickExitButton({
               done: s.done + 1,
               lastSig: typeof sig === 'string' ? sig : s.lastSig,
             }));
-          } catch (e: any) {
+          } catch {
+            // Swallow individual pool exit errors but increment error counter
             setBatchState((s) => ({ ...s, done: s.done + 1, errors: s.errors + 1 }));
           }
         }
         toast.success('Batch exit complete');
         setBatchState((s) => ({ ...s, running: false }));
-      } catch (e: any) {
-        // Already surfaced toast here; add debug for clarity
-        toast.error(e?.message || 'Batch exit failed');
-        if (process?.env?.NODE_ENV === 'development') console.debug('Batch exit failed', e);
+      } catch (error: any) {
+        // Already surfaced toast here; add debug for clarity (hidden in production)
+        toast.error(error?.message || 'Batch exit failed');
+        if (process?.env?.NODE_ENV === 'development') console.debug('Batch exit failed', error);
         setBatchState((s) => ({ ...s, running: false }));
       }
       return;
     }
     await exit({
       dbcPoolKeys: { pool: selected.pool, feeVault: selected.feeVault },
-      includeDammV2Exit: includeDamm,
       priorityMicros: priority,
       simulateFirst: fastMode ? false : simulateFirst,
       slippageBps,
@@ -152,7 +152,6 @@ export default function DbcOneClickExitButton({
     connected,
     publicKey,
     exit,
-    includeDamm,
     priority,
     selected,
     connection,
@@ -189,14 +188,7 @@ export default function DbcOneClickExitButton({
               onChange={(e) => setSlippageBps(Number(e.target.value))}
             />
           </label>
-          <label className="flex items-center gap-2 text-xs font-medium select-none">
-            <input
-              type="checkbox"
-              checked={includeDamm}
-              onChange={(e) => setIncludeDamm(e.target.checked)}
-            />
-            Include DAMM Exit
-          </label>
+          {/* Future option: Include DAMM Exit (disabled pending implementation) */}
           <label className="flex items-center gap-2 text-xs font-medium select-none">
             <input
               type="checkbox"

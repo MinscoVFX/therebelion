@@ -64,8 +64,8 @@ export function useDbcPoolDiscovery() {
                 badge: '[lp]',
               });
             }
-          } catch (err) {
-            console.warn('Failed to check known pool:', knownPool.pool, err);
+          } catch {
+            console.warn('Failed to check known pool:', knownPool.pool);
           }
         }
 
@@ -96,7 +96,7 @@ export function useDbcPoolDiscovery() {
                   badge: '[discovered]',
                 });
               }
-            } catch (err) {
+            } catch {
               // Skip invalid potential pools
             }
           }
@@ -109,8 +109,8 @@ export function useDbcPoolDiscovery() {
 
           // Filter for DBC pools that user has positions in
           // This would need proper integration with Meteora's API structure
-        } catch (err) {
-          console.warn('Failed to fetch from Meteora API:', err);
+        } catch {
+          console.warn('Failed to fetch from Meteora API');
         }
 
         setPools(discovered);

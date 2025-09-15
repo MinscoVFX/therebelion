@@ -1,4 +1,3 @@
-import plugin from 'tailwindcss/plugin';
 import { addIconSelectors } from '@iconify/tailwind';
 
 /** @type {import('tailwindcss').Config} */
