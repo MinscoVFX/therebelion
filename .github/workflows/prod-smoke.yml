@@ -1,0 +1,53 @@
+name: Prod Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      APP_URL: https://therebelion-fun-launch.vercel.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node -v && npm -v
+      - name: Ensure script exists
+        run: |
+          test -f scripts/prod-smoke.mjs || { echo "missing scripts/prod-smoke.mjs"; exit 1; }
+      - name: Run smoke tests
+        run: node scripts/prod-smoke.mjs > smoke-report.json
+      - name: Show first 120 lines
+        run: sed -n '1,120p' smoke-report.json
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-report
+          path: smoke-report.json
+      - name: Comment on PR (if any)
+        if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('smoke-report.json','utf8');
+            const title = '✅ Production Smoke Report';
+            const payload = '```\n' + body.substring(0, 5000) + '\n```';
+            if (context.payload.pull_request) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: `${title}\n\n${payload}`
+              });
+            } else {
+              console.log(title + "\n\n" + payload);
+            }
