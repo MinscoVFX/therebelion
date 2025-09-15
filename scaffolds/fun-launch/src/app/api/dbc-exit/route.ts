@@ -56,13 +56,13 @@ export async function POST(req: Request) {
         logs: built.simulation.logs,
         unitsConsumed: built.simulation.unitsConsumed,
         error: built.simulation.error,
-        tx: base64,
+        txBase64: base64,
         ...common,
       });
     }
     return NextResponse.json({
       simulated: false,
-      tx: base64,
+      txBase64: base64,
       ...common,
     });
   } catch (error) {
