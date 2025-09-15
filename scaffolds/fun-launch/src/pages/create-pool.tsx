@@ -50,11 +50,18 @@ async function findVanityKeypair(suffix: string, maxSeconds = 30) {
 }
 
 // (optional) fetch Jito tip accounts so at least one tx in the bundle has a tip
+// Safe JSON parser: reads text then attempts JSON parse; returns fallback on empty
+async function safeJson<T = any>(resp: Response, fallback: T | null = null): Promise<T | null> {
+  const text = await resp.text().catch(() => '');
+  if (!text) return fallback;
+  try { return JSON.parse(text) as T; } catch { return fallback; }
+}
+
 async function getJitoTipAccounts(): Promise<string[]> {
   const r = await fetch('/api/jito-bundle?tipAccounts=1', { method: 'GET' });
   if (!r.ok) throw new Error(`Failed to fetch Jito tip accounts (HTTP ${r.status})`);
-  const j = await r.json();
-  const list = j?.tipAccounts;
+  const j = await safeJson<{ tipAccounts?: unknown }>(r, {} as any);
+  const list = (j as any)?.tipAccounts;
   if (!Array.isArray(list) || list.length === 0) throw new Error('No Jito tip accounts returned');
   return list as string[];
 }
@@ -143,7 +150,7 @@ export default function CreatePool() {
           }),
         });
 
-        const uploadJson = await uploadResponse.json();
+        const uploadJson = await safeJson<{ poolTx?: string; pool?: string; error?: string }>(uploadResponse, null);
         if (!uploadResponse.ok || !uploadJson?.poolTx) {
           throw new Error(uploadJson?.error || 'Upload/build failed');
         }
@@ -185,7 +192,7 @@ export default function CreatePool() {
               blockhash: String(createTx.recentBlockhash || ''), // share blockhash
             }),
           });
-          const buildSwapJson = await buildSwapRes.json();
+          const buildSwapJson = await safeJson<{ swapTx?: string; error?: string }>(buildSwapRes, null);
           if (!buildSwapRes.ok || !buildSwapJson?.swapTx) {
             throw new Error(buildSwapJson?.error || 'Failed to build swap');
           }
@@ -227,7 +234,7 @@ export default function CreatePool() {
               waitForLanded: true,
             }),
           });
-          const sendJson = await sendRes.json();
+          const sendJson = await safeJson<{ success?: boolean; status?: string; error?: string }>(sendRes, null);
           if (!sendRes.ok || !sendJson?.success) {
             throw new Error(sendJson?.error || 'Bundle submission failed');
           }
@@ -239,7 +246,7 @@ export default function CreatePool() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ signedTransaction: signedCreateB64 }),
           });
-          const sendJson = await sendResponse.json();
+          const sendJson = await safeJson<{ success?: boolean; error?: string }>(sendResponse, null);
           if (!sendResponse.ok || !sendJson?.success) {
             throw new Error(sendJson?.error || 'Send failed');
           }
