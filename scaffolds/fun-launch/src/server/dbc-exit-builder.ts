@@ -151,6 +151,14 @@ export function getActiveWithdrawDiscriminatorHex(): string { return withdrawDis
 
 export function isUsingPlaceholderDiscriminator(): boolean { return false; }
 
+// Test-only helper to reset cached discriminator buffers & metadata (used when env vars change between tests)
+export function __resetDbcExitBuilderCacheForTests() {
+  _claimDiscBuf = null;
+  _withdrawDiscBuf = null;
+  _discMeta = null;
+  _withdrawMeta = null;
+}
+
 function buildClaimInstruction(pool: PublicKey, feeVault: PublicKey, owner: PublicKey, userTokenAccount: PublicKey): TransactionInstruction {
   const data = Buffer.alloc(8);
   claimDisc().copy(data); // direct copy
