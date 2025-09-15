@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import { signTransactionsAdaptive } from './signingUtils';
+import { safeJson } from '../lib/http';
 
 export interface AutoBatchStatusItem {
   pool: string;
@@ -54,7 +55,7 @@ export function useDbcAutoBatchExit() {
         signal: controller.signal,
       });
       if (!discoverResp.ok) throw new Error('Discovery failed');
-      const discoverJson = await discoverResp.json();
+      const discoverJson = await safeJson<any>(discoverResp, { allowEmptyObject: true });
       const positions: any[] = discoverJson.positions || [];
 
       if (!positions.length) {
@@ -78,7 +79,7 @@ export function useDbcAutoBatchExit() {
           signal: controller.signal,
         });
         if (!buildResp.ok) throw new Error(`Build failed for pool ${p.pool}`);
-        const buildJson = await buildResp.json();
+        const buildJson = await safeJson<any>(buildResp, { allowEmptyObject: false });
         const tx64 = buildJson.tx as string;
         return { pool: p.pool, feeVault: p.feeVault, lpMint: p.lpMint, mode: 'claim', tx: tx64, lastValidBlockHeight: buildJson.lastValidBlockHeight } as BuildBatchResponseTx;
       });

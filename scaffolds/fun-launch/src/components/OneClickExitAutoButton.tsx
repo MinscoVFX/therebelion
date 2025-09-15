@@ -4,6 +4,7 @@ import React, { useCallback, useState } from 'react';
 import { useWallet } from '@jup-ag/wallet-adapter';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
+import { safeJson } from '../lib/http';
 import { toast } from 'sonner';
 
 type Props = {
@@ -44,8 +45,7 @@ export default function OneClickExitAutoButton({
           priorityMicros,
         }),
       });
-
-      const data: { tx?: string; error?: string } = await res.json();
+      const data = await safeJson<{ tx?: string; error?: string }>(res, { allowEmptyObject: true });
       if (!res.ok || !data?.tx) throw new Error(data?.error || 'Failed to build transaction');
 
       const vtx = VersionedTransaction.deserialize(Buffer.from(data.tx, 'base64'));

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useWallet } from '@jup-ag/wallet-adapter';
 import { VersionedTransaction, Connection } from '@solana/web3.js';
+import { safeJson } from '../lib/http';
 
 export interface ExitAllItemResult {
   position: string;
@@ -57,8 +58,8 @@ export function useDammV2ExitAll() {
           simulateOnly: args.simulateFirst ?? false,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'exit-all failed');
+      const json = await safeJson<any>(res, { allowEmptyObject: true });
+      if (!res.ok) throw new Error(json?.error || 'exit-all failed');
       const { txs, positions, lastValidBlockHeight } = json;
       setState((s) => ({ ...s, items: positions, txCount: txs.length, simulate: !!args.simulateFirst }));
       if (args.simulateFirst) return; // don't send
