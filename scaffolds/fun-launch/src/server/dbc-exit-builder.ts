@@ -11,7 +11,7 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
-import { loadDbcIdlIfAvailable } from './dbc-idl-utils';
+import { loadDbcIdlIfAvailable, anchorInstructionDiscriminator } from './dbc-idl-utils';
 
 /**
  * Centralized DBC fee-claim / (future) liquidity exit builder.
@@ -65,32 +65,58 @@ function assertProgramAllowed(pk: PublicKey) {
 // 8-byte little-endian placeholder; MUST be overridden with real discriminator for production.
 let _placeholderWarned = false;
 function resolveClaimDiscriminator(): Buffer {
-  // If IDL usage enabled, attempt to derive from IDL (choose creator or partner claim).
+  // 1. If an explicit 8-byte discriminator hex provided, use it first (authoritative override).
+  const explicit = process.env.DBC_CLAIM_FEE_DISCRIMINATOR;
+  if (explicit) {
+    const hex = explicit.replace(/^0x/, '');
+    if (hex.length !== 16) throw new Error('DBC_CLAIM_FEE_DISCRIMINATOR must be 8 bytes (16 hex chars)');
+    if (hex === '0102030405060708' && !_placeholderWarned && process.env.DBC_SUPPRESS_PLACEHOLDER_WARNING !== 'true') {
+      _placeholderWarned = true;
+      // eslint-disable-next-line no-console
+      console.warn('[dbc-exit-builder] Using placeholder DBC_CLAIM_FEE_DISCRIMINATOR. Replace with real 8-byte discriminator from Meteora DBC docs or supply IDL.');
+    }
+    return Buffer.from(hex, 'hex');
+  }
+
+  // 2. Instruction name path via Anchor hashing if DBC_CLAIM_FEE_INSTRUCTION_NAME set.
+  const ixName = process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME;
+  if (ixName) {
+    try {
+      const disc = anchorInstructionDiscriminator(ixName.trim());
+      return disc;
+    } catch (e) {
+      throw new Error('Failed to derive discriminator from DBC_CLAIM_FEE_INSTRUCTION_NAME: ' + (e as any)?.message);
+    }
+  }
+
+  // 3. IDL-based resolution if enabled.
   if (process.env.DBC_USE_IDL === 'true') {
     const idl = loadDbcIdlIfAvailable();
     if (idl) {
-      // Prefer partner fee claim then creator claim as generic 'claim'.
       const preferred = idl.instructions.find((i: any) => i.name === 'claim_partner_trading_fee') ||
         idl.instructions.find((i: any) => i.name === 'claim_creator_trading_fee');
-      if (preferred) {
-        return preferred.discriminator;
-      }
+      if (preferred) return preferred.discriminator;
     }
   }
-  const raw = process.env.DBC_CLAIM_FEE_DISCRIMINATOR || '0102030405060708';
-  const hex = raw.replace(/^0x/, '');
-  if (hex.length !== 16) throw new Error('DBC_CLAIM_FEE_DISCRIMINATOR must be 8 bytes (16 hex chars)');
-  if (hex === '0102030405060708' && !_placeholderWarned && process.env.DBC_SUPPRESS_PLACEHOLDER_WARNING !== 'true') {
+
+  // 4. Final fallback: placeholder (warn). This ensures dev ergonomics but must be blocked in prod (guarded below).
+  if (!_placeholderWarned && process.env.DBC_SUPPRESS_PLACEHOLDER_WARNING !== 'true') {
     _placeholderWarned = true;
     // eslint-disable-next-line no-console
-    console.warn('[dbc-exit-builder] Using placeholder DBC_CLAIM_FEE_DISCRIMINATOR. Replace with real 8-byte discriminator from Meteora DBC docs or supply IDL.');
+    console.warn('[dbc-exit-builder] Falling back to placeholder discriminator. Provide DBC_CLAIM_FEE_DISCRIMINATOR, DBC_CLAIM_FEE_INSTRUCTION_NAME, or enable IDL.');
   }
-  return Buffer.from(hex, 'hex');
+  return Buffer.from('0102030405060708', 'hex');
 }
 const CLAIM_FEE_DISCRIMINATOR = resolveClaimDiscriminator();
 
+// Expose a helper to introspect the active discriminator (used in tests for instruction-name path)
+export function getActiveClaimDiscriminatorHex(): string {
+  return CLAIM_FEE_DISCRIMINATOR.toString('hex');
+}
+
 export function isUsingPlaceholderDiscriminator(): boolean {
-  return (process.env.DBC_CLAIM_FEE_DISCRIMINATOR || '0102030405060708') === '0102030405060708';
+  const hex = CLAIM_FEE_DISCRIMINATOR.toString('hex');
+  return hex === '0102030405060708';
 }
 
 function buildClaimInstruction(pool: PublicKey, feeVault: PublicKey, owner: PublicKey, userTokenAccount: PublicKey): TransactionInstruction {

@@ -108,7 +108,8 @@ Copy `.env.example` to `.env.local` and fill in the real values:
 | Variable | Purpose | Default / Behavior |
 | -------- | ------- | ------------------ |
 | `DBC_PROGRAM_ID` | Override program id for DBC (fee claim) | Fallback to `dbcij3LWUppWqq96...` if unset |
-| `DBC_CLAIM_FEE_DISCRIMINATOR` | 8-byte hex (little-endian) discriminator for claim fee ix | Placeholder `0102030405060708` if unset |
+| `DBC_CLAIM_FEE_DISCRIMINATOR` | 8-byte hex (little-endian) discriminator for claim fee ix (explicit override – highest precedence) | Placeholder `0102030405060708` if unset |
+| `DBC_CLAIM_FEE_INSTRUCTION_NAME` | Anchor instruction name (e.g. `claim_partner_trading_fee`) to auto-derive discriminator using `sha256("global::<name>")` first 8 bytes | Used if explicit hex not set |
 | `DBC_SUPPRESS_PLACEHOLDER_WARNING` | If `true`, silences console warning when placeholder discriminator is in use (dev only) | `false` |
 | `ALLOWED_DBC_PROGRAM_IDS` | Comma-separated allow list of permitted DBC program IDs (safety gate) | (unset = allow any) |
 | (future) `DBC_WITHDRAW_LIQUIDITY_DISCRIMINATOR` | 8-byte hex for withdraw instruction (not yet active) | (unset) |
@@ -116,7 +117,11 @@ Copy `.env.example` to `.env.local` and fill in the real values:
 | `DBC_USE_IDL` | If `true`, attempt to load `dbc_idl.json` and auto-derive discriminators | `false` |
 | `dbc_idl.json` | Optional Anchor-style IDL file at repo root | Not present by default |
 
-Production Guard: In `NODE_ENV=production`, if the placeholder discriminator is still present the builder throws an error unless you deliberately set `ALLOW_PLACEHOLDER_DBC=true`. This prevents accidentally shipping a non-functional claim instruction.
+Production Guard: In `NODE_ENV=production`, if the placeholder discriminator is still present the builder throws unless you deliberately set `ALLOW_PLACEHOLDER_DBC=true`. You can supply ANY of the following (checked in order) to avoid placeholder usage:
+
+1. `DBC_CLAIM_FEE_DISCRIMINATOR` (explicit hex)
+2. `DBC_CLAIM_FEE_INSTRUCTION_NAME` (auto-derived Anchor hash)
+3. `DBC_USE_IDL=true` with `dbc_idl.json` present
 
 Action Parameter (`claim` | `withdraw`): The builder & API accept an `action` field. `withdraw` currently throws `DBC withdraw (liquidity removal) is not implemented yet` until the official DBC IDL / instruction layout is supplied. UI presents the option disabled for clarity.
 
@@ -127,7 +132,7 @@ IDL Auto Mode: When `DBC_USE_IDL=true` and a `dbc_idl.json` file exists:
 3. The withdraw stub error includes any withdraw-like instruction name & listed accounts to guide integration.
 4. If IDL load fails it silently falls back to env / placeholder behavior.
 
-How to obtain the real discriminator (Anchor-style): `sha256("global::<instruction_name>")` → take first 16 hex chars (8 bytes). Confirm via official Meteora IDL / docs.
+How to obtain the real discriminator (Anchor-style): `sha256("global::<instruction_name>")` → take first 16 hex chars (8 bytes). This is automated if you set `DBC_CLAIM_FEE_INSTRUCTION_NAME`.
 
 ### Builder Internals
 
@@ -193,7 +198,7 @@ It plans both sets of transactions first, then signs & submits them sequentially
 | Planner | `scaffolds/fun-launch/src/hooks/universalExitPlanner.ts` | Discovers positions (DBC + DAMM v2) and builds transactions via server APIs. |
 | Hook | `scaffolds/fun-launch/src/hooks/useUniversalExit.ts` | Executes planned transactions sequentially (sign → send → confirm). |
 | UI | `scaffolds/fun-launch/src/app/exit/page.tsx` | Adds the "Universal Exit All" button + progress list. |
-| APIs | `/api/dbc-discover`, `/api/dbc-exit`, `/api/dammv2-discover`, `/api/dammv2-exit` | Discovery & tx assembly backends. |
+| APIs | `/api/dbc-discover`, `/api/dbc-exit`, `/api/dammv2-discover`, `/api/dammv2-exit`, `/api/dammv2-exit-all` | Discovery & tx assembly backends (single & bulk). |
 
 ### Status Lifecycle
 
@@ -209,6 +214,7 @@ If one position build or send fails, it is marked `error` and the flow continues
 | ---- | ---------- | ------------------ |
 | DBC withdraw | Still placeholder; only fee claim executed | Replace when official withdraw instruction confirmed |
 | DAMM v2 partial exit | Always 100% removal (percent=100) | Add per‑position %, quoting + slippage thresholds |
+| Migrated pool detection | Env list only (`MIGRATED_DBC_POOLS`) | On-chain metadata (migration PDA) auto-detection |
 | Parallelism | Serial execution (one at a time) | Optional small (N=2–3) concurrency | 
 | Slippage protection | None for DAMM v2 withdraw builder | Integrate withdraw quote thresholds robustly |
 | Priority adaptation | Fixed base priorityMicros | Integrate adaptive escalation like single exit hook |
@@ -235,7 +241,12 @@ run({ priorityMicros: 250_000 });
 
 ### Environment Variables (Additional)
 
-No new variables introduced specifically for Universal Exit; it reuses existing DBC env (see above) and RPC URL detection. Future additions (e.g., `UNIVERSAL_EXIT_MAX_CONCURRENCY`) may be added when parallelism is implemented.
+| Variable | Purpose | Notes |
+| -------- | ------- | ----- |
+| `MIGRATED_DBC_POOLS` | Comma-separated list of DAMM v2 pool addresses considered migrated from DBC (used when `migratedOnly=true` on `/api/dammv2-exit-all`) | Temporary until PDA-based auto-detect implemented |
+| (reuse) `RPC_URL` / `NEXT_PUBLIC_RPC_URL` | RPC endpoint(s) | Auto-detected precedence |
+
+Future additions (e.g., `UNIVERSAL_EXIT_MAX_CONCURRENCY`) may be added when parallelism is implemented.
 
 ### Roadmap (Universal Exit)
 
@@ -244,6 +255,7 @@ No new variables introduced specifically for Universal Exit; it reuses existing 
 3. Persist per‑session summary (success/fail counts + signatures) to localStorage for audit.
 4. Optional safe‑mode simulation pass for DAMM v2 before executing (opt‑in).
 5. Program allow‑list + signature domain tagging for enhanced safety.
+6. Replace static `MIGRATED_DBC_POOLS` list with dynamic on-chain migration metadata scanning.
 
 ### Wallet Batch Signing Optimization
 
@@ -266,6 +278,48 @@ Future enhancement ideas:
 1. Optional light/dark theme toggle with CSS variables (would require extracting Tailwind tokens to custom properties).
 2. Reduced motion mode for progress animations.
 3. Add aria-live region for batch/universal status stream (planned in accessibility follow-up).
+4. Integrate DAMM v2 withdraw-all progress into universal planner (currently separate for clarity).
+
+## DAMM v2 One-Click Withdraw All
+
+Endpoint: `POST /api/dammv2-exit-all`
+
+Purpose: Build full-liquidity removal transactions (one per position) for every DAMM v2 position owned by the connected wallet, enabling a single multi-sign approval flow.
+
+Input JSON fields:
+| Field | Type | Default | Description |
+| ----- | ---- | ------- | ----------- |
+| owner | string | (required) | Wallet public key base58 |
+| migratedOnly | boolean | false | Filter positions to pools in `MIGRATED_DBC_POOLS` env list |
+| priorityMicros | number | 250000 | Priority fee (μLamports / CU) clamped to 3,000,000 |
+| simulateOnly | boolean | false | If true, run simulation per tx and return logs without executing |
+
+Response:
+```
+{
+  positions: [{ position, pool, status, reason?, signature? }],
+  txs: [base64VersionedTx...],
+  lastValidBlockHeight
+}
+```
+
+Status / Reason semantics (skips):
+| Code | Meaning |
+| ---- | ------- |
+| zero-liquidity | Position had no remaining liquidity |
+| no-builder | Neither removeAllLiquidity nor removeLiquidity available |
+| builder-failed:* | SDK threw during builder construction |
+| extract-failed:* | Could not extract instructions from builder object |
+| simulation-error | Simulation produced an error |
+
+Client Hook: `useDammV2ExitAll` attempts `signAllTransactions`; falls back to per-transaction signing, updates UI progress panel.
+
+Roadmap:
+1. Instruction packing (multiple positions per tx when safe).
+2. Slippage / min-out thresholds.
+3. Vesting / locked detection (skip or partial strategies).
+4. Authority double-check against position account owner for defense-in-depth.
+5. Converge with Universal Exit planner post hardening.
 
 
 

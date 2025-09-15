@@ -8,6 +8,7 @@ import { useDbcInstantExit, type DbcPoolKeys } from '@/hooks/useDbcInstantExit';
 import { toast } from 'sonner';
 import { useDbcAutoBatchExit } from '@/hooks/useDbcAutoBatchExit';
 import { useUniversalExit } from '@/hooks/useUniversalExit';
+import { useDammV2ExitAll } from '@/hooks/useDammV2ExitAll';
 
 interface ExitPreferences {
   priorityMicros: number;
@@ -24,6 +25,7 @@ export default function ExitPage() {
   const { state: exitState, exit, abort, reset } = useDbcInstantExit();
   const { state: batchState, run: runBatch, abort: abortBatch } = useDbcAutoBatchExit();
   const { state: universalState, run: runUniversal, abort: abortUniversal } = useUniversalExit();
+  const { state: dammv2AllState, run: runDammv2All, abort: abortDammv2All } = useDammV2ExitAll();
 
   const [selectedPoolId, setSelectedPoolId] = useState<string>('');
   const [autoBatchEnabled, setAutoBatchEnabled] = useState<boolean>(false);
@@ -120,13 +122,21 @@ export default function ExitPage() {
       <h1 className="text-3xl font-bold mb-8 flex items-center gap-4 text-neutral-50">
         <span>Universal Exit (DBC + DAMM v2)</span>
         <span className="text-xs px-2 py-1 rounded bg-purple-500/15 text-purple-300 border border-purple-400/30">beta</span>
+        <button
+          onClick={() => runDammv2All({ migratedOnly: false, priorityMicros: prefs.priorityMicros, simulateFirst: prefs.simulateFirst })}
+          disabled={dammv2AllState.running}
+          className="ml-auto text-sm bg-emerald-600 hover:bg-emerald-500 disabled:bg-neutral-700 disabled:cursor-not-allowed text-white px-4 py-2 rounded shadow"
+        >
+          {dammv2AllState.running ? 'Withdrawing...' : 'Withdraw All DAMM v2'}
+        </button>
       </h1>
 
       {/* Live region for high-level status changes */}
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {exitState.status !== 'idle' && `Single exit status: ${exitState.status}`}
         {batchState.running && 'Batch exit running'}
-        {universalState.running && 'Universal exit executing'}
+  {universalState.running && 'Universal exit executing'}
+  {dammv2AllState.running && 'Withdrawing all DAMM v2 positions'}
       </div>
 
       {/* Pool Discovery */}
@@ -490,6 +500,64 @@ export default function ExitPage() {
           )}
         </div>
       )}
+
+      {/* DAMM v2 Withdraw All Status */}
+      {dammv2AllState.running || dammv2AllState.items.length > 0 ? (
+        <div className="bg-neutral-850 rounded-lg border border-neutral-700/60 p-6 mt-8">
+          <div className="flex items-center gap-2 mb-4">
+            <h2 className="text-xl font-semibold text-neutral-50">DAMM v2 Full Withdrawal</h2>
+            {dammv2AllState.running && <span className="text-xs text-emerald-400 animate-pulse">processing</span>}
+            {dammv2AllState.running && (
+              <button
+                onClick={abortDammv2All}
+                className="ml-auto text-xs bg-neutral-700 hover:bg-neutral-600 text-neutral-100 px-3 py-1 rounded"
+              >
+                Abort
+              </button>
+            )}
+          </div>
+          {dammv2AllState.error && (
+            <div className="bg-rose-500/10 border border-rose-500/40 rounded p-3 mb-4 text-rose-300 text-sm" role="alert">
+              {dammv2AllState.error}
+            </div>
+          )}
+          <div className="space-y-2 max-h-72 overflow-auto border border-neutral-700 rounded p-2 bg-neutral-800" role="log" aria-live="polite">
+            {dammv2AllState.items.map((p, i) => (
+              <div key={p.position + i} className="text-xs flex items-center justify-between gap-2">
+                <div className="truncate">
+                  <span className="font-mono text-neutral-300">{p.pool.slice(0,8)}...</span>{' '}
+                  <span className="text-neutral-500">{p.position.slice(0,8)}...</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={{
+                    built: 'text-indigo-400',
+                    confirmed: 'text-emerald-400',
+                    skipped: 'text-neutral-600',
+                    error: 'text-rose-400'
+                  }[p.status] || 'text-neutral-500'}>{p.status}</span>
+                  {p.signature && (
+                    <a
+                      href={`https://explorer.solana.com/tx/${p.signature}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-indigo-400 hover:text-indigo-300 underline"
+                    >
+                      {p.signature.slice(0,6)}...
+                    </a>
+                  )}
+                  {p.reason && p.status !== 'confirmed' && (
+                    <span className="text-neutral-500" title={p.reason}>?</span>
+                  )}
+                </div>
+              </div>
+            ))}
+            {dammv2AllState.items.length === 0 && (
+              <p className="text-neutral-500 text-xs">No positions discovered or all skipped.</p>
+            )}
+          </div>
+          <p className="mt-3 text-xs text-neutral-500">One-click withdraw builds one tx per position for reliability. Future optimization: packing multiple positions per tx when safe.</p>
+        </div>
+      ) : null}
 
       {/* Batch Status */}
       {autoBatchEnabled && (batchState.running || batchState.items.length > 0) && (
