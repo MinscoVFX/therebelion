@@ -1,5 +1,7 @@
 # Meteora Invent Monorepo
 
+[![CI](https://github.com/MinscoVFX/therebelion/actions/workflows/ci.yml/badge.svg)](https://github.com/MinscoVFX/therebelion/actions/workflows/ci.yml)
+
 Solana DeFi toolkit:
 
 - studio/ – protocol automation & migration scripts
