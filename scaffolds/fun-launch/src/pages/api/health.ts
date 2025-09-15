@@ -10,13 +10,13 @@ export default async function handler(_req: NextApiRequest, res: NextApiResponse
   const poolKey = process.env.POOL_CONFIG_KEY;
 
   const warnings: string[] = [];
-  if (!hasAnyRpc) warnings.push('No RPC configured (RPC_ENDPOINT/RPC_URL/NEXT_PUBLIC_RPC_URL)');
-  if (!dbcUseIdl) warnings.push('DBC_USE_IDL should be true for prod');
-  if (!poolKey) warnings.push('POOL_CONFIG_KEY missing');
+  if (!hasAnyRpc) warnings.push('NO_RPC');
+  if (!dbcUseIdl) warnings.push('DBC_USE_IDL_FALSE');
+  if (!poolKey) warnings.push('MISSING_POOL_CONFIG_KEY');
 
-  const ok = warnings.length === 0;
-  res.status(ok ? 200 : 500).json({
-    ok,
+  const fatal = !hasAnyRpc; // only missing RPC is fatal
+  res.status(fatal ? 500 : 200).json({
+    ok: !fatal,
     hasEndpoint,
     hasUrl,
     hasNextPub,

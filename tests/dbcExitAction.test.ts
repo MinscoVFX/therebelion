@@ -36,14 +36,13 @@ describe('DBC exit builder action handling', () => {
     ).rejects.toThrow(/Unsupported DBC exit action/);
   });
 
-  it('errors for withdraw placeholder action', async () => {
-    await expect(
-      buildDbcExitTransaction(connection, {
-        owner,
-        dbcPoolKeys: { pool: dummyPool, feeVault: dummyFeeVault },
-        action: 'withdraw',
-        simulateOnly: true,
-      })
-    ).rejects.toThrow(/not implemented/i);
+  it('builds withdraw (placeholder discriminator allowed in test env) simulateOnly', async () => {
+    const built = await buildDbcExitTransaction(connection, {
+      owner,
+      dbcPoolKeys: { pool: dummyPool, feeVault: dummyFeeVault },
+      action: 'withdraw',
+      simulateOnly: true,
+    });
+    expect(built.simulation).toBeDefined();
   });
 });

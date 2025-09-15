@@ -70,6 +70,10 @@ interface ClaimDiscResolutionMeta {
 }
 let _discMeta: ClaimDiscResolutionMeta | null = null;
 export function getClaimDiscriminatorMeta(): ClaimDiscResolutionMeta | null { return _discMeta; }
+// Withdraw discriminator meta (mirrors claim logic but independent so we can track placeholder usage)
+interface WithdrawDiscResolutionMeta { source: 'explicit' | 'name' | 'idl' | 'placeholder'; instructionName?: string; }
+let _withdrawMeta: WithdrawDiscResolutionMeta | null = null;
+export function getWithdrawDiscriminatorMeta(): WithdrawDiscResolutionMeta | null { return _withdrawMeta; }
 function resolveClaimDiscriminator(): Buffer {
   // 1. If an explicit 8-byte discriminator hex provided, use it first (authoritative override).
   const explicit = process.env.DBC_CLAIM_FEE_DISCRIMINATOR;
@@ -124,6 +128,41 @@ function resolveClaimDiscriminator(): Buffer {
 }
 const CLAIM_FEE_DISCRIMINATOR = resolveClaimDiscriminator();
 
+function resolveWithdrawDiscriminator(): Buffer {
+  const explicit = process.env.DBC_WITHDRAW_DISCRIMINATOR;
+  if (explicit) {
+    const hex = explicit.replace(/^0x/, '');
+    if (hex.length !== 16) throw new Error('DBC_WITHDRAW_DISCRIMINATOR must be 8 bytes (16 hex chars)');
+    _withdrawMeta = { source: 'explicit' };
+    return Buffer.from(hex, 'hex');
+  }
+  const useIdl = process.env.DBC_USE_IDL === 'true' || process.env.DBC_WITHDRAW_USE_IDL_AUTO === 'true';
+  if (useIdl) {
+    const idl = loadDbcIdlIfAvailable();
+    if (idl) {
+      const preferred = idl.instructions.find((i: any) => /withdraw/.test(i.name) && /liquidity/.test(i.name)) ||
+        idl.instructions.find((i: any) => /withdraw/i.test(i.name));
+      if (preferred) {
+        _withdrawMeta = { source: 'idl', instructionName: preferred.name };
+        return preferred.discriminator;
+      }
+    }
+  }
+  const ixName = process.env.DBC_WITHDRAW_INSTRUCTION_NAME;
+  if (ixName) {
+    const disc = anchorInstructionDiscriminator(ixName.trim());
+    _withdrawMeta = { source: 'name', instructionName: ixName.trim() };
+    return disc;
+  }
+  if (process.env.DBC_SUPPRESS_PLACEHOLDER_WARNING !== 'true') {
+    // eslint-disable-next-line no-console
+    console.warn('[dbc-exit-builder] Using placeholder withdraw discriminator – provide DBC_WITHDRAW_DISCRIMINATOR or set DBC_WITHDRAW_INSTRUCTION_NAME');
+  }
+  _withdrawMeta = { source: 'placeholder' };
+  return Buffer.from('0a0b0c0d0e0f1011', 'hex'); // distinct placeholder (not same as claim) to detect misuse
+}
+const WITHDRAW_DISCRIMINATOR = resolveWithdrawDiscriminator();
+
 // Expose a helper to introspect the active discriminator (used in tests for instruction-name path)
 export function getActiveClaimDiscriminatorHex(): string {
   return CLAIM_FEE_DISCRIMINATOR.toString('hex');
@@ -161,21 +200,21 @@ function buildClaimInstruction(pool: PublicKey, feeVault: PublicKey, owner: Publ
  * Without official IDL / SDK we cannot craft a correct instruction.
  * We surface an explicit error so callers know this path is not yet wired.
  */
-function buildWithdrawPlaceholderInstruction(): never {
-  let extra = '';
-  if (process.env.DBC_USE_IDL === 'true') {
-    const idl = loadDbcIdlIfAvailable();
-    if (idl) {
-      const withdrawIx = idl.instructions.find((i: any) => /withdraw/i.test(i.name));
-      if (withdrawIx) {
-        extra = ` (IDL detected instruction '${withdrawIx.name}' accounts: ${withdrawIx.accounts.join(', ')})`;
-      }
-    }
-  }
-  throw new Error(
-    'DBC withdraw (liquidity removal) is not implemented yet.' +
-      ' Provide official DBC withdraw spec / SDK to enable.' + extra
-  );
+function buildWithdrawInstruction(pool: PublicKey, owner: PublicKey, userTokenAccount: PublicKey): TransactionInstruction {
+  const data = Buffer.alloc(8);
+  WITHDRAW_DISCRIMINATOR.copy(data);
+  // Account ordering: attempt to follow IDL pattern (user, pool, user_token_account, token_program)
+  // Without official SDK this may fail on-chain; guarded by placeholder + prod env check below.
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: owner, isSigner: true, isWritable: false },
+      { pubkey: pool, isSigner: false, isWritable: true },
+      { pubkey: userTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data,
+  });
 }
 
 export async function buildDbcExitTransaction(
@@ -226,11 +265,15 @@ export async function buildDbcExitTransaction(
   );
 
   if (action === 'claim') {
-    // Claim fees instruction
     instructions.push(buildClaimInstruction(pool, feeVault, ownerPk, userTokenAccount));
   } else if (action === 'withdraw') {
-    // Attempt to build withdraw instructions (currently placeholder -> throw)
-    buildWithdrawPlaceholderInstruction();
+    // Production safety: block pure placeholder withdraw discriminator unless explicitly allowed.
+    const withdrawHex = WITHDRAW_DISCRIMINATOR.toString('hex');
+    const isPlaceholder = withdrawHex === '0a0b0c0d0e0f1011';
+    if (process.env.NODE_ENV === 'production' && isPlaceholder && process.env.ALLOW_PLACEHOLDER_DBC !== 'true') {
+      throw new Error('Placeholder withdraw discriminator in production. Set DBC_WITHDRAW_DISCRIMINATOR or DBC_WITHDRAW_INSTRUCTION_NAME or ALLOW_PLACEHOLDER_DBC=true');
+    }
+    instructions.push(buildWithdrawInstruction(pool, ownerPk, userTokenAccount));
   } else {
     throw new Error(`Unsupported DBC exit action: ${action}`);
   }

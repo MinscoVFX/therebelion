@@ -9,6 +9,7 @@ export interface DbcPoolKeys {
 
 export interface ExitOptions {
   dbcPoolKeys: DbcPoolKeys;
+  action?: 'claim' | 'withdraw';
   priorityMicros?: number;
   slippageBps?: number;
   simulateFirst?: boolean;
@@ -120,6 +121,7 @@ export function useDbcInstantExit() {
               body: JSON.stringify({
                 owner: publicKey.toString(),
                 dbcPoolKeys: options.dbcPoolKeys,
+                action: options.action || 'claim',
                 priorityMicros: currentPriority,
                 slippageBps: options.slippageBps,
                 simulateOnly: true,
@@ -164,6 +166,7 @@ export function useDbcInstantExit() {
             body: JSON.stringify({
               owner: publicKey.toString(),
               dbcPoolKeys: options.dbcPoolKeys,
+              action: options.action || 'claim',
               priorityMicros: currentPriority,
               slippageBps: options.slippageBps,
               simulateOnly: false,
