@@ -9,7 +9,7 @@ export interface DbcPoolKeys {
 
 export interface ExitOptions {
   dbcPoolKeys: DbcPoolKeys;
-  action?: 'claim' | 'withdraw';
+  action?: 'claim' | 'withdraw' | 'claim_and_withdraw';
   priorityMicros?: number;
   slippageBps?: number;
   simulateFirst?: boolean;

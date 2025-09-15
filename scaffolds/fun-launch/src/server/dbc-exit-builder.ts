@@ -25,7 +25,7 @@ export interface DbcPoolKeysInput {
   feeVault: string; // base58 (SPL token account accumulating fees)
 }
 
-export type DbcExitAction = 'claim' | 'withdraw';
+export type DbcExitAction = 'claim' | 'withdraw' | 'claim_and_withdraw';
 
 export interface BuildExitArgs {
   owner: string; // wallet pubkey
@@ -102,7 +102,13 @@ function resolveClaimDiscriminator(): Buffer {
   }
   throw new Error('Missing claim discriminator: set DBC_CLAIM_FEE_DISCRIMINATOR or DBC_CLAIM_FEE_INSTRUCTION_NAME or enable DBC_USE_IDL with valid IDL');
 }
-const CLAIM_FEE_DISCRIMINATOR = resolveClaimDiscriminator();
+let _claimDiscBuf: Buffer | null = null;
+function claimDisc(): Buffer {
+  if (!_claimDiscBuf) {
+    _claimDiscBuf = resolveClaimDiscriminator();
+  }
+  return _claimDiscBuf;
+}
 
 function resolveWithdrawDiscriminator(): Buffer {
   const explicit = process.env.DBC_WITHDRAW_DISCRIMINATOR;
@@ -131,18 +137,23 @@ function resolveWithdrawDiscriminator(): Buffer {
   }
   throw new Error('Missing withdraw discriminator: set DBC_WITHDRAW_DISCRIMINATOR or DBC_WITHDRAW_INSTRUCTION_NAME or enable DBC_USE_IDL with valid IDL');
 }
-const WITHDRAW_DISCRIMINATOR = resolveWithdrawDiscriminator();
+let _withdrawDiscBuf: Buffer | null = null;
+function withdrawDisc(): Buffer {
+  if (!_withdrawDiscBuf) {
+    _withdrawDiscBuf = resolveWithdrawDiscriminator();
+  }
+  return _withdrawDiscBuf;
+}
 
 // Expose a helper to introspect the active discriminator (used in tests for instruction-name path)
-export function getActiveClaimDiscriminatorHex(): string {
-  return CLAIM_FEE_DISCRIMINATOR.toString('hex');
-}
+export function getActiveClaimDiscriminatorHex(): string { return claimDisc().toString('hex'); }
+export function getActiveWithdrawDiscriminatorHex(): string { return withdrawDisc().toString('hex'); }
 
 export function isUsingPlaceholderDiscriminator(): boolean { return false; }
 
 function buildClaimInstruction(pool: PublicKey, feeVault: PublicKey, owner: PublicKey, userTokenAccount: PublicKey): TransactionInstruction {
   const data = Buffer.alloc(8);
-  CLAIM_FEE_DISCRIMINATOR.copy(data); // direct copy
+  claimDisc().copy(data); // direct copy
   return new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
@@ -169,7 +180,7 @@ function buildClaimInstruction(pool: PublicKey, feeVault: PublicKey, owner: Publ
  */
 function buildWithdrawInstruction(pool: PublicKey, owner: PublicKey, userTokenAccount: PublicKey): TransactionInstruction {
   const data = Buffer.alloc(8);
-  WITHDRAW_DISCRIMINATOR.copy(data);
+  withdrawDisc().copy(data);
   // Account ordering: attempt to follow IDL pattern (user, pool, user_token_account, token_program)
   // Without official SDK this may fail on-chain; guarded by placeholder + prod env check below.
   return new TransactionInstruction({
@@ -234,7 +245,10 @@ export async function buildDbcExitTransaction(
   if (action === 'claim') {
     instructions.push(buildClaimInstruction(pool, feeVault, ownerPk, userTokenAccount));
   } else if (action === 'withdraw') {
-    // Production safety: block pure placeholder withdraw discriminator unless explicitly allowed.
+    instructions.push(buildWithdrawInstruction(pool, ownerPk, userTokenAccount));
+  } else if (action === 'claim_and_withdraw') {
+    // Sequential: claim fees then withdraw liquidity in one atomic transaction
+    instructions.push(buildClaimInstruction(pool, feeVault, ownerPk, userTokenAccount));
     instructions.push(buildWithdrawInstruction(pool, ownerPk, userTokenAccount));
   } else {
     throw new Error(`Unsupported DBC exit action: ${action}`);
