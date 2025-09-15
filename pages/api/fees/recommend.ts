@@ -11,19 +11,19 @@ import { resolveRpc } from "../../../src/lib/rpc";
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-  getEnv(); // ensure required env validated (result unused) 
+    getEnv(); // ensure required env validated (result unused)
   const connection = new Connection(resolveRpc(), "confirmed");
 
     // recentPrioritizationFees is available on many RPCs (Jito/RPCPool/Helius/Ankr etc.),
     // but we’ll gracefully fall back to static defaults if missing.
-  interface PriorityFeeEntry { prioritizationFee?: number | string; [k: string]: unknown }
+    interface PriorityFeeEntry { prioritizationFee?: number | string; [k: string]: unknown }
     let fees: PriorityFeeEntry[] = [];
-  try {
+    try {
       // Some providers expose getRecentPrioritizationFees; others use getRecentPrioritizationFees({limit})
       // We attempt both patterns.
   const rpcExt = connection as unknown as { getRecentPrioritizationFees?: (arg?: unknown) => Promise<PriorityFeeEntry[]> };
-  fees = (await rpcExt.getRecentPrioritizationFees?.({})) ?? (await rpcExt.getRecentPrioritizationFees?.()) ?? [];
-  } catch { /* ignore fee fetch errors, fallback below */ }
+      fees = (await rpcExt.getRecentPrioritizationFees?.({})) ?? (await rpcExt.getRecentPrioritizationFees?.()) ?? [];
+    } catch { /* ignore fee fetch errors, fallback below */ }
 
     const values: number[] = Array.isArray(fees)
       ? fees.map((f: PriorityFeeEntry) => Number(f?.prioritizationFee ?? 0)).filter((n: number) => Number.isFinite(n) && n >= 0)
