@@ -24,7 +24,13 @@ jobs:
         run: |
           test -f scripts/prod-smoke.mjs || { echo "missing scripts/prod-smoke.mjs"; exit 1; }
       - name: Run smoke tests
-        run: node scripts/prod-smoke.mjs > smoke-report.json
+        run: |
+          set -euo pipefail
+          node scripts/prod-smoke.mjs > smoke-report.json || {
+            echo 'Smoke script failed; partial report (if any):'
+            if [ -f smoke-report.json ]; then sed -n '1,160p' smoke-report.json; fi
+            exit 1
+          }
       - name: Show first 120 lines
         run: sed -n '1,120p' smoke-report.json
       - name: Upload artifact
