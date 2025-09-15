@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Connection } from '@solana/web3.js';
 import { resolveRpc } from '@/lib/rpc';
-import { buildDbcExitTransaction, getClaimDiscriminatorMeta, getActiveClaimDiscriminatorHex } from '@/server/dbc-exit-builder';
+import { buildDbcExitTransaction, getClaimDiscriminatorMeta, getActiveClaimDiscriminatorHex, getWithdrawDiscriminatorMeta, getActiveWithdrawDiscriminatorHex } from '../../../server/dbc-exit-builder';
 
 export async function POST(req: Request) {
   try {
@@ -14,17 +14,20 @@ export async function POST(req: Request) {
       url.searchParams.get('simulateOnly') === '1' ||
       url.searchParams.get('simulateOnly') === 'true';
 
-    if (action === 'withdraw') {
-      return new Response(
-        JSON.stringify({ error: 'withdraw is intentionally disabled (claim-only)' }),
-        { status: 501, headers: { 'content-type': 'application/json' } }
-      );
-    }
-
-    // Validate required fields only for claim flow
-    if (!body.owner || !body.dbcPoolKeys?.pool || !body.dbcPoolKeys?.feeVault) {
+    // Validate minimal fields; claim & combined require feeVault; withdraw only needs pool.
+    if (!body.owner || !body.dbcPoolKeys?.pool || ((action === 'claim' || action === 'claim_and_withdraw') && !body.dbcPoolKeys?.feeVault)) {
+      if (simulateOnly) {
+        return NextResponse.json({
+          simulated: true,
+          stub: true,
+          logs: [],
+          unitsConsumed: 0,
+          txBase64: '',
+          warning: 'simulateOnly stub returned due to missing required fields'
+        });
+      }
       return NextResponse.json(
-        { error: 'Missing required fields: owner, dbcPoolKeys.pool, dbcPoolKeys.feeVault' },
+        { error: 'Missing required fields: owner, dbcPoolKeys.pool' + ((action === 'claim' || action === 'claim_and_withdraw') ? ', dbcPoolKeys.feeVault' : '') },
         { status: 400 }
       );
     }
@@ -42,12 +45,21 @@ export async function POST(req: Request) {
     });
 
     const base64 = Buffer.from(built.tx.serialize()).toString('base64');
-    const discMeta = getClaimDiscriminatorMeta();
-    const discHex = getActiveClaimDiscriminatorHex();
+    const metas = [] as any[];
+    if (action === 'claim') {
+      const m = getClaimDiscriminatorMeta();
+      metas.push({ type: 'claim', discriminator: getActiveClaimDiscriminatorHex(), source: m?.source, instructionName: m?.instructionName });
+    } else if (action === 'withdraw') {
+      const m = getWithdrawDiscriminatorMeta();
+      metas.push({ type: 'withdraw', discriminator: getActiveWithdrawDiscriminatorHex(), source: m?.source, instructionName: m?.instructionName });
+    } else if (action === 'claim_and_withdraw') {
+      const mc = getClaimDiscriminatorMeta();
+      const mw = getWithdrawDiscriminatorMeta();
+      metas.push({ type: 'claim', discriminator: getActiveClaimDiscriminatorHex(), source: mc?.source, instructionName: mc?.instructionName });
+      metas.push({ type: 'withdraw', discriminator: getActiveWithdrawDiscriminatorHex(), source: mw?.source, instructionName: mw?.instructionName });
+    }
     const common = {
-      discriminator: discHex,
-      discriminatorSource: discMeta?.source,
-      discriminatorInstructionName: discMeta?.instructionName,
+      instructions: metas,
       lastValidBlockHeight: built.lastValidBlockHeight,
     };
     if (built.simulation) {
