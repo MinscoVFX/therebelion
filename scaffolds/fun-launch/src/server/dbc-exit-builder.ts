@@ -63,7 +63,6 @@ function assertProgramAllowed(pk: PublicKey) {
   }
 }
 // 8-byte little-endian placeholder; MUST be overridden with real discriminator for production.
-let _placeholderWarned = false;
 interface ClaimDiscResolutionMeta {
   source: 'explicit' | 'name' | 'idl' | 'placeholder';
   instructionName?: string;
@@ -75,26 +74,17 @@ interface WithdrawDiscResolutionMeta { source: 'explicit' | 'name' | 'idl' | 'pl
 let _withdrawMeta: WithdrawDiscResolutionMeta | null = null;
 export function getWithdrawDiscriminatorMeta(): WithdrawDiscResolutionMeta | null { return _withdrawMeta; }
 function resolveClaimDiscriminator(): Buffer {
-  // 1. If an explicit 8-byte discriminator hex provided, use it first (authoritative override).
   const explicit = process.env.DBC_CLAIM_FEE_DISCRIMINATOR;
   if (explicit) {
     const hex = explicit.replace(/^0x/, '');
     if (hex.length !== 16) throw new Error('DBC_CLAIM_FEE_DISCRIMINATOR must be 8 bytes (16 hex chars)');
-    if (hex === '0102030405060708' && !_placeholderWarned && process.env.DBC_SUPPRESS_PLACEHOLDER_WARNING !== 'true') {
-      _placeholderWarned = true;
-      // eslint-disable-next-line no-console
-      console.warn('[dbc-exit-builder] Using placeholder DBC_CLAIM_FEE_DISCRIMINATOR. Replace with real 8-byte discriminator from Meteora DBC docs or supply IDL.');
-    }
     _discMeta = { source: 'explicit' };
     return Buffer.from(hex, 'hex');
   }
-
-  // 2. IDL-based resolution first (gives us canonical names) if enabled or auto-detect env variable set.
   const useIdl = process.env.DBC_USE_IDL === 'true' || process.env.DBC_CLAIM_USE_IDL_AUTO === 'true';
   if (useIdl) {
     const idl = loadDbcIdlIfAvailable();
     if (idl) {
-      // broaden search: any instruction containing both 'claim' & 'fee'
       const preferred = idl.instructions.find((i: any) => /claim/.test(i.name) && /fee/.test(i.name)) ||
         idl.instructions.find((i: any) => i.name === 'claim_partner_trading_fee') ||
         idl.instructions.find((i: any) => i.name === 'claim_creator_trading_fee');
@@ -104,27 +94,13 @@ function resolveClaimDiscriminator(): Buffer {
       }
     }
   }
-
-  // 3. Instruction name path via Anchor hashing if DBC_CLAIM_FEE_INSTRUCTION_NAME set (fallback after IDL so explicit names still override).
   const ixName = process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME;
   if (ixName) {
-    try {
-      const disc = anchorInstructionDiscriminator(ixName.trim());
-      _discMeta = { source: 'name', instructionName: ixName.trim() };
-      return disc;
-    } catch (e) {
-      throw new Error('Failed to derive discriminator from DBC_CLAIM_FEE_INSTRUCTION_NAME: ' + (e as any)?.message);
-    }
+    const disc = anchorInstructionDiscriminator(ixName.trim());
+    _discMeta = { source: 'name', instructionName: ixName.trim() };
+    return disc;
   }
-
-  // 4. Final fallback: placeholder (warn). This ensures dev ergonomics but must be blocked in prod (guarded below).
-  if (!_placeholderWarned && process.env.DBC_SUPPRESS_PLACEHOLDER_WARNING !== 'true') {
-    _placeholderWarned = true;
-    // eslint-disable-next-line no-console
-    console.warn('[dbc-exit-builder] Falling back to placeholder discriminator. Provide DBC_CLAIM_FEE_DISCRIMINATOR, DBC_CLAIM_FEE_INSTRUCTION_NAME, or enable IDL.');
-  }
-  _discMeta = { source: 'placeholder' };
-  return Buffer.from('0102030405060708', 'hex');
+  throw new Error('Missing claim discriminator: set DBC_CLAIM_FEE_DISCRIMINATOR or DBC_CLAIM_FEE_INSTRUCTION_NAME or enable DBC_USE_IDL with valid IDL');
 }
 const CLAIM_FEE_DISCRIMINATOR = resolveClaimDiscriminator();
 
@@ -140,8 +116,7 @@ function resolveWithdrawDiscriminator(): Buffer {
   if (useIdl) {
     const idl = loadDbcIdlIfAvailable();
     if (idl) {
-      const preferred = idl.instructions.find((i: any) => /withdraw/.test(i.name) && /liquidity/.test(i.name)) ||
-        idl.instructions.find((i: any) => /withdraw/i.test(i.name));
+      const preferred = idl.instructions.find((i: any) => /withdraw/.test(i.name) && /liquidity/.test(i.name)) || idl.instructions.find((i: any) => /withdraw/i.test(i.name));
       if (preferred) {
         _withdrawMeta = { source: 'idl', instructionName: preferred.name };
         return preferred.discriminator;
@@ -154,12 +129,7 @@ function resolveWithdrawDiscriminator(): Buffer {
     _withdrawMeta = { source: 'name', instructionName: ixName.trim() };
     return disc;
   }
-  if (process.env.DBC_SUPPRESS_PLACEHOLDER_WARNING !== 'true') {
-    // eslint-disable-next-line no-console
-    console.warn('[dbc-exit-builder] Using placeholder withdraw discriminator – provide DBC_WITHDRAW_DISCRIMINATOR or set DBC_WITHDRAW_INSTRUCTION_NAME');
-  }
-  _withdrawMeta = { source: 'placeholder' };
-  return Buffer.from('0a0b0c0d0e0f1011', 'hex'); // distinct placeholder (not same as claim) to detect misuse
+  throw new Error('Missing withdraw discriminator: set DBC_WITHDRAW_DISCRIMINATOR or DBC_WITHDRAW_INSTRUCTION_NAME or enable DBC_USE_IDL with valid IDL');
 }
 const WITHDRAW_DISCRIMINATOR = resolveWithdrawDiscriminator();
 
@@ -168,10 +138,7 @@ export function getActiveClaimDiscriminatorHex(): string {
   return CLAIM_FEE_DISCRIMINATOR.toString('hex');
 }
 
-export function isUsingPlaceholderDiscriminator(): boolean {
-  const hex = CLAIM_FEE_DISCRIMINATOR.toString('hex');
-  return hex === '0102030405060708';
-}
+export function isUsingPlaceholderDiscriminator(): boolean { return false; }
 
 function buildClaimInstruction(pool: PublicKey, feeVault: PublicKey, owner: PublicKey, userTokenAccount: PublicKey): TransactionInstruction {
   const data = Buffer.alloc(8);
@@ -268,11 +235,6 @@ export async function buildDbcExitTransaction(
     instructions.push(buildClaimInstruction(pool, feeVault, ownerPk, userTokenAccount));
   } else if (action === 'withdraw') {
     // Production safety: block pure placeholder withdraw discriminator unless explicitly allowed.
-    const withdrawHex = WITHDRAW_DISCRIMINATOR.toString('hex');
-    const isPlaceholder = withdrawHex === '0a0b0c0d0e0f1011';
-    if (process.env.NODE_ENV === 'production' && isPlaceholder && process.env.ALLOW_PLACEHOLDER_DBC !== 'true') {
-      throw new Error('Placeholder withdraw discriminator in production. Set DBC_WITHDRAW_DISCRIMINATOR or DBC_WITHDRAW_INSTRUCTION_NAME or ALLOW_PLACEHOLDER_DBC=true');
-    }
     instructions.push(buildWithdrawInstruction(pool, ownerPk, userTokenAccount));
   } else {
     throw new Error(`Unsupported DBC exit action: ${action}`);

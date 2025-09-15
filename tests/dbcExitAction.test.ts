@@ -1,6 +1,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect } from 'vitest';
-import { buildDbcExitTransaction } from '../scaffolds/fun-launch/src/server/dbc-exit-builder';
+import { describe, it, expect, beforeAll } from 'vitest';
+
+// Set fake discriminators (16 hex chars = 8 bytes) before importing builder
+beforeAll(() => {
+  process.env.DBC_CLAIM_FEE_DISCRIMINATOR = 'aaaaaaaaaaaaaaaa';
+  process.env.DBC_WITHDRAW_DISCRIMINATOR = 'bbbbbbbbbbbbbbbb';
+});
+
+let buildDbcExitTransaction: any;
+beforeAll(async () => {
+  // Dynamic import after env set
+  ({ buildDbcExitTransaction } = await import('../scaffolds/fun-launch/src/server/dbc-exit-builder'));
+});
 import { Connection, Keypair } from '@solana/web3.js';
 
 // Use a public RPC that should be stable for basic blockhash fetch, fallback to mainnet.
@@ -29,7 +40,6 @@ describe('DBC exit builder action handling', () => {
       buildDbcExitTransaction(connection, {
         owner,
         dbcPoolKeys: { pool: dummyPool, feeVault: dummyFeeVault },
-        // @ts-expect-error intentionally wrong
         action: 'nope',
         simulateOnly: true,
       })

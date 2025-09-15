@@ -130,22 +130,18 @@ Copy `.env.example` to `.env.local` and fill in the real values:
 | Variable | Purpose | Default / Behavior |
 | -------- | ------- | ------------------ |
 | `DBC_PROGRAM_ID` | Override program id for DBC (fee claim) | Fallback to `dbcij3LWUppWqq96...` if unset |
-| `DBC_CLAIM_FEE_DISCRIMINATOR` | 8-byte hex (little-endian) discriminator for claim fee ix (explicit override – highest precedence) | Placeholder `0102030405060708` if unset |
-| `DBC_CLAIM_FEE_INSTRUCTION_NAME` | Anchor instruction name (e.g. `claim_partner_trading_fee`) to auto-derive discriminator using `sha256("global::<name>")` first 8 bytes | Used if explicit hex not set |
-| `DBC_SUPPRESS_PLACEHOLDER_WARNING` | If `true`, silences console warning when placeholder discriminator is in use (dev only) | `false` |
+| `DBC_CLAIM_FEE_DISCRIMINATOR` | 8-byte hex (16 hex chars) discriminator for claim fee ix (explicit override – highest precedence) | REQUIRED unless using NAME or IDL |
+| `DBC_CLAIM_FEE_INSTRUCTION_NAME` | Anchor instruction name (e.g. `claim_partner_trading_fee`) to derive discriminator (sha256("global::<name>").slice(0,8)) | Optional (used if explicit hex unset) |
 | `ALLOWED_DBC_PROGRAM_IDS` | Comma-separated allow list of permitted DBC program IDs (safety gate) | (unset = allow any) |
-| (future) `DBC_WITHDRAW_LIQUIDITY_DISCRIMINATOR` | 8-byte hex for withdraw instruction (not yet active) | (unset) |
-| `ALLOW_PLACEHOLDER_DBC` | Bypass prod guard (NOT recommended) | Must be set to `true` explicitly |
-| `DBC_USE_IDL` | If `true`, attempt to load `dbc_idl.json` and auto-derive discriminators | `false` |
-| `dbc_idl.json` | Optional Anchor-style IDL file at repo root | Not present by default |
+| `DBC_WITHDRAW_DISCRIMINATOR` | 8-byte hex for withdraw instruction | REQUIRED unless using NAME or IDL |
+| `DBC_WITHDRAW_INSTRUCTION_NAME` | Anchor instruction name to derive withdraw discriminator | Optional (used if explicit hex unset) |
+| `DBC_USE_IDL` | If `true`, attempt to load `dbc_idl.json` and auto-derive both discriminators | false |
+| `dbc_idl.json` | Anchor-style IDL file at repo root (enables IDL derivation) | Optional |
+| `ALLOW_PLACEHOLDER_DBC` | (Deprecated) Was used to allow placeholder discriminators; now discouraged and not needed | Avoid using |
 
-Production Guard: In `NODE_ENV=production`, if the placeholder discriminator is still present the builder throws unless you deliberately set `ALLOW_PLACEHOLDER_DBC=true`. You can supply ANY of the following (checked in order) to avoid placeholder usage:
+Production Guard: Builders now REQUIRE a real discriminator for both claim and withdraw. Provide either an explicit hex or instruction name (or enable IDL). If none are found the server throws on startup/import.
 
-1. `DBC_CLAIM_FEE_DISCRIMINATOR` (explicit hex)
-2. `DBC_CLAIM_FEE_INSTRUCTION_NAME` (auto-derived Anchor hash)
-3. `DBC_USE_IDL=true` with `dbc_idl.json` present
-
-Action Parameter (`claim` | `withdraw`): The builder & API accept an `action` field. `withdraw` currently throws `DBC withdraw (liquidity removal) is not implemented yet` until the official DBC IDL / instruction layout is supplied. UI presents the option disabled for clarity.
+Action Parameter (`claim` | `withdraw`): Both actions require valid discriminators. Withdraw account layout may still be provisional—ensure you test on devnet/mainnet with real pools before production rollout.
 
 IDL Auto Mode: When `DBC_USE_IDL=true` and a `dbc_idl.json` file exists:
 
