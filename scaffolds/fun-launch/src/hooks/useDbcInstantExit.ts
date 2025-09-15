@@ -139,7 +139,10 @@ export function useDbcInstantExit() {
               tx?: string;
               lastValidBlockHeight?: number;
             }
-            const simResult = (await simResponse.json()) as SimJson;
+            const simText = await simResponse.text();
+            if (!simText) throw new Error('Simulation returned empty response body');
+            let simResult: SimJson;
+            try { simResult = JSON.parse(simText) as SimJson; } catch (e) { throw new Error('Simulation JSON parse failed: ' + (e as any)?.message); }
             if (simResult.error) {
               throw new Error(`Simulation error: ${JSON.stringify(simResult.error)}`);
             }
@@ -178,7 +181,10 @@ export function useDbcInstantExit() {
             tx: string;
             lastValidBlockHeight: number;
           }
-          const result = (await response.json()) as BuildJson;
+          const buildText = await response.text();
+          if (!buildText) throw new Error('Build returned empty response body');
+          let result: BuildJson;
+          try { result = JSON.parse(buildText) as BuildJson; } catch (e) { throw new Error('Build JSON parse failed: ' + (e as any)?.message); }
           if (result.error) {
             throw new Error(result.error);
           }

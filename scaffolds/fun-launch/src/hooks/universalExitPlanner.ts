@@ -17,15 +17,28 @@ export interface PlanOptions {
   include?: { dbc?: boolean; dammv2?: boolean };
 }
 
-// Small helper to POST JSON and parse (throws on !ok)
+// Small helper to POST JSON and parse (throws on !ok) with empty-body safety.
 async function postJson<T = any>(url: string, body: any): Promise<T> {
   const resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!resp.ok) throw new Error(`${url} failed: ${resp.status}`);
-  return (await resp.json()) as T;
+  if (!resp.ok) {
+    // Attempt to read text (may be empty) for diagnostics
+    const maybeText = await resp.text().catch(() => '');
+    throw new Error(`${url} failed: ${resp.status}${maybeText ? ` body:${maybeText.slice(0,200)}` : ''}`);
+  }
+  // Some serverless platforms can yield empty 200 responses under race conditions; guard against that.
+  const text = await resp.text();
+  if (!text) {
+    return {} as unknown as T;
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch (e) {
+    throw new Error(`Failed to parse JSON from ${url}: ${(e as any)?.message}`);
+  }
 }
 
 export async function planUniversalExits(opts: PlanOptions): Promise<UniversalExitTask[]> {

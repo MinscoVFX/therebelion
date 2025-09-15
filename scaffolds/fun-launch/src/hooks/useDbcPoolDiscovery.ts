@@ -105,12 +105,15 @@ export function useDbcPoolDiscovery() {
         // Method 3: Use Meteora's official API if available
         try {
           const response = await fetch('https://app.meteora.ag/clmm-api/pair/all');
-          await response.json();
-
-          // Filter for DBC pools that user has positions in
-          // This would need proper integration with Meteora's API structure
-        } catch {
-          console.warn('Failed to fetch from Meteora API');
+          const txt = await response.text();
+            if (txt) {
+              try { JSON.parse(txt); } catch { console.warn('Meteora API returned non-JSON payload'); }
+            } else {
+              console.warn('Meteora API returned empty body (treating as no-op)');
+            }
+          // Placeholder: integrate parsed registry once format confirmed.
+        } catch (e) {
+          console.warn('Failed to fetch from Meteora API', (e as any)?.message);
         }
 
         setPools(discovered);
