@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 import { PausedIndicator } from '../../Explore/PausedIndicator';
 import { isHoverableDevice } from '@/lib/device';
 import { SkeletonTableRows } from './columns';
-  // Removed unused top-level useRef
+// Removed unused top-level useRef
 // Removed empty interface Tx
 
 type TxTableProps<_TData, TValue> = {
@@ -34,7 +34,6 @@ type TxTableProps<_TData, TValue> = {
   setPaused: (paused: boolean) => void;
   walletAddress: string | undefined;
 };
-
 
 const ROW_HEIGHT = 36;
 

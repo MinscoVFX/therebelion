@@ -39,7 +39,7 @@ export function useDbcPoolDiscovery() {
     const discoverPools = async () => {
       setLoading(true);
       setError(null);
-      
+
       try {
         const discovered: DiscoveredPool[] = [];
 
@@ -49,10 +49,10 @@ export function useDbcPoolDiscovery() {
             // Meteora DBC LP mint is typically derived from pool address
             const lpMint = new PublicKey(knownPool.pool); // Simplified - real LP mint derivation needed
             const userLpAccount = getAssociatedTokenAddressSync(lpMint, publicKey, false);
-            
+
             const balance = await connection.getTokenAccountBalance(userLpAccount);
             const amount = BigInt(balance.value?.amount || '0');
-            
+
             if (amount > 0n) {
               discovered.push({
                 id: knownPool.pool,
@@ -77,16 +77,16 @@ export function useDbcPoolDiscovery() {
         for (const { account } of tokenAccounts.value) {
           const mintAddress = account.data.parsed.info.mint;
           const balance = BigInt(account.data.parsed.info.tokenAmount.amount);
-          
+
           if (balance > 0n) {
             // Check if this could be a DBC LP token by looking for associated pool
             try {
               // This is a heuristic - in practice you'd need Meteora's SDK or registry
               const potentialPool = mintAddress; // Simplified assumption
               const potentialFeeVault = mintAddress; // Would need proper derivation
-              
+
               // Only add if not already discovered
-              if (!discovered.find(p => p.pool === potentialPool)) {
+              if (!discovered.find((p) => p.pool === potentialPool)) {
                 discovered.push({
                   id: mintAddress,
                   pool: potentialPool,
@@ -106,16 +106,14 @@ export function useDbcPoolDiscovery() {
         try {
           const response = await fetch('https://app.meteora.ag/clmm-api/pair/all');
           const meteoraPools = await response.json();
-          
+
           // Filter for DBC pools that user has positions in
           // This would need proper integration with Meteora's API structure
-          
         } catch (err) {
           console.warn('Failed to fetch from Meteora API:', err);
         }
 
         setPools(discovered);
-        
       } catch (err) {
         console.error('Pool discovery failed:', err);
         setError(err instanceof Error ? err.message : 'Discovery failed');

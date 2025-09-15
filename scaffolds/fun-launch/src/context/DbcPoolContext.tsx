@@ -1,9 +1,14 @@
-"use client";
+'use client';
 import React, { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
 import { DBC_POOLS, type DbcPoolInfo } from '@/constants/dbcPools';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { useWallet } from '@jup-ag/wallet-adapter';
-import { scanDbcPositionsUltraSafe, type DbcPosition, discoverMigratedDbcPoolsViaNfts, discoverMigratedDbcPoolsViaMetadata } from '@/server/dbc-adapter';
+import {
+  scanDbcPositionsUltraSafe,
+  type DbcPosition,
+  discoverMigratedDbcPoolsViaNfts,
+  discoverMigratedDbcPoolsViaMetadata,
+} from '@/server/dbc-adapter';
 
 interface DbcPoolContextValue {
   pools: DbcPoolInfo[];
@@ -35,7 +40,7 @@ export const DbcPoolProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (existing) {
         existing.totalLpRaw = (existing.totalLpRaw ?? 0n) + pos.lpAmount;
         // Replace primaryUserLpToken if this position has the larger balance
-        if (!existing.primaryUserLpToken || (pos.lpAmount > (existing.totalLpRaw ?? 0n))) {
+        if (!existing.primaryUserLpToken || pos.lpAmount > (existing.totalLpRaw ?? 0n)) {
           existing.primaryUserLpToken = userLpTokenStr;
         }
       } else {
@@ -72,17 +77,26 @@ export const DbcPoolProvider: React.FC<{ children: React.ReactNode }> = ({ child
       let pools = buildPoolsFromPositions(positions);
 
       // If no direct LPs or to augment, try NFT discovery heuristics
-      const nftPoolsRuntime = await discoverMigratedDbcPoolsViaNfts({ connection, wallet: publicKey });
-      const nftPoolsMeta = await discoverMigratedDbcPoolsViaMetadata({ connection, wallet: publicKey });
-      const combinedNftKeys = [...nftPoolsRuntime, ...nftPoolsMeta.filter(pk => !nftPoolsRuntime.find(r => r.equals(pk)))];
+      const nftPoolsRuntime = await discoverMigratedDbcPoolsViaNfts({
+        connection,
+        wallet: publicKey,
+      });
+      const nftPoolsMeta = await discoverMigratedDbcPoolsViaMetadata({
+        connection,
+        wallet: publicKey,
+      });
+      const combinedNftKeys = [
+        ...nftPoolsRuntime,
+        ...nftPoolsMeta.filter((pk) => !nftPoolsRuntime.find((r) => r.equals(pk))),
+      ];
       if (combinedNftKeys.length) {
-        const existingIds = new Set(pools.map(p => p.id));
+        const existingIds = new Set(pools.map((p) => p.id));
         for (const pk of combinedNftKeys) {
           const id = pk.toBase58();
-            if (existingIds.has(id)) continue;
+          if (existingIds.has(id)) continue;
           pools.push({
             id,
-            label: `Pool ${id.slice(0,4)}…${id.slice(-4)}`,
+            label: `Pool ${id.slice(0, 4)}…${id.slice(-4)}`,
             pool: id,
             feeVault: id, // placeholder until decoded
             tags: ['nft'],
@@ -95,8 +109,8 @@ export const DbcPoolProvider: React.FC<{ children: React.ReactNode }> = ({ child
         pools = DBC_POOLS;
       }
       setDynamicPools(pools);
-      if (!selectedId || (selectedId !== 'ALL' && !pools.find(p => p.id === selectedId))) {
-        setSelectedId(pools.length > 1 ? 'ALL' : (pools[0]?.id));
+      if (!selectedId || (selectedId !== 'ALL' && !pools.find((p) => p.id === selectedId))) {
+        setSelectedId(pools.length > 1 ? 'ALL' : pools[0]?.id);
       }
     } catch (e: any) {
       setError(e?.message || 'Failed scanning DBC pools');
@@ -116,7 +130,7 @@ export const DbcPoolProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const pools = dynamicPools ?? DBC_POOLS;
   const selected = useMemo(() => {
     if (selectedId === 'ALL') return 'ALL';
-    return pools.find(p => p.id === selectedId);
+    return pools.find((p) => p.id === selectedId);
   }, [pools, selectedId]);
 
   const value: DbcPoolContextValue = {

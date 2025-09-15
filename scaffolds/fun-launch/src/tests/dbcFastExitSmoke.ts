@@ -13,11 +13,18 @@ const OWNER = process.env.TEST_OWNER_PUBKEY || '';
 async function main() {
   const dbcPoolKeysEnv = process.env.TEST_DBC_POOL_KEYS; // JSON: { pool: string; feeVault: string }
   if (!OWNER || !dbcPoolKeysEnv) {
-    console.log('Set TEST_OWNER_PUBKEY and TEST_DBC_POOL_KEYS env vars to run this fast mode smoke test.');
+    console.log(
+      'Set TEST_OWNER_PUBKEY and TEST_DBC_POOL_KEYS env vars to run this fast mode smoke test.'
+    );
     return;
   }
   let dbcPoolKeys: { pool: string; feeVault: string };
-  try { dbcPoolKeys = JSON.parse(dbcPoolKeysEnv); } catch { console.error('Invalid TEST_DBC_POOL_KEYS JSON'); return; }
+  try {
+    dbcPoolKeys = JSON.parse(dbcPoolKeysEnv);
+  } catch {
+    console.error('Invalid TEST_DBC_POOL_KEYS JSON');
+    return;
+  }
 
   const body = {
     ownerPubkey: OWNER,
@@ -40,6 +47,9 @@ async function main() {
   if (json.error) console.error('Build error', json.error);
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
 
 export {}; // ensure this file is treated as a module

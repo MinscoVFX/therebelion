@@ -18,11 +18,7 @@ import { useWindowWidthListener } from '@/lib/device';
 const CLIENT_RPC_ENDPOINT =
   process.env.NEXT_PUBLIC_RPC_URL || 'https://api.mainnet-beta.solana.com';
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   // Initialize empty wallets array to avoid dependency issues
   const wallets = useMemo(() => [], []);
 

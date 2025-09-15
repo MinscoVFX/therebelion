@@ -43,7 +43,7 @@ async function main() {
   }
 }
 
-main().catch(e => {
+main().catch((e) => {
   console.error('Unexpected error in dry run', e);
   process.exit(1);
 });

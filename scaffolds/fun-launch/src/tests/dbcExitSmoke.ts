@@ -14,7 +14,12 @@ async function main() {
     return;
   }
   let dbcPoolKeys: { pool: string; feeVault: string };
-  try { dbcPoolKeys = JSON.parse(dbcPoolKeysEnv); } catch { console.error('Invalid TEST_DBC_POOL_KEYS JSON'); return; }
+  try {
+    dbcPoolKeys = JSON.parse(dbcPoolKeysEnv);
+  } catch {
+    console.error('Invalid TEST_DBC_POOL_KEYS JSON');
+    return;
+  }
 
   const body = {
     ownerPubkey: OWNER,
@@ -36,6 +41,9 @@ async function main() {
   if (json.err) console.error('Simulation error', json.err);
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
 
 export {}; // ensure this file is treated as a module

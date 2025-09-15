@@ -3,7 +3,10 @@
  * Returns the pool address if found, otherwise throws.
  * Matches Meteora doc export pattern for launchpad integration.
  */
-export async function resolvePoolByLpMint({ connection, lpMint }: {
+export async function resolvePoolByLpMint({
+  connection,
+  lpMint,
+}: {
   connection: Connection;
   lpMint: PublicKey;
 }): Promise<PublicKey> {
@@ -23,7 +26,11 @@ export default resolvePool;
  * Returns the pool address if found, otherwise throws.
  * Matches Meteora doc export pattern.
  */
-export async function resolvePool({ connection, tokenAMint, tokenBMint }: {
+export async function resolvePool({
+  connection,
+  tokenAMint,
+  tokenBMint,
+}: {
   connection: Connection;
   tokenAMint: PublicKey;
   tokenBMint: PublicKey;
@@ -96,7 +103,8 @@ export async function buildRemoveLiquidityIx({
   // Discover only if user did not explicitly pass a position
   if (!resolvedPositionPubkey) {
     try {
-      const helper = (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
+      const helper =
+        (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
       if (helper) {
         const fetched = await helper({ owner: user });
         if (Array.isArray(fetched)) discoveredPositions = fetched;
@@ -104,8 +112,11 @@ export async function buildRemoveLiquidityIx({
     } catch {
       // ignore discovery errors
     }
-    const poolPositions = discoveredPositions.filter((p: any) => p.account?.pool?.toBase58?.() === pool.toBase58());
-    if (!poolPositions.length) throw new Error('No position NFT found for pool when removing liquidity.');
+    const poolPositions = discoveredPositions.filter(
+      (p: any) => p.account?.pool?.toBase58?.() === pool.toBase58()
+    );
+    if (!poolPositions.length)
+      throw new Error('No position NFT found for pool when removing liquidity.');
     poolPositions.sort((a: any, b: any) => {
       const la = a.account?.liquidity ?? new BN(0);
       const lb = b.account?.liquidity ?? new BN(0);
@@ -127,7 +138,8 @@ export async function buildRemoveLiquidityIx({
       // ignore failed single fetch; we'll proceed with limited info.
     }
   }
-  if (!resolvedPositionPubkey) throw new Error('Unable to resolve position public key for remove liquidity.');
+  if (!resolvedPositionPubkey)
+    throw new Error('Unable to resolve position public key for remove liquidity.');
 
   const positionLiquidity: BN | null = chosenPosition?.account?.liquidity
     ? new BN(chosenPosition.account.liquidity.toString())
@@ -150,7 +162,9 @@ export async function buildRemoveLiquidityIx({
       if (quote?.tokenAOut) tokenAAmountThreshold = new BN(quote.tokenAOut.toString());
       if (quote?.tokenBOut) tokenBAmountThreshold = new BN(quote.tokenBOut.toString());
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   // 3. Determine token program IDs (handle 2022).
   const tokenAProgram = TOKEN_PROGRAM_ID;
@@ -164,7 +178,8 @@ export async function buildRemoveLiquidityIx({
   } else if (typeof lpAmount === 'bigint') {
     finalLiquidityDeltaBn = new BN(lpAmount.toString());
   } else if (typeof percent === 'number' && percent > 0 && percent <= 100) {
-    if (!positionLiquidity) throw new Error('Percent-based removal requested but position liquidity unknown.');
+    if (!positionLiquidity)
+      throw new Error('Percent-based removal requested but position liquidity unknown.');
     // Convert percent to basis points (two decimals) to avoid float precision issues.
     const bps = Math.round(percent * 100); // e.g. 25.37% -> 2537 bps
     finalLiquidityDeltaBn = positionLiquidity.mul(new BN(bps)).div(new BN(100 * 100));
@@ -172,7 +187,9 @@ export async function buildRemoveLiquidityIx({
     // default remove-all
     finalLiquidityDeltaBn = positionLiquidity;
   } else {
-    throw new Error('Must provide lpAmount, liquidityDelta, percent, or discoverable position liquidity.');
+    throw new Error(
+      'Must provide lpAmount, liquidityDelta, percent, or discoverable position liquidity.'
+    );
   }
 
   const removingAll = positionLiquidity ? positionLiquidity.eq(finalLiquidityDeltaBn) : false;
@@ -197,7 +214,7 @@ export async function buildRemoveLiquidityIx({
         tokenBAmountThreshold,
       });
     } else {
-  const liquidityDelta = finalLiquidityDeltaBn;
+      const liquidityDelta = finalLiquidityDeltaBn;
       txBuilder = (cp as any).removeLiquidity({
         owner: user,
         position: resolvedPositionPubkey,

@@ -15,20 +15,20 @@ export async function initializeLaunchpad() {
   try {
     const connection = connectionService.getConnection();
     const meteoraService = new MeteoraService(connection);
-    
+
     // Test connection
     const isHealthy = await connectionService.getHealth();
     if (!isHealthy) {
       throw new Error('Unable to connect to Solana network');
     }
-    
+
     console.log('Launchpad initialized successfully');
-    
+
     return {
       connection,
       meteoraService,
       tokens: TOKENS,
-      programIds: PROGRAM_IDS
+      programIds: PROGRAM_IDS,
     };
   } catch (error) {
     console.error('Failed to initialize launchpad:', error);
@@ -61,7 +61,7 @@ export const launchpadSDK: LaunchpadSDK = {
   },
   MeteoraService,
   TOKENS,
-  PROGRAM_IDS
+  PROGRAM_IDS,
 };
 
 export default launchpadSDK;

@@ -15,11 +15,7 @@ module.exports = {
     'plugin:import/recommended',
   ],
   settings: { react: { version: 'detect' } },
-  ignorePatterns: [
-    '**/node_modules/**',
-    '**/dist/**',
-    '**/.next/**',
-  ],
+  ignorePatterns: ['**/node_modules/**', '**/dist/**', '**/.next/**'],
   rules: {
     'react/react-in-jsx-scope': 'off',
   },

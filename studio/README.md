@@ -109,36 +109,39 @@ Example (pseudo-code):
 import { buildRemoveLiquidityIx } from '@meteora-invent/studio/lib/damm_v2';
 // ... obtain connection & all required public keys ...
 const ixs = await buildRemoveLiquidityIx({
-	connection,
-	programId,      // DAMM v2 program id
-	pool,           // pool address
-	lpMint,         // LP mint
-	user,           // wallet owner
-	userLpAccount,  // user's LP token account
-	userAToken,     // user's token A ATA
-	userBToken,     // user's token B ATA
-	tokenAMint,
-	tokenBMint,
-	tokenAVault,
-	tokenBVault,
-	// Removal amount can be specified in one of four ways (priority order):
-	// 1. liquidityDelta (advanced raw liquidity units)
-	// 2. percent (e.g. 25 for 25%)
-	// 3. lpAmount (legacy param kept for backward compatibility)
-	// 4. omit all -> remove 100% of discovered position liquidity
-	percent: 25, // remove 25% of position liquidity
-	// lpAmount: 1000n,
-	// liquidityDelta: 123456789n,
-	// positionPubkey: someSpecificPosition, // optional explicit position; skips discovery
+  connection,
+  programId, // DAMM v2 program id
+  pool, // pool address
+  lpMint, // LP mint
+  user, // wallet owner
+  userLpAccount, // user's LP token account
+  userAToken, // user's token A ATA
+  userBToken, // user's token B ATA
+  tokenAMint,
+  tokenBMint,
+  tokenAVault,
+  tokenBVault,
+  // Removal amount can be specified in one of four ways (priority order):
+  // 1. liquidityDelta (advanced raw liquidity units)
+  // 2. percent (e.g. 25 for 25%)
+  // 3. lpAmount (legacy param kept for backward compatibility)
+  // 4. omit all -> remove 100% of discovered position liquidity
+  percent: 25, // remove 25% of position liquidity
+  // lpAmount: 1000n,
+  // liquidityDelta: 123456789n,
+  // positionPubkey: someSpecificPosition, // optional explicit position; skips discovery
 });
 ```
 
 Returned value is an array of `TransactionInstruction` you can embed into a transaction.
 
 > NOTES:
+>
 > - If `positionPubkey` is provided discovery is skipped.
-> - If multiple sizing fields are provided, precedence is: `liquidityDelta` > `percent` > `lpAmount`.
-> - If none of `lpAmount | percent | liquidityDelta` are provided the builder removes 100% of the position liquidity.
+> - If multiple sizing fields are provided, precedence is: `liquidityDelta` > `percent` >
+>   `lpAmount`.
+> - If none of `lpAmount | percent | liquidityDelta` are provided the builder removes 100% of the
+>   position liquidity.
 
 ### DAMM v1 Scripts
 
@@ -150,13 +153,20 @@ pnpm damm-v1-create-pool --config ./config/damm_v1_config.jsonc
 
 ### Performance & Native Binding Notes
 
-During builds you may observe messages related to loading `next-swc` native bindings or wasm fallbacks. This originates from Next.js attempting to load platform-specific Rust compiled binaries. If it falls back to wasm you still get correct behavior, only slightly slower incremental builds.
+During builds you may observe messages related to loading `next-swc` native bindings or wasm
+fallbacks. This originates from Next.js attempting to load platform-specific Rust compiled binaries.
+If it falls back to wasm you still get correct behavior, only slightly slower incremental builds.
 
 Tips:
-1. Keep your workspace architecture aligned with the lockfile generation platform (avoid mixing arm64 vs x64 artifacts).
-2. To force wasm only (diagnostic) you can set `NEXT_DISABLE_SWC_WASM=1` but generally you want native.
-3. Ensure no container volume permissions prevent loading `.node` binary files inside `@next/swc-*` packages.
-4. For CI, prefer a clean `pnpm install --frozen-lockfile` per architecture to avoid stale native artifacts.
+
+1. Keep your workspace architecture aligned with the lockfile generation platform (avoid mixing
+   arm64 vs x64 artifacts).
+2. To force wasm only (diagnostic) you can set `NEXT_DISABLE_SWC_WASM=1` but generally you want
+   native.
+3. Ensure no container volume permissions prevent loading `.node` binary files inside `@next/swc-*`
+   packages.
+4. For CI, prefer a clean `pnpm install --frozen-lockfile` per architecture to avoid stale native
+   artifacts.
 
 You can introspect which flavor loaded at runtime by adding a small check (example only):
 
@@ -233,7 +243,8 @@ imports fail. The endpoint returns a JSON object like:
 { "damm_v2": true, "dbc": true }
 ```
 
-If a value is `false`, ensure the Studio package is built (`pnpm --filter @meteora-invent/studio build`).
+If a value is `false`, ensure the Studio package is built
+(`pnpm --filter @meteora-invent/studio build`).
 
 ## 📖 Program Details
 

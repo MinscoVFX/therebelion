@@ -10,12 +10,15 @@ import {
 } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import path from 'path';
-import { Metadata, PROGRAM_ID as TOKEN_METADATA_PROGRAM_ID } from '@metaplex-foundation/mpl-token-metadata';
+import {
+  Metadata,
+  PROGRAM_ID as TOKEN_METADATA_PROGRAM_ID,
+} from '@metaplex-foundation/mpl-token-metadata';
 
 // DBC Program IDs for bulletproof scanning
 const DBC_PROGRAM_IDS = [
   new PublicKey('dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN'), // Primary
-  new PublicKey('cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG')  // Secondary
+  new PublicKey('cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG'), // Secondary
 ];
 
 export type DbcPoolKeys = {
@@ -99,7 +102,10 @@ async function importDbcRuntime(): Promise<any> {
   return mod;
 }
 
-async function decodeDbcPool(connection: Connection, pool: PublicKey): Promise<DecodedDbcPool | null> {
+async function decodeDbcPool(
+  connection: Connection,
+  pool: PublicKey
+): Promise<DecodedDbcPool | null> {
   try {
     const mod = await importDbcRuntime();
     // Attempt to derive state accessor paths (depends on runtime build shape)
@@ -109,7 +115,11 @@ async function decodeDbcPool(connection: Connection, pool: PublicKey): Promise<D
     // Heuristic: runtime exposes state.getPool(pool) or need base mint. We try direct first.
     let poolState: any = null;
     if (client.state?.getPool) {
-      try { poolState = await client.state.getPool(pool); } catch { /* ignore */ }
+      try {
+        poolState = await client.state.getPool(pool);
+      } catch {
+        /* ignore */
+      }
     }
     if (!poolState && client.state?.getPoolByBaseMint) {
       // If pool PDA is not directly fetchable, cannot proceed.
@@ -117,9 +127,12 @@ async function decodeDbcPool(connection: Connection, pool: PublicKey): Promise<D
     }
     if (!poolState) return null;
     const acct = poolState.account || {};
-    const feeVault: PublicKey | undefined = acct.feeVault || acct.feeVaultBase || acct.feeVaultQuote;
-    const baseMint: PublicKey | undefined = acct.baseMint || acct.tokenAMint || acct.base || acct.base_token;
-    const quoteMint: PublicKey | undefined = acct.quoteMint || acct.tokenBMint || acct.quote || acct.quote_token;
+    const feeVault: PublicKey | undefined =
+      acct.feeVault || acct.feeVaultBase || acct.feeVaultQuote;
+    const baseMint: PublicKey | undefined =
+      acct.baseMint || acct.tokenAMint || acct.base || acct.base_token;
+    const quoteMint: PublicKey | undefined =
+      acct.quoteMint || acct.tokenBMint || acct.quote || acct.quote_token;
     if (!feeVault || !baseMint || !quoteMint) return null;
     // lpMint may or may not exist in virtual pool; keep optional.
     const lpMint = acct.lpMint || acct.lp_token_mint || undefined;
@@ -152,12 +165,11 @@ function pickExitBuilder(
     mod?.removeLiquidityIx ||
     mod?.buildExitPositionIx ||
     mod?.exitPositionIx ||
-    (mod?.builders && (
-      mod.builders.buildRemoveLiquidityIx || 
-      mod.builders.removeLiquidity ||
-      mod.builders.buildExitPositionIx ||
-      mod.builders.exitPosition
-    )) ||
+    (mod?.builders &&
+      (mod.builders.buildRemoveLiquidityIx ||
+        mod.builders.removeLiquidity ||
+        mod.builders.buildExitPositionIx ||
+        mod.builders.exitPosition)) ||
     null
   );
 }
@@ -174,7 +186,9 @@ export async function scanDbcPositionsUltraSafe(args: {
   const result: DbcPosition[] = [];
 
   // Use parsed token accounts for reliability
-  const parsed = await connection.getParsedTokenAccountsByOwner(wallet, { programId: TOKEN_PROGRAM_ID });
+  const parsed = await connection.getParsedTokenAccountsByOwner(wallet, {
+    programId: TOKEN_PROGRAM_ID,
+  });
 
   for (const { account, pubkey } of parsed.value) {
     const info: any = (account.data as any)?.parsed?.info;
@@ -188,7 +202,10 @@ export async function scanDbcPositionsUltraSafe(args: {
     // Attempt association with each known DBC program
     for (const programId of DBC_PROGRAM_IDS) {
       try {
-        const [poolPda] = PublicKey.findProgramAddressSync([Buffer.from('pool'), mint.toBuffer()], programId);
+        const [poolPda] = PublicKey.findProgramAddressSync(
+          [Buffer.from('pool'), mint.toBuffer()],
+          programId
+        );
         const poolInfo = await connection.getAccountInfo(poolPda);
         if (!poolInfo) continue;
 
@@ -207,7 +224,9 @@ export async function scanDbcPositionsUltraSafe(args: {
             tokenB = decoded.quoteMint;
             if (decoded.lpMint) lpMintResolved = decoded.lpMint;
           }
-        } catch { /* fallback stays */ }
+        } catch {
+          /* fallback stays */
+        }
 
         const lpAmount = BigInt(amountStr);
         result.push({
@@ -219,7 +238,7 @@ export async function scanDbcPositionsUltraSafe(args: {
             lpMint: lpMintResolved,
             userLpToken: pubkey,
           },
-            lpAmount,
+          lpAmount,
           programId,
           estimatedValueUsd: 0,
         });
@@ -249,13 +268,16 @@ export async function discoverMigratedDbcPoolsViaNfts(args: {
     const helper =
       damm.getAllPositionNftAccountByOwner ||
       damm.getAllUserPositionNftAccount ||
-      (damm.CpAmm && (damm.CpAmm.prototype.getAllPositionNftAccountByOwner || damm.CpAmm.prototype.getAllUserPositionNftAccount));
+      (damm.CpAmm &&
+        (damm.CpAmm.prototype.getAllPositionNftAccountByOwner ||
+          damm.CpAmm.prototype.getAllUserPositionNftAccount));
     if (!helper) return [];
     // Some runtimes expect an object param; others may bind 'this'. We'll attempt both styles.
     let fetched: any[] = [];
     try {
       const direct = await helper({ owner: wallet });
-      if (Array.isArray(direct)) fetched = direct; else if (direct?.length) fetched = Array.from(direct);
+      if (Array.isArray(direct)) fetched = direct;
+      else if (direct?.length) fetched = Array.from(direct);
     } catch {
       try {
         // instantiate CpAmm if available
@@ -264,16 +286,23 @@ export async function discoverMigratedDbcPoolsViaNfts(args: {
           const alt = await helper.call(Cp, { owner: wallet });
           if (Array.isArray(alt)) fetched = alt;
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     const pools: PublicKey[] = [];
     for (const p of fetched) {
       const poolPk = p?.account?.pool || p?.pool;
-      if (poolPk && PublicKey.isOnCurve(poolPk.toBuffer ? poolPk.toBuffer() : new PublicKey(poolPk).toBuffer())) {
+      if (
+        poolPk &&
+        PublicKey.isOnCurve(poolPk.toBuffer ? poolPk.toBuffer() : new PublicKey(poolPk).toBuffer())
+      ) {
         try {
           const pk = poolPk instanceof PublicKey ? poolPk : new PublicKey(poolPk);
-          if (!pools.find(x => x.equals(pk))) pools.push(pk);
-        } catch { /* skip invalid */ }
+          if (!pools.find((x) => x.equals(pk))) pools.push(pk);
+        } catch {
+          /* skip invalid */
+        }
       }
     }
     if (pools.length) {
@@ -302,7 +331,9 @@ export async function discoverMigratedDbcPoolsViaMetadata(args: {
   const candidates: PublicKey[] = [];
   try {
     // Fetch all token accounts (parsed) owned by wallet and filter for amount 1 + decimals 0/0 or NFT standard.
-    const parsed = await connection.getParsedTokenAccountsByOwner(wallet, { programId: TOKEN_PROGRAM_ID });
+    const parsed = await connection.getParsedTokenAccountsByOwner(wallet, {
+      programId: TOKEN_PROGRAM_ID,
+    });
     for (const { account } of parsed.value) {
       const info: any = (account.data as any)?.parsed?.info;
       if (!info) continue;
@@ -313,13 +344,18 @@ export async function discoverMigratedDbcPoolsViaMetadata(args: {
       if (!mintStr) continue;
       let metadataPda: PublicKey | null = null;
       try {
-        const [pda] = PublicKey.findProgramAddressSync([
-          Buffer.from('metadata'),
-          TOKEN_METADATA_PROGRAM_ID.toBuffer(),
-          new PublicKey(mintStr).toBuffer(),
-        ], TOKEN_METADATA_PROGRAM_ID);
+        const [pda] = PublicKey.findProgramAddressSync(
+          [
+            Buffer.from('metadata'),
+            TOKEN_METADATA_PROGRAM_ID.toBuffer(),
+            new PublicKey(mintStr).toBuffer(),
+          ],
+          TOKEN_METADATA_PROGRAM_ID
+        );
         metadataPda = pda;
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
       if (!metadataPda) continue;
       const metaAcct = await connection.getAccountInfo(metadataPda);
       if (!metaAcct) continue;
@@ -329,8 +365,9 @@ export async function discoverMigratedDbcPoolsViaMetadata(args: {
         const symbol = (metadata.data?.symbol || '').trim();
         const creators = (metadata.data?.creators || []).map((c: any) => c.address.toBase58());
         const lower = `${name} ${symbol}`.toLowerCase();
-        const meteoraLike = /dbc|meteora|migr|amm/i.test(lower) ||
-          creators.some(c => knownMeteoraCreators.includes(c));
+        const meteoraLike =
+          /dbc|meteora|migr|amm/i.test(lower) ||
+          creators.some((c) => knownMeteoraCreators.includes(c));
         if (!meteoraLike) continue;
         // Attempt to find a base58 public key embedded in name (simple heuristic: split tokens and try decode)
         const tokens = name.split(/[^A-Za-z0-9]+/).filter(Boolean);
@@ -338,16 +375,22 @@ export async function discoverMigratedDbcPoolsViaMetadata(args: {
           if (t.length < 32 || t.length > 44) continue;
           try {
             const maybe = new PublicKey(t);
-            if (!candidates.find(x => x.equals(maybe))) candidates.push(maybe);
-          } catch { /* not a key */ }
+            if (!candidates.find((x) => x.equals(maybe))) candidates.push(maybe);
+          } catch {
+            /* not a key */
+          }
         }
-      } catch { /* ignore decode failure */ }
+      } catch {
+        /* ignore decode failure */
+      }
     }
   } catch {
     return [];
   }
   if (candidates.length) {
-    console.log(`[DBC NFT Meta Discovery] Found ${candidates.length} pool-like keys in NFT metadata.`);
+    console.log(
+      `[DBC NFT Meta Discovery] Found ${candidates.length} pool-like keys in NFT metadata.`
+    );
   }
   return candidates;
 }
@@ -362,11 +405,11 @@ export async function buildBulletproofDbcExitIx(args: {
   recipient: PublicKey;
 }): Promise<TransactionInstruction[]> {
   const { connection, position, recipient } = args;
-  
+
   try {
     const dbc = await importDbcRuntime();
     const exitBuilder = pickExitBuilder(dbc);
-    
+
     if (!exitBuilder) {
       throw new Error('DBC exit builder not found in studio runtime');
     }
@@ -387,10 +430,11 @@ export async function buildBulletproofDbcExitIx(args: {
 
     const instructions = await exitBuilder(exitArgs);
     const ixArray = Array.isArray(instructions) ? instructions : [instructions];
-    
-    console.log(`[DBC Exit] Built ${ixArray.length} exit instructions for ${position.lpAmount.toString()} LP tokens`);
-    return ixArray.filter(ix => ix !== null && ix !== undefined);
-    
+
+    console.log(
+      `[DBC Exit] Built ${ixArray.length} exit instructions for ${position.lpAmount.toString()} LP tokens`
+    );
+    return ixArray.filter((ix) => ix !== null && ix !== undefined);
   } catch (error) {
     console.error('[DBC Exit] Failed to build exit instruction:', error);
     throw new Error(`Failed to build DBC exit instruction: ${error}`);
@@ -408,74 +452,68 @@ export async function sendBulletproofTransaction(args: {
   maxRetries?: number;
 }): Promise<BulletproofExitResult> {
   const { connection, transaction, payer, maxRetries = 10 } = args;
-  
+
   let retryCount = 0;
   let lastError: any = null;
 
   while (retryCount < maxRetries) {
     try {
       console.log(`[Bulletproof TX] Attempt ${retryCount + 1}/${maxRetries}`);
-      
+
       // Add fresh blockhash and priority fee for each attempt
       const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
       transaction.recentBlockhash = blockhash;
       transaction.lastValidBlockHeight = lastValidBlockHeight;
-      
+
       // Add 0.05 SOL priority fee for fast execution
       const priorityFeeIx = ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: 50_000 // 0.05 SOL
+        microLamports: 50_000, // 0.05 SOL
       });
-      
+
       // Recreate transaction with priority fee
       const bulletproofTx = new Transaction();
       bulletproofTx.add(priorityFeeIx);
-      transaction.instructions.forEach(ix => bulletproofTx.add(ix));
+      transaction.instructions.forEach((ix) => bulletproofTx.add(ix));
       bulletproofTx.recentBlockhash = blockhash;
       bulletproofTx.lastValidBlockHeight = lastValidBlockHeight;
       bulletproofTx.feePayer = payer.publicKey;
-      
+
       // Sign and send with confirmation
-      const signature = await sendAndConfirmTransaction(
-        connection,
-        bulletproofTx,
-        [payer],
-        {
-          commitment: 'confirmed',
-          maxRetries: 3,
-          skipPreflight: false
-        }
-      );
-      
+      const signature = await sendAndConfirmTransaction(connection, bulletproofTx, [payer], {
+        commitment: 'confirmed',
+        maxRetries: 3,
+        skipPreflight: false,
+      });
+
       console.log(`[Bulletproof TX] Success! Signature: ${signature}`);
       return {
         success: true,
         signature,
-        retryCount: retryCount + 1
+        retryCount: retryCount + 1,
       };
-      
     } catch (error) {
       lastError = error;
       retryCount++;
-      
+
       console.warn(`[Bulletproof TX] Attempt ${retryCount} failed:`, error);
-      
+
       if (retryCount < maxRetries) {
         // Exponential backoff with jitter
         const baseDelay = Math.min(1000 * Math.pow(2, retryCount - 1), 8000);
         const jitter = Math.random() * 1000;
         const delay = baseDelay + jitter;
-        
+
         console.log(`[Bulletproof TX] Retrying in ${Math.round(delay)}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
   }
-  
+
   console.error(`[Bulletproof TX] All ${maxRetries} attempts failed. Last error:`, lastError);
   return {
     success: false,
     error: lastError?.message || 'Transaction failed after maximum retries',
-    retryCount
+    retryCount,
   };
 }
 
@@ -489,33 +527,33 @@ export async function executeBulletproofDbcExit(args: {
   payer: Keypair;
 }): Promise<BulletproofExitResult> {
   const { connection, position, payer } = args;
-  
+
   try {
     console.log(`[Bulletproof Exit] Starting exit for ${position.lpAmount.toString()} LP tokens`);
-    
+
     // Build exit instructions with maximum slippage tolerance
     const exitInstructions = await buildBulletproofDbcExitIx({
       connection,
       position,
-      recipient: payer.publicKey
+      recipient: payer.publicKey,
     });
-    
+
     if (exitInstructions.length === 0) {
       throw new Error('No exit instructions generated');
     }
-    
+
     // Create bulletproof transaction
     const transaction = new Transaction();
-    exitInstructions.forEach(ix => transaction.add(ix));
-    
+    exitInstructions.forEach((ix) => transaction.add(ix));
+
     // Execute with maximum reliability
     const result = await sendBulletproofTransaction({
       connection,
       transaction,
       payer,
-      maxRetries: 10
+      maxRetries: 10,
     });
-    
+
     if (result.success) {
       console.log(`[Bulletproof Exit] Successfully exited DBC position!`);
       console.log(`[Bulletproof Exit] Signature: ${result.signature}`);
@@ -523,15 +561,14 @@ export async function executeBulletproofDbcExit(args: {
     } else {
       console.error(`[Bulletproof Exit] Failed to exit DBC position: ${result.error}`);
     }
-    
+
     return result;
-    
   } catch (error) {
     console.error('[Bulletproof Exit] Unexpected error:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
-      retryCount: 0
+      retryCount: 0,
     };
   }
 }

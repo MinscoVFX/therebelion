@@ -50,7 +50,7 @@ export function useDbcInstantExit() {
     currentPriorityMicros: 0,
     timings: {},
   });
-  
+
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const reset = useCallback(() => {
@@ -66,54 +66,89 @@ export function useDbcInstantExit() {
 
   const abort = useCallback(() => {
     abortControllerRef.current?.abort();
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       status: 'error',
       error: 'Aborted by user',
     }));
   }, []);
 
-  const exit = useCallback(async (options: ExitOptions) => {
-    if (!publicKey || !signTransaction) {
-      throw new Error('Wallet not connected');
-    }
-
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-
-    const maxAttempts = 3;
-    let currentAttempt = 0;
-    let currentPriority = options.priorityMicros || 250_000;
-
-    const timings: ExitTimings = { started: Date.now() };
-
-    setState({
-      status: 'building',
-      attempt: 1,
-      currentPriorityMicros: currentPriority,
-      timings,
-    });
-
-    while (currentAttempt < maxAttempts) {
-      if (abortController.signal.aborted) {
-        setState(prev => ({ ...prev, status: 'error', error: 'Aborted' }));
-        return;
+  const exit = useCallback(
+    async (options: ExitOptions) => {
+      if (!publicKey || !signTransaction) {
+        throw new Error('Wallet not connected');
       }
 
-      currentAttempt++;
-      
-      try {
-        // Build transaction
-        setState(prev => ({
-          ...prev,
-          status: 'building',
-          attempt: currentAttempt,
-          currentPriorityMicros: currentPriority,
-        }));
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
 
-        // Simulate first if requested and it's the first attempt
-        if (options.simulateFirst && currentAttempt === 1 && !options.fastMode) {
-          const simResponse = await fetch('/api/dbc-exit', {
+      const maxAttempts = 3;
+      let currentAttempt = 0;
+      let currentPriority = options.priorityMicros || 250_000;
+
+      const timings: ExitTimings = { started: Date.now() };
+
+      setState({
+        status: 'building',
+        attempt: 1,
+        currentPriorityMicros: currentPriority,
+        timings,
+      });
+
+      while (currentAttempt < maxAttempts) {
+        if (abortController.signal.aborted) {
+          setState((prev) => ({ ...prev, status: 'error', error: 'Aborted' }));
+          return;
+        }
+
+        currentAttempt++;
+
+        try {
+          // Build transaction
+          setState((prev) => ({
+            ...prev,
+            status: 'building',
+            attempt: currentAttempt,
+            currentPriorityMicros: currentPriority,
+          }));
+
+          // Simulate first if requested and it's the first attempt
+          if (options.simulateFirst && currentAttempt === 1 && !options.fastMode) {
+            const simResponse = await fetch('/api/dbc-exit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                owner: publicKey.toString(),
+                dbcPoolKeys: options.dbcPoolKeys,
+                priorityMicros: currentPriority,
+                slippageBps: options.slippageBps,
+                simulateOnly: true,
+                computeUnitLimit: options.computeUnitLimit,
+              }),
+              signal: abortController.signal,
+            });
+
+            if (!simResponse.ok) {
+              throw new Error(`Simulation failed: ${simResponse.statusText}`);
+            }
+
+            const simResult = await simResponse.json();
+            if (simResult.error) {
+              throw new Error(`Simulation error: ${JSON.stringify(simResult.error)}`);
+            }
+
+            setState((prev) => ({
+              ...prev,
+              simulation: {
+                logs: simResult.logs || [],
+                unitsConsumed: simResult.unitsConsumed || 0,
+                error: simResult.error,
+              },
+            }));
+          }
+
+          // Build actual transaction
+          const response = await fetch('/api/dbc-exit', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -121,145 +156,118 @@ export function useDbcInstantExit() {
               dbcPoolKeys: options.dbcPoolKeys,
               priorityMicros: currentPriority,
               slippageBps: options.slippageBps,
-              simulateOnly: true,
+              simulateOnly: false,
               computeUnitLimit: options.computeUnitLimit,
             }),
             signal: abortController.signal,
           });
 
-          if (!simResponse.ok) {
-            throw new Error(`Simulation failed: ${simResponse.statusText}`);
+          if (!response.ok) {
+            throw new Error(`API error: ${response.statusText}`);
           }
 
-          const simResult = await simResponse.json();
-          if (simResult.error) {
-            throw new Error(`Simulation error: ${JSON.stringify(simResult.error)}`);
+          const result = await response.json();
+          if (result.error) {
+            throw new Error(result.error);
           }
 
-          setState(prev => ({
+          timings.built = Date.now();
+          setState((prev) => ({ ...prev, timings: { ...prev.timings, built: Date.now() } }));
+
+          // Sign transaction
+          setState((prev) => ({ ...prev, status: 'signing' }));
+
+          const tx = VersionedTransaction.deserialize(Buffer.from(result.tx, 'base64'));
+          const signedTx = await signTransaction(tx);
+
+          timings.signed = Date.now();
+          setState((prev) => ({ ...prev, timings: { ...prev.timings, signed: Date.now() } }));
+
+          // Send transaction
+          setState((prev) => ({ ...prev, status: 'sending' }));
+
+          const signature = await connection.sendRawTransaction(signedTx.serialize(), {
+            skipPreflight: options.fastMode,
+            maxRetries: 0,
+          });
+
+          timings.sent = Date.now();
+          setState((prev) => ({
             ...prev,
-            simulation: {
-              logs: simResult.logs || [],
-              unitsConsumed: simResult.unitsConsumed || 0,
-              error: simResult.error,
-            },
+            status: 'confirming',
+            signature,
+            timings: { ...prev.timings, sent: Date.now() },
           }));
-        }
 
-        // Build actual transaction
-        const response = await fetch('/api/dbc-exit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            owner: publicKey.toString(),
-            dbcPoolKeys: options.dbcPoolKeys,
-            priorityMicros: currentPriority,
-            slippageBps: options.slippageBps,
-            simulateOnly: false,
-            computeUnitLimit: options.computeUnitLimit,
-          }),
-          signal: abortController.signal,
-        });
+          // Confirm transaction
+          if (options.fastMode) {
+            // Try processed first, then confirmed
+            try {
+              await connection.confirmTransaction(
+                {
+                  signature,
+                  blockhash: tx.message.recentBlockhash!,
+                  lastValidBlockHeight: result.lastValidBlockHeight,
+                },
+                'processed'
+              );
 
-        if (!response.ok) {
-          throw new Error(`API error: ${response.statusText}`);
-        }
+              timings.processed = Date.now();
+              setState((prev) => ({
+                ...prev,
+                timings: { ...prev.timings, processed: Date.now() },
+              }));
+            } catch (err) {
+              console.warn('Processed confirmation failed, waiting for confirmed:', err);
+            }
+          }
 
-        const result = await response.json();
-        if (result.error) {
-          throw new Error(result.error);
-        }
-
-        timings.built = Date.now();
-        setState(prev => ({ ...prev, timings: { ...prev.timings, built: Date.now() } }));
-
-        // Sign transaction
-        setState(prev => ({ ...prev, status: 'signing' }));
-        
-        const tx = VersionedTransaction.deserialize(Buffer.from(result.tx, 'base64'));
-        const signedTx = await signTransaction(tx);
-        
-        timings.signed = Date.now();
-        setState(prev => ({ ...prev, timings: { ...prev.timings, signed: Date.now() } }));
-
-        // Send transaction
-        setState(prev => ({ ...prev, status: 'sending' }));
-        
-        const signature = await connection.sendRawTransaction(signedTx.serialize(), {
-          skipPreflight: options.fastMode,
-          maxRetries: 0,
-        });
-
-        timings.sent = Date.now();
-        setState(prev => ({ 
-          ...prev, 
-          status: 'confirming',
-          signature,
-          timings: { ...prev.timings, sent: Date.now() }
-        }));
-
-        // Confirm transaction
-        if (options.fastMode) {
-          // Try processed first, then confirmed
-          try {
-            await connection.confirmTransaction({
+          await connection.confirmTransaction(
+            {
               signature,
               blockhash: tx.message.recentBlockhash!,
               lastValidBlockHeight: result.lastValidBlockHeight,
-            }, 'processed');
-            
-            timings.processed = Date.now();
-            setState(prev => ({ 
-              ...prev, 
-              timings: { ...prev.timings, processed: Date.now() }
-            }));
-          } catch (err) {
-            console.warn('Processed confirmation failed, waiting for confirmed:', err);
-          }
-        }
+            },
+            'confirmed'
+          );
 
-        await connection.confirmTransaction({
-          signature,
-          blockhash: tx.message.recentBlockhash!,
-          lastValidBlockHeight: result.lastValidBlockHeight,
-        }, 'confirmed');
-
-        timings.confirmed = Date.now();
-        setState(prev => ({
-          ...prev,
-          status: 'success',
-          timings: { ...prev.timings, confirmed: Date.now() }
-        }));
-
-        return signature;
-
-      } catch (error) {
-        console.error(`Attempt ${currentAttempt} failed:`, error);
-        
-        if (abortController.signal.aborted) {
-          setState(prev => ({ ...prev, status: 'error', error: 'Aborted' }));
-          return;
-        }
-
-        if (currentAttempt >= maxAttempts) {
-          // Final attempt failed
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          setState(prev => ({
+          timings.confirmed = Date.now();
+          setState((prev) => ({
             ...prev,
-            status: 'error',
-            error: parseErrorMessage(errorMessage),
+            status: 'success',
+            timings: { ...prev.timings, confirmed: Date.now() },
           }));
-          throw error;
-        }
 
-        // Retry with higher priority
-        currentPriority = Math.min(currentPriority * 1.35, 3_000_000);
-        
-        // Wait before retry
-        await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
+          return signature;
+        } catch (error) {
+          console.error(`Attempt ${currentAttempt} failed:`, error);
+
+          if (abortController.signal.aborted) {
+            setState((prev) => ({ ...prev, status: 'error', error: 'Aborted' }));
+            return;
+          }
+
+          if (currentAttempt >= maxAttempts) {
+            // Final attempt failed
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            setState((prev) => ({
+              ...prev,
+              status: 'error',
+              error: parseErrorMessage(errorMessage),
+            }));
+            throw error;
+          }
+
+          // Retry with higher priority
+          currentPriority = Math.min(currentPriority * 1.35, 3_000_000);
+
+          // Wait before retry
+          await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
+        }
       }
-    }
-  }, [connection, publicKey, signTransaction]);
+    },
+    [connection, publicKey, signTransaction]
+  );
 
   return {
     state,

@@ -9,7 +9,12 @@ import { claimTradingFee } from '../../lib/dbc';
 async function tryLoadSdk() {
   try {
     const sdk = await import('@meteora-ag/dynamic-bonding-curve-sdk');
-    const idl: Idl | undefined = (sdk as any).IDL || (sdk as any).DBC_IDL || (sdk as any).DbcIDL || (sdk as any).idl || undefined;
+    const idl: Idl | undefined =
+      (sdk as any).IDL ||
+      (sdk as any).DBC_IDL ||
+      (sdk as any).DbcIDL ||
+      (sdk as any).idl ||
+      undefined;
     const pidLike =
       (sdk as any).PROGRAM_ID ||
       (sdk as any).DBC_PROGRAM_ID ||

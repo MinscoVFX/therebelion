@@ -35,11 +35,11 @@ function createClaimTradingFeeInstruction(
   pool: PublicKey,
   feeVault: PublicKey,
   claimer: PublicKey,
-  claimerTokenAccount: PublicKey,
+  claimerTokenAccount: PublicKey
 ): any {
   const data = Buffer.alloc(8);
   data.writeBigUInt64LE(BigInt('0x123456789abcdef0'), 0); // Meteora claim instruction discriminator
-  
+
   return {
     programId: DBC_PROGRAM_ID,
     keys: [
@@ -56,7 +56,7 @@ function createClaimTradingFeeInstruction(
 export async function POST(request: NextRequest) {
   try {
     const body: RequestBody = await request.json();
-    
+
     // Validate required fields
     if (!body.owner || !body.dbcPoolKeys?.pool || !body.dbcPoolKeys?.feeVault) {
       return NextResponse.json(
@@ -68,11 +68,14 @@ export async function POST(request: NextRequest) {
     // Validate ranges
     const priorityMicros = Math.max(0, Math.min(body.priorityMicros || 250_000, 3_000_000));
     const slippageBps = Math.max(0, Math.min(body.slippageBps || 50, 10_000));
-    const computeUnitLimit = body.computeUnitLimit ? 
-      Math.max(50_000, Math.min(body.computeUnitLimit, 1_400_000)) : undefined;
+    const computeUnitLimit = body.computeUnitLimit
+      ? Math.max(50_000, Math.min(body.computeUnitLimit, 1_400_000))
+      : undefined;
 
     const connection = new Connection(
-      process.env.RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://api.mainnet-beta.solana.com',
+      process.env.RPC_URL ||
+        process.env.NEXT_PUBLIC_RPC_URL ||
+        'https://api.mainnet-beta.solana.com',
       'confirmed'
     );
 
@@ -101,27 +104,18 @@ export async function POST(request: NextRequest) {
         ComputeBudgetProgram.setComputeUnitPrice({ microLamports: priorityMicros })
       );
     }
-    
+
     if (computeUnitLimit) {
-      instructions.push(
-        ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnitLimit })
-      );
+      instructions.push(ComputeBudgetProgram.setComputeUnitLimit({ units: computeUnitLimit }));
     }
 
     // Ensure user token account exists
     instructions.push(
-      createAssociatedTokenAccountIdempotentInstruction(
-        owner,
-        userTokenAccount,
-        owner,
-        tokenMint
-      )
+      createAssociatedTokenAccountIdempotentInstruction(owner, userTokenAccount, owner, tokenMint)
     );
 
     // Add DBC claim trading fee instruction
-    instructions.push(
-      createClaimTradingFeeInstruction(pool, feeVault, owner, userTokenAccount)
-    );
+    instructions.push(createClaimTradingFeeInstruction(pool, feeVault, owner, userTokenAccount));
 
     // Get recent blockhash
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
@@ -157,7 +151,6 @@ export async function POST(request: NextRequest) {
       tx: tx.serialize().toString('base64'),
       lastValidBlockHeight,
     });
-
   } catch (error) {
     console.error('DBC exit API error:', error);
     return NextResponse.json(

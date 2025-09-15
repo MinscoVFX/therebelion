@@ -1,10 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { Table as _Table } from '@/components/Table';
-import {
-  scanDbcPositionsUltraSafe,
-  DbcPosition,
-} from '@/server/dbc-adapter';
+import { scanDbcPositionsUltraSafe, DbcPosition } from '@/server/dbc-adapter';
 import { useDbcInstantExit } from '@/hooks/useDbcInstantExit';
 import { toast } from 'sonner';
 import { useDbcPools } from '@/context/DbcPoolContext';
@@ -28,18 +25,10 @@ const PositionRow: React.FC<PositionRowProps> = ({ position, onExit, isExiting }
 
   return (
     <tr className="border-b hover:bg-gray-50">
-      <td className="px-4 py-3 text-sm">
-        {position.poolKeys.pool.toString().slice(0, 8)}...
-      </td>
-      <td className="px-4 py-3 text-sm">
-        {position.lpAmount.toString()}
-      </td>
-      <td className="px-4 py-3 text-sm">
-        ${position.estimatedValueUsd?.toFixed(2) || '0.00'}
-      </td>
-      <td className="px-4 py-3 text-sm">
-        {position.programId.toString().slice(0, 8)}...
-      </td>
+      <td className="px-4 py-3 text-sm">{position.poolKeys.pool.toString().slice(0, 8)}...</td>
+      <td className="px-4 py-3 text-sm">{position.lpAmount.toString()}</td>
+      <td className="px-4 py-3 text-sm">${position.estimatedValueUsd?.toFixed(2) || '0.00'}</td>
+      <td className="px-4 py-3 text-sm">{position.programId.toString().slice(0, 8)}...</td>
       <td className="px-4 py-3">
         <button
           onClick={handleExit}
@@ -84,7 +73,7 @@ export const TxTable: React.FC<TxTableProps> = ({ className = '' }) => {
       console.log('[TxTable] Starting ultra-safe DBC position scan...');
       const foundPositions = await scanDbcPositionsUltraSafe({
         connection,
-        wallet: publicKey
+        wallet: publicKey,
       });
 
       setPositions(foundPositions);
@@ -102,26 +91,36 @@ export const TxTable: React.FC<TxTableProps> = ({ className = '' }) => {
   }, [connection, publicKey]);
 
   // Execute bulletproof exit with maximum reliability
-  const handleInstantExit = useCallback(async (position: DbcPosition) => {
-    if (!publicKey) return;
-    const positionKey = position.poolKeys.pool.toString();
-    setExitingPositions(prev => new Set(prev).add(positionKey));
-    try {
-      const sig = await exit({
-        dbcPoolKeys: { pool: position.poolKeys.pool.toBase58(), feeVault: position.poolKeys.feeVault.toBase58() },
-        priorityMicros,
-      });
-      if (typeof sig === 'string') {
-        toast.success('Exit success');
-        setPositions(prev => prev.filter(p => p.poolKeys.pool.toString() !== positionKey));
-        setTimeout(() => scanPositions(), 1500);
+  const handleInstantExit = useCallback(
+    async (position: DbcPosition) => {
+      if (!publicKey) return;
+      const positionKey = position.poolKeys.pool.toString();
+      setExitingPositions((prev) => new Set(prev).add(positionKey));
+      try {
+        const sig = await exit({
+          dbcPoolKeys: {
+            pool: position.poolKeys.pool.toBase58(),
+            feeVault: position.poolKeys.feeVault.toBase58(),
+          },
+          priorityMicros,
+        });
+        if (typeof sig === 'string') {
+          toast.success('Exit success');
+          setPositions((prev) => prev.filter((p) => p.poolKeys.pool.toString() !== positionKey));
+          setTimeout(() => scanPositions(), 1500);
+        }
+      } catch (e: any) {
+        toast.error(e?.message || 'Exit failed');
+      } finally {
+        setExitingPositions((prev) => {
+          const ns = new Set(prev);
+          ns.delete(positionKey);
+          return ns;
+        });
       }
-    } catch (e:any) {
-      toast.error(e?.message || 'Exit failed');
-    } finally {
-      setExitingPositions(prev => { const ns = new Set(prev); ns.delete(positionKey); return ns; });
-    }
-  }, [exit, publicKey, priorityMicros, scanPositions]);
+    },
+    [exit, publicKey, priorityMicros, scanPositions]
+  );
 
   // Auto-scan on component mount and wallet change
   React.useEffect(() => {
@@ -154,7 +153,7 @@ export const TxTable: React.FC<TxTableProps> = ({ className = '' }) => {
               min={0}
               step={50_000}
               value={priorityMicros}
-              onChange={e => setPriorityMicros(Number(e.target.value))}
+              onChange={(e) => setPriorityMicros(Number(e.target.value))}
               className="w-32 px-2 py-1 border rounded text-sm"
             />
           </label>
@@ -170,9 +169,7 @@ export const TxTable: React.FC<TxTableProps> = ({ className = '' }) => {
 
       {/* Error Display */}
       {scanError && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded text-red-700">
-          {scanError}
-        </div>
+        <div className="p-4 bg-red-50 border border-red-200 rounded text-red-700">{scanError}</div>
       )}
 
       {/* Loading State */}
@@ -191,22 +188,28 @@ export const TxTable: React.FC<TxTableProps> = ({ className = '' }) => {
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Pool</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">LP Amount</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Est. Value</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                  Est. Value
+                </th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Program</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">Action</th>
               </tr>
             </thead>
             <tbody>
-                      {positions
-                        .filter(p => selectedPool === 'ALL' || !selectedPool ? true : p.poolKeys.pool.toBase58() === selectedPool.pool)
-                        .map((position, index) => (
-                <PositionRow
-                  key={`${position.poolKeys.pool.toString()}-${index}`}
-                  position={position}
-                  onExit={handleInstantExit}
-                  isExiting={exitingPositions.has(position.poolKeys.pool.toString())}
-                />
-                      ))}
+              {positions
+                .filter((p) =>
+                  selectedPool === 'ALL' || !selectedPool
+                    ? true
+                    : p.poolKeys.pool.toBase58() === selectedPool.pool
+                )
+                .map((position, index) => (
+                  <PositionRow
+                    key={`${position.poolKeys.pool.toString()}-${index}`}
+                    position={position}
+                    onExit={handleInstantExit}
+                    isExiting={exitingPositions.has(position.poolKeys.pool.toString())}
+                  />
+                ))}
             </tbody>
           </table>
         </div>
@@ -239,11 +242,20 @@ export const TxTable: React.FC<TxTableProps> = ({ className = '' }) => {
             </div>
           </div>
           <p className="text-xs text-blue-600 mt-2">
-            ⚡ Instant Exit builds a server-side transaction (claim fees + optional remove) and retries on transient failures.
+            ⚡ Instant Exit builds a server-side transaction (claim fees + optional remove) and
+            retries on transient failures.
           </p>
           {exitState.signature && (
             <p className="text-xs mt-1 truncate">
-              Sig: <a className="text-blue-700 underline" href={`https://solscan.io/tx/${exitState.signature}`} target="_blank" rel="noreferrer">{exitState.signature}</a>
+              Sig:{' '}
+              <a
+                className="text-blue-700 underline"
+                href={`https://solscan.io/tx/${exitState.signature}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {exitState.signature}
+              </a>
             </p>
           )}
           {exitState.error && exitState.status === 'error' && (

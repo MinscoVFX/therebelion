@@ -1,6 +1,6 @@
 packages:
-  - "studio"
-  - "scaffolds/*"
-  - "scaffolds/**"
-  - "packages/*"
-  - "packages/**"
+  - 'studio'
+  - 'scaffolds/*'
+  - 'scaffolds/**'
+  - 'packages/*'
+  - 'packages/**'
