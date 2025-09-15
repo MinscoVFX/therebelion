@@ -87,10 +87,12 @@ export async function buildDammV2RemoveAllLpIxs(args: {
   owner: PublicKey;
   poolKeys: DammV2PoolKeys;
   priorityMicros?: number;
+  /** Optional injected runtime module (test seam) */
+  runtimeModule?: any;
 }): Promise<TransactionInstruction[]> {
-  const { connection, owner, poolKeys, priorityMicros = 250_000 } = args;
+  const { connection, owner, poolKeys, priorityMicros = 250_000, runtimeModule } = args;
 
-  const damm = await importDammRuntime();
+  const damm = runtimeModule || (await importDammRuntime());
   const removeBuilder = pickRemoveBuilder(damm);
   if (!removeBuilder)
     throw new Error('DAMM v2 remove-liquidity function not found in studio runtime.');
