@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getActiveClaimDiscriminatorHex, getClaimDiscriminatorMeta } from '@/server/dbc-exit-builder';
+import { getActiveClaimDiscriminatorHex, getClaimDiscriminatorMeta } from '../server/dbc-exit-builder';
 
 // This test relies on module evaluation side-effects that resolve the discriminator at import time.
 describe('DBC Exit Builder discriminator', () => {

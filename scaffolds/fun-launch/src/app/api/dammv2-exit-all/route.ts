@@ -6,7 +6,6 @@ import {
   VersionedTransaction,
   ComputeBudgetProgram,
 } from '@solana/web3.js';
-import { CpAmm } from '@meteora-ag/cp-amm-sdk';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +33,9 @@ export async function POST(req: NextRequest) {
       'confirmed'
     );
 
-    const cp = new CpAmm(connection);
+  // Dynamic import so monkey-patched CpAmm in tests is respected
+  const { CpAmm } = await import('@meteora-ag/cp-amm-sdk');
+  const cp = new CpAmm(connection);
     const helper: any = (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
     if (!helper) return NextResponse.json({ error: 'sdk position helper missing' }, { status: 500 });
 
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
 
     const priorityMicros = Math.max(0, Math.min(body.priorityMicros ?? 250_000, 3_000_000));
 
-    const results: { position: string; pool: string; status: string; reason?: string }[] = [];
+  const results: { position: string; pool: string; status: string; reason?: string }[] = [];
     const txs: string[] = [];
     const simulations: any[] = [];
 
@@ -90,17 +91,18 @@ export async function POST(req: NextRequest) {
       const positionBase58 = entry.positionPk!.toBase58();
       const poolBase58 = entry.pool!.toBase58();
 
-      // Authority / owner sanity: ensure account owner matches provided owner (if field exposed by SDK)
+      // Pre-classify skip reasons before any heavy builder logic so tests can reliably assert.
       const acctOwner = (entry.raw.account?.owner || entry.raw.account?.authority || entry.raw.account?.positionOwner);
-      if (acctOwner && acctOwner.toBase58 && acctOwner.toBase58() !== owner.toBase58()) {
-        results.push({ position: positionBase58, pool: poolBase58, status: 'skipped', reason: 'owner-mismatch' });
+      const ownerMismatch = acctOwner && acctOwner.toBase58 && acctOwner.toBase58() !== owner.toBase58();
+      const vestingsArr = entry.raw.account?.vestings || entry.raw.account?.lockedVestings;
+      const hasLocked = Array.isArray(vestingsArr) && vestingsArr.length > 0;
+      if (hasLocked) {
+        results.push({ position: positionBase58, pool: poolBase58, status: 'skipped', reason: 'locked-vesting' });
+        // still continue to next position
         continue;
       }
-
-      // Locked / vested heuristic (placeholder): if account exposes vestings array or locked flag with non-empty value, skip.
-      const maybeVestings = entry.raw.account?.vestings || entry.raw.account?.lockedVestings;
-      if (Array.isArray(maybeVestings) && maybeVestings.length > 0) {
-        results.push({ position: positionBase58, pool: poolBase58, status: 'skipped', reason: 'locked-vesting' });
+      if (ownerMismatch) {
+        results.push({ position: positionBase58, pool: poolBase58, status: 'skipped', reason: 'owner-mismatch' });
         continue;
       }
 
