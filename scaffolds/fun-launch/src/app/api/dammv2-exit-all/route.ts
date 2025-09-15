@@ -6,6 +6,7 @@ import {
   VersionedTransaction,
   ComputeBudgetProgram,
 } from '@solana/web3.js';
+import { resolveRpc } from '../../../lib/rpc';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,10 +29,7 @@ export async function POST(req: NextRequest) {
     if (!body.owner) return NextResponse.json({ error: 'owner required' }, { status: 400 });
     const owner = new PublicKey(body.owner);
 
-    const connection = new Connection(
-      process.env.RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://api.mainnet-beta.solana.com',
-      'confirmed'
-    );
+    const connection = new Connection(resolveRpc(), 'confirmed');
 
   // Dynamic import so monkey-patched CpAmm in tests is respected
   const { CpAmm } = await import('@meteora-ag/cp-amm-sdk');

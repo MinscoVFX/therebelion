@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Connection } from '@solana/web3.js';
+import { resolveRpc } from '@/lib/rpc';
 import { buildDbcExitTransaction, getClaimDiscriminatorMeta, getActiveClaimDiscriminatorHex } from '@/server/dbc-exit-builder';
 
 export async function POST(request: NextRequest) {
@@ -14,10 +15,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const connection = new Connection(
-      process.env.RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://api.mainnet-beta.solana.com',
-      'confirmed'
-    );
+    if (body.action === 'withdraw') {
+      return NextResponse.json({ error: 'Withdraw disabled: claim-only mode active' }, { status: 501 });
+    }
+
+    const connection = new Connection(resolveRpc(), 'confirmed');
 
     const built = await buildDbcExitTransaction(connection, {
       owner: body.owner,
