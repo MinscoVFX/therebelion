@@ -54,7 +54,8 @@ export function loadDbcIdlIfAvailable(): DbcIdlResolution | null {
 	if (_cached) return _cached;
 	try {
 		const requireFn = createRequire(import.meta.url);
-		const idl: AnchorIdlLike = requireFn('../../../dbc_idl.json');
+		// Path adjusted one level up (server dir -> src -> fun-launch -> scaffolds -> repo root)
+		const idl: AnchorIdlLike = requireFn('../../../../dbc_idl.json');
 		_cached = resolveDbcIdl(idl);
 		return _cached;
 	} catch {
