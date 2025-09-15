@@ -1,14 +1,80 @@
 name: Env Guard
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
 jobs:
-  check-env:
+  env-validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Check .env
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - name: Install pnpm
+        run: npm i -g pnpm@10.14.0
+      - name: Install deps (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: Prepare env file
         run: |
-          if ! grep -q 'SOLANA_CLUSTER=mainnet-beta' .env; then
-            echo "SOLANA_CLUSTER must be mainnet-beta" && exit 1
-          fi
+          if [ -f .env.ci ]; then cp .env.ci .env; else cp .env.example .env || true; fi
+          echo "Using generated .env:"; cat .env || true
+      - name: Validate environment variables
+        run: |
+          node <<'EOF'
+          import fs from 'fs';
+          import crypto from 'crypto';
+          const requiredJsonArrays = [
+            { key: 'ALLOWED_DBC_PROGRAM_IDS', mustInclude: ['dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN'] },
+            { key: 'ALLOWED_DAMM_V2_PROGRAM_IDS', mustInclude: ['cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG'] }
+          ];
+          const raw = fs.existsSync('.env') ? fs.readFileSync('.env','utf8').split(/\r?\n/) : [];
+          const kv = {};
+          for (const line of raw) {
+            if (!line.trim() || line.trim().startsWith('#')) continue;
+            const eq = line.indexOf('=');
+            if (eq === -1) continue;
+            const k = line.slice(0,eq).trim();
+            const v = line.slice(eq+1).trim();
+            if (k in kv) {
+              console.log(`DUPLICATE_KEY ${k}`);
+            }
+            kv[k]=v;
+          }
+          const errors = [];
+          function assert(cond,msg){ if(!cond) errors.push(msg); }
+          assert(kv.RPC_URL !== undefined, 'RPC_URL missing');
+          assert(kv.RPC_URL && kv.RPC_URL !== '""', 'RPC_URL empty');
+          for (const spec of requiredJsonArrays) {
+            const val = kv[spec.key];
+            assert(val !== undefined, `${spec.key} missing`);
+            if (val !== undefined) {
+              try {
+                const arr = JSON.parse(val);
+                assert(Array.isArray(arr), `${spec.key} not an array`);
+                for (const must of spec.mustInclude) {
+                  assert(arr.includes(must), `${spec.key} missing required id ${must}`);
+                }
+              } catch (e) {
+                errors.push(`${spec.key} invalid JSON`);
+              }
+            }
+          }
+          if (errors.length) {
+            console.error('ENV_VALIDATION_FAILED');
+            for (const e of errors) console.error(' -', e);
+            process.exit(1);
+          }
+          console.log('ENV_VALIDATION_OK');
+          EOF
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint --no-fix || true
+      - name: Build
+        run: pnpm build

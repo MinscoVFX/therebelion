@@ -50,7 +50,10 @@ export const dbcSelector: DbcSelector = (() => {
     process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME === "claim_creator_trading_fee" ||
     process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME === "claim_partner_trading_fee"
   ) {
-    return { mode: "name", value: process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME as any };
+    const nameVal = process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME as
+      | "claim_creator_trading_fee"
+      | "claim_partner_trading_fee";
+    return { mode: "name", value: nameVal };
   }
   if (process.env.DBC_CLAIM_FEE_DISCRIMINATOR) {
     // Anchor discriminator = first 8 bytes of sha256("global:<name>")
