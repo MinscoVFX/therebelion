@@ -8,5 +8,3 @@ out
 .vercel
 **/*.generated.*
 **/.DS_Store
-packages/config/eslint/
-packages/config/prettier/

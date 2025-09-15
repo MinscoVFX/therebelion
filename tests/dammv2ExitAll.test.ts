@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-require-imports */
 import { describe, it, expect } from 'vitest';
 
 // Helper to monkey patch CpAmm for controlled responses
@@ -35,12 +36,17 @@ describe('dammv2-exit-all route', () => {
       const json = await res.json();
       // We allow either a scan failure path or an empty positions success depending on SDK availability.
       if (json.error) {
-        expect(json.error === 'position scan failed' || /sdk position helper missing/.test(json.error)).toBe(true);
+        // Accept legacy or new error signatures (position scan failure, missing helper, or missing RPC env)
+        const acceptable =
+          json.error === 'position scan failed' ||
+          /sdk position helper missing/.test(json.error) ||
+          /RPC missing/.test(json.error);
+        expect(acceptable).toBe(true);
       } else {
         expect(Array.isArray(json.positions)).toBe(true);
         expect(Array.isArray(json.txs)).toBe(true);
       }
-    } catch (e) {
+    } catch {
       // Should not throw hard; treat as failure.
       expect(false, 'route threw unexpected exception').toBe(true);
     }

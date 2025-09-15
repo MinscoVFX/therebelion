@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Connection, PublicKey } from '@solana/web3.js';
+import { resolveRpc } from '../../../lib/rpc';
 import { CpAmm } from '@meteora-ag/cp-amm-sdk';
 
 export const dynamic = 'force-dynamic';
@@ -14,10 +15,7 @@ export async function POST(req: NextRequest) {
     if (!body.owner) return NextResponse.json({ error: 'owner required' }, { status: 400 });
     const owner = new PublicKey(body.owner);
 
-    const connection = new Connection(
-      process.env.RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://api.mainnet-beta.solana.com',
-      'confirmed'
-    );
+    const connection = new Connection(resolveRpc(), 'confirmed');
 
     const cp = new CpAmm(connection);
     // Prefer canonical helper; fall back if sdk shape changes.

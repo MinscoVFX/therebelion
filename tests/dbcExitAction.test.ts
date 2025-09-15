@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect } from 'vitest';
 import { buildDbcExitTransaction } from '../scaffolds/fun-launch/src/server/dbc-exit-builder';
 import { Connection, Keypair } from '@solana/web3.js';

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useWallet } from '@jup-ag/wallet-adapter';
-import { Connection, Keypair, Transaction, sendAndConfirmRawTransaction } from '@solana/web3.js';
+import { Connection, Keypair, VersionedTransaction, TransactionMessage, PublicKey } from '@solana/web3.js';
 
 type SendTransactionOptions = {
   onSuccess?: (signature: string) => void;
@@ -16,7 +16,7 @@ export function useSendTransaction() {
   const { publicKey, signTransaction } = useWallet();
 
   const sendTransaction = async (
-    transaction: Transaction,
+    txLike: VersionedTransaction | { payer?: PublicKey; instructions: any[]; recentBlockhash?: string },
     connection: Connection,
     options: SendTransactionOptions = {}
   ) => {
@@ -35,36 +35,41 @@ export function useSendTransaction() {
     try {
       // Prepare transaction
 
-      transaction.feePayer = transaction.feePayer || publicKey;
-      if (!transaction.recentBlockhash) {
+      let vtx: VersionedTransaction;
+      if (txLike instanceof VersionedTransaction) {
+        vtx = txLike;
+      } else {
         const { blockhash } = await connection.getLatestBlockhash();
-        transaction.recentBlockhash = blockhash;
+        const msg = new TransactionMessage({
+          payerKey: txLike.payer || publicKey,
+          recentBlockhash: txLike.recentBlockhash || blockhash,
+          instructions: txLike.instructions,
+        }).compileToV0Message();
+        vtx = new VersionedTransaction(msg);
       }
 
-      // Simulate transaction
-      const simulation = await connection.simulateTransaction(transaction);
+      // Simulate transaction (no sigVerify to save CU)
+      const simulation = await connection.simulateTransaction(vtx, { sigVerify: false });
 
       if (simulation.value.err) {
         throw new Error(`Transaction simulation failed: ${JSON.stringify(simulation.value.err)}`);
       }
 
       // Sign and send transaction
-      const signedTransaction = await signTransaction(transaction);
+      const signed = await signTransaction(vtx as any); // adapter supports VersionedTransaction
       if (options.additionalSigners) {
         options.additionalSigners.forEach((signer) => {
-          transaction.sign(signer);
+          (signed as any).sign([signer]);
         });
       }
 
-      const txSignature = await sendAndConfirmRawTransaction(
-        connection,
-        signedTransaction.serialize(),
-        { commitment: 'confirmed' }
-      );
+      const raw = signed.serialize();
+      const sig = await connection.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 3 });
+      await connection.confirmTransaction({ signature: sig, blockhash: vtx.message.recentBlockhash, lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight });
 
-      setSignature(txSignature);
-      options.onSuccess?.(txSignature);
-      return txSignature;
+      setSignature(sig);
+      options.onSuccess?.(sig);
+      return sig;
     } catch (error: any) {
       const errorMessage = error?.message || 'Unknown error';
       setError(new Error(errorMessage));

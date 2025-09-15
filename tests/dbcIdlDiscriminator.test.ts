@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect } from 'vitest';
 import { resolveDbcIdl, anchorInstructionDiscriminator } from '../scaffolds/fun-launch/src/server/dbc-idl-utils';
 import sampleIdl from '../dbc_idl.sample.json';
