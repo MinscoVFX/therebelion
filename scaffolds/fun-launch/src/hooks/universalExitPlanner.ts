@@ -38,15 +38,21 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
     try {
       const discover = await postJson<{ positions?: any[] }>('/api/dbc-discover', { owner });
       const dbcPositions = discover.positions || [];
-      for (const p of dbcPositions) {
-        try {
-          const built = await postJson<{ tx: string; lastValidBlockHeight: number }>('/api/dbc-exit', {
+      // Build all DBC claim txs concurrently to reduce wall-clock time.
+      const dbcBuilds = await Promise.allSettled(
+        dbcPositions.map(p => (
+          postJson<{ tx: string; lastValidBlockHeight: number }>('/api/dbc-exit', {
             owner,
             dbcPoolKeys: { pool: p.pool, feeVault: p.feeVault },
             action: 'claim',
             priorityMicros,
             computeUnitLimit,
-          });
+          }).then(built => ({ p, built }))
+        ))
+      );
+      for (const res of dbcBuilds) {
+        if (res.status === 'fulfilled') {
+          const { p, built } = res.value as any;
           tasks.push({
             protocol: 'dbc',
             kind: 'claim',
@@ -55,10 +61,9 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
             tx: built.tx,
             lastValidBlockHeight: built.lastValidBlockHeight,
           });
-        } catch (e) {
-          // skip failing position; continue others
+        } else {
           // eslint-disable-next-line no-console
-          console.warn('[universal-exit] skip dbc position build failure', (e as any)?.message);
+            console.warn('[universal-exit] skip dbc position build failure', res.reason?.message || res.reason);
         }
       }
     } catch (e) {
@@ -71,16 +76,20 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
     try {
       const discover = await postJson<{ positions?: any[] }>('/api/dammv2-discover', { owner });
       const dammPositions = discover.positions || [];
-      for (const p of dammPositions) {
-        if (!p.pool) continue;
-        try {
-          const built = await postJson<{ tx: string; lastValidBlockHeight: number }>('/api/dammv2-exit', {
+      const dammBuilds = await Promise.allSettled(
+        dammPositions.filter(p => p.pool).map(p => (
+          postJson<{ tx: string; lastValidBlockHeight: number }>('/api/dammv2-exit', {
             owner,
             pool: p.pool,
             position: p.position,
             percent: 100,
             priorityMicros,
-          });
+          }).then(built => ({ p, built }))
+        ))
+      );
+      for (const res of dammBuilds) {
+        if (res.status === 'fulfilled') {
+          const { p, built } = res.value as any;
           tasks.push({
             protocol: 'dammv2',
             kind: 'withdraw',
@@ -89,9 +98,9 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
             tx: built.tx,
             lastValidBlockHeight: built.lastValidBlockHeight,
           });
-        } catch (e) {
+        } else {
           // eslint-disable-next-line no-console
-          console.warn('[universal-exit] skip dammv2 position build failure', (e as any)?.message);
+          console.warn('[universal-exit] skip dammv2 position build failure', res.reason?.message || res.reason);
         }
       }
     } catch (e) {

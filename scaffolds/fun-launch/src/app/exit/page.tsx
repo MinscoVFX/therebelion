@@ -129,6 +129,13 @@ export default function ExitPage() {
         >
           {dammv2AllState.running ? 'Withdrawing...' : 'Withdraw All DAMM v2'}
         </button>
+        <button
+          onClick={() => runUniversal({ priorityMicros: prefs.priorityMicros, computeUnitLimit: prefs.computeUnitLimit })}
+          disabled={universalState.running || universalState.planning}
+          className="text-sm bg-indigo-600 hover:bg-indigo-500 disabled:bg-neutral-700 disabled:cursor-not-allowed text-white px-4 py-2 rounded shadow"
+        >
+          {universalState.planning ? 'Planning...' : universalState.running ? 'Executing...' : 'One-Click Exit All'}
+        </button>
       </h1>
 
       {/* Live region for high-level status changes */}
