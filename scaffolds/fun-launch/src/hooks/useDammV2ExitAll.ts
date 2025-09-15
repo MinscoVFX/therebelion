@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useWallet } from '@jup-ag/wallet-adapter';
 import { VersionedTransaction, Connection } from '@solana/web3.js';
+import { resolveRpc } from '@meteora-invent/shared-utils';
 import { safeJson } from '../lib/http';
 
 export interface ExitAllItemResult {
@@ -88,7 +89,12 @@ export function useDammV2ExitAll() {
 
       let conn: Connection = (window as any)._solanaWeb3ConnectionOverride;
       if (!conn) {
-  const endpoint = process.env.NEXT_PUBLIC_RPC_URL || process.env.RPC_URL || process.env.RPC_ENDPOINT || 'https://api.mainnet-beta.solana.com';
+        let endpoint: string;
+        try {
+          endpoint = resolveRpc();
+        } catch {
+          endpoint = 'https://api.mainnet-beta.solana.com';
+        }
         conn = new Connection(endpoint, 'confirmed');
         (window as any)._solanaWeb3ConnectionOverride = conn;
       }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useWallet } from '@jup-ag/wallet-adapter';
-import { Connection, Keypair, VersionedTransaction, TransactionMessage, PublicKey } from '@solana/web3.js';
+import { Connection, Keypair, VersionedTransaction } from '@solana/web3.js';
 
 type SendTransactionOptions = {
   onSuccess?: (signature: string) => void;
@@ -16,7 +16,7 @@ export function useSendTransaction() {
   const { publicKey, signTransaction } = useWallet();
 
   const sendTransaction = async (
-    txLike: VersionedTransaction | { payer?: PublicKey; instructions: any[]; recentBlockhash?: string },
+    vtx: VersionedTransaction,
     connection: Connection,
     options: SendTransactionOptions = {}
   ) => {
@@ -33,19 +33,9 @@ export function useSendTransaction() {
     setSignature(null);
 
     try {
-      // Prepare transaction
-
-      let vtx: VersionedTransaction;
-      if (txLike instanceof VersionedTransaction) {
-        vtx = txLike;
-      } else {
-        const { blockhash } = await connection.getLatestBlockhash();
-        const msg = new TransactionMessage({
-          payerKey: txLike.payer || publicKey,
-          recentBlockhash: txLike.recentBlockhash || blockhash,
-          instructions: txLike.instructions,
-        }).compileToV0Message();
-        vtx = new VersionedTransaction(msg);
+      // Only VersionedTransaction is supported now. Caller must provide a compiled v0 tx.
+      if (!(vtx instanceof VersionedTransaction)) {
+        throw new Error('sendTransaction expects a VersionedTransaction');
       }
 
       // Simulate transaction (no sigVerify to save CU)
