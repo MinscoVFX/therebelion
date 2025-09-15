@@ -3,12 +3,17 @@ import { execSync } from 'node:child_process';
 
 function log(level, msg) { console[level](`[env-check] ${msg}`); }
 
-const required = ['RPC_ENDPOINT'];
 const errors = [];
 const warnings = [];
 
-for (const key of required) {
-  if (!process.env[key]) errors.push(`Missing required env: ${key}`);
+// Accept any of these RPC variable names; require at least one.
+const rpcCandidates = ['RPC_ENDPOINT', 'RPC_URL', 'NEXT_PUBLIC_RPC_URL'];
+const presentRpc = rpcCandidates.find(k => process.env[k]);
+if (!presentRpc) {
+  errors.push(`Missing RPC endpoint (set one of: ${rpcCandidates.join(', ')})`);
+} else {
+  // eslint-disable-next-line no-console
+  console.log(`[env-check] Using RPC from ${presentRpc}`);
 }
 
 const placeholder = (process.env.DBC_CLAIM_FEE_DISCRIMINATOR || '0102030405060708') === '0102030405060708';

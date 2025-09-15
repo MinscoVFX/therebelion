@@ -40,13 +40,17 @@ function checkEnv(): EnvCheckResult {
     }
   }
 
-  // Basic required envs (expandable)
-  const required: string[] = ['RPC_ENDPOINT'];
+  // RPC endpoint requirement (any alias acceptable)
+  const rpcCandidates = ['RPC_ENDPOINT', 'RPC_URL', 'NEXT_PUBLIC_RPC_URL'];
+  const rpcKey = rpcCandidates.find(k => process.env[k]);
   const details: Record<string, any> = {};
-  for (const key of required) {
-    const val = process.env[key];
-    if (!val) errors.push(`Missing required env: ${key}`);
-    details[key] = val ? 'present' : 'missing';
+  for (const k of rpcCandidates) {
+    details[k] = process.env[k] ? 'present' : 'missing';
+  }
+  if (!rpcKey) {
+    errors.push(`Missing RPC endpoint (set one of: ${rpcCandidates.join(', ')})`);
+  } else {
+    details['RPC_SELECTED'] = rpcKey;
   }
 
   return { ok: errors.length === 0, warnings, errors, details: { ...details } };

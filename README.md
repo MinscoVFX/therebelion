@@ -32,7 +32,7 @@ Environment template: see `.env.example` for all supported variables (including
 ### Health API
 
 A lightweight runtime health endpoint is exposed at: `GET /api/health` within the fun-launch Next.js app.
-It returns JSON:
+It accepts any of the RPC env variable names (`RPC_URL`, `RPC_ENDPOINT`, or `NEXT_PUBLIC_RPC_URL`) and reports which one was detected. It returns JSON:
 
 ```json
 {
