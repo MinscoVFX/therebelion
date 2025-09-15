@@ -43,17 +43,21 @@ function checkEnv(): EnvCheckResult {
   // RPC endpoint requirement (any alias acceptable)
   const rpcCandidates = ['RPC_ENDPOINT', 'RPC_URL', 'NEXT_PUBLIC_RPC_URL'];
   const rpcKey = rpcCandidates.find(k => process.env[k]);
-  const details: Record<string, any> = {};
-  for (const k of rpcCandidates) {
-    details[k] = process.env[k] ? 'present' : 'missing';
-  }
+  const hasFlags: Record<string, boolean> = {
+    HAS_RPC_ENDPOINT: Boolean(process.env.RPC_ENDPOINT),
+    HAS_RPC_URL: Boolean(process.env.RPC_URL),
+    HAS_NEXT_PUBLIC_RPC_URL: Boolean(process.env.NEXT_PUBLIC_RPC_URL)
+  };
+  const details: Record<string, any> = { ...hasFlags };
   if (!rpcKey) {
     errors.push(`Missing RPC endpoint (set one of: ${rpcCandidates.join(', ')})`);
   } else {
     details['RPC_SELECTED'] = rpcKey;
   }
 
-  return { ok: errors.length === 0, warnings, errors, details: { ...details } };
+  // In production treat any warning as failure (status 500) for strictness
+  const strictOk = errors.length === 0 && (process.env.NODE_ENV !== 'production' || warnings.length === 0);
+  return { ok: strictOk, warnings, errors, details };
 }
 
 export async function GET(_req: NextRequest) {

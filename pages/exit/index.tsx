@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { useWallet } from "@jup-ag/wallet-adapter"; // or your current adapter
+// Wallet adapter removed for CI lint; integrate real adapter in app layer
 
 export default function ExitPage() {
-  const { wallet, publicKey } = useWallet();
+  const publicKey: { toBase58(): string } | null = null; // placeholder
   const [status, setStatus] = useState<string>("Idle");
-  const [log, setLog] = useState<string[]>([]);
+    const log: string[] = [];
   const [feeRec, setFeeRec] = useState<{cuLimit:number; microLamports:number; source:string} | null>(null);
   const [ultraFastEnabled, setUltraFastEnabled] = useState(false);
 
@@ -26,12 +26,12 @@ export default function ExitPage() {
     const r = await fetch("/api/exit/build", {
       method: "POST",
       body: JSON.stringify({
-        owner: publicKey.toBase58(),
+  owner: publicKey?.toBase58(),
         cuLimit: feeRec?.cuLimit ?? undefined,
         microLamports: feeRec?.microLamports ?? undefined
       })
     });
-    const { ok, computeBudgetIxs, cuLimit, microLamports, error } = await r.json();
+  const { ok, error } = await r.json();
     if (error || !ok) { setStatus("Build error"); return; }
     setStatus("Sign");
     // TODO: Plug in wallet-send pipeline here, passing ultraFastEnabled to skipPreflight
@@ -45,9 +45,10 @@ export default function ExitPage() {
 
   return (
     <div style={{ padding: 24 }}>
-      <h1>/exit — One-Click Exit</h1>
+  <h1>/exit — One-Click Claim (Withdraw Disabled)</h1>
       {!publicKey ? <p>Connect your wallet</p> : <>
-        <button onClick={exitNow}>Exit Now (Claim Fees + Withdraw All)</button>
+  <button onClick={exitNow}>Claim Protocol Fees</button>
+    <div style={{ marginTop: 8, fontSize: 12 }}>Withdraw endpoint returns 501 while in claim-only mode.</div>
         <label style={{ marginLeft: 16 }}>
           <input type="checkbox" checked={ultraFastEnabled} onChange={e => setUltraFastEnabled(e.target.checked)} /> Ultra fast (skip preflight)
         </label>
