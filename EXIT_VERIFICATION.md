@@ -43,12 +43,21 @@ production‑ready.
 
 ## 5. Batch Exit (ALL)
 
-| Scenario              | Expected                                                                           |
-| --------------------- | ---------------------------------------------------------------------------------- |
-| Sequential Processing | Each pool processed fully before next starts                                       |
-| Per-Pool Status       | Table rows update from pending → success/error                                     |
-| Abort Batch           | Abort button stops next pool processing; current attempt aborts with error=Aborted |
-| Retry Logic           | Individual pool failures escalate priority without affecting others                |
+Prototype auto batch (claim‑fee only) validation. Enable toggle on `/exit` page.
+
+| Scenario                | Steps / Action                                             | Expected                                                                                     |
+| ----------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Toggle Persistence      | Enable → reload page                                       | Toggle remains enabled (localStorage)                                                        |
+| Initial Run             | Click "Run Auto Batch Exit" with N positions               | Table appears with N rows status=pending                                                     |
+| Sequential Progression  | Observe statuses                                           | Row i moves pending→signed→sent→confirmed before i+1 begins                                  |
+| Explorer Links          | After confirmation                                         | Signature link opens Solana Explorer                                                         |
+| Error Handling          | Force one tx fail (e.g., bad discriminator)                | Failed row shows status=error + truncated error message                                      |
+| Abort Mid-Stream        | Click Abort Batch during row k sending/confirming          | Processing stops after current attempt; remaining rows stay pending                          |
+| Completion Timing       | After final row confirmed                                  | Footer shows total seconds (approx wall time)                                                |
+| Multiple Runs           | Run again after completion                                | Previous table persists; new run appends or replaces (current impl replaces state)           |
+
+Limitation: Currently mode column = `claim` only (full liquidity withdrawal legs will be integrated once
+official instruction + discriminator confirmed – placeholder discriminator will not succeed on-chain).
 
 ## 6. Preference Persistence
 

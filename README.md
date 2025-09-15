@@ -87,3 +87,39 @@ If the real discriminator is not supplied the builder will still create an instr
 - Supports simulation mode; returns logs + CU usage.
 
 The API route now delegates to this builder, ensuring consistent logic for both simulation and execution.
+
+## Auto Batch Exit (Prototype)
+
+An optional prototype feature lets a user process every discovered DBC position sequentially with one
+action. Enable the toggle on the `/exit` page: "Auto Batch Exit (all positions)". When active:
+
+- Discovery is performed via `/api/dbc-discover` (LP + NFT heuristics) and a claim-fee transaction is
+  built for each position (current placeholder mode = `claim`).
+- Transactions are built server-side via the same `/api/dbc-exit` builder (non-simulated for speed),
+  then signed client-side and dispatched sequentially.
+- Per-position status life‑cycle: `pending → signed → sent → confirmed | error` with signature links.
+- Abort stops further processing but already confirmed signatures remain.
+
+Limitations / Roadmap:
+
+1. Full liquidity withdrawal legs not yet attached (awaiting authoritative exit instruction + final
+	discriminator(s)).
+2. No adaptive priority escalation per item (single exit hook already implements; planned parity).
+3. Concurrency deliberately = 1 for simplicity; future enhancement may allow small parallelism.
+4. Placeholder claim instruction uses `DBC_CLAIM_FEE_DISCRIMINATOR`; ensure you configure the real
+	8‑byte value before expecting on‑chain success.
+
+Configuration & Persistence:
+
+| Aspect            | Detail                                  |
+| ----------------- | ---------------------------------------- |
+| Toggle Storage    | `localStorage['dbc-auto-exit-enabled']`  |
+| Hook              | `useDbcAutoBatchExit`                    |
+| Status UI Source  | `exit/page.tsx` batch table section      |
+| Mode Field        | Currently fixed to `claim`               |
+
+Abort Semantics: The active transaction in flight is not forcibly cancelled (Solana lacks that primitive);
+we simply stop building/sending the next ones and mark batch `running=false`.
+
+Security Note: Because multiple signed transactions are dispatched, ensure the page is trusted and the
+builder never introduces unvetted program IDs. A future enhancement will implement an allow‑list.
