@@ -1,0 +1,14 @@
+name: Env Guard
+on:
+  push:
+    branches:
+      - main
+jobs:
+  check-env:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check .env
+        run: |
+          if ! grep -q 'SOLANA_CLUSTER=mainnet-beta' .env; then
+            echo "SOLANA_CLUSTER must be mainnet-beta" && exit 1
+          fi
