@@ -64,3 +64,26 @@ Common raw RPC / on-chain error substrings are mapped to friendly messages (bloc
 slippage, insufficient SOL, no claimable fees) inside `parseErrorMessage` in the hook.
 
 For deep verification & test scripts see `EXIT_VERIFICATION.md`.
+
+### Environment Configuration (DBC)
+
+Set the following to align with the live Meteora deployment:
+
+| Variable | Purpose | Default |
+| -------- | ------- | ------- |
+| `DBC_PROGRAM_ID` | Override program id for DBC (fee claim) | `dbcij3LWUppWqq96...` (fallback) |
+| `DBC_CLAIM_FEE_DISCRIMINATOR` | 8-byte hex (little-endian) discriminator for claim fee ix | `0102030405060708` placeholder |
+
+If the real discriminator is not supplied the builder will still create an instruction but it will NOT execute successfully on-chain. Replace the placeholder with production value once confirmed from Meteora docs / IDL.
+
+### Builder Internals
+
+`scaffolds/fun-launch/src/server/dbc-exit-builder.ts` centralizes transaction assembly:
+
+- Validates pool + fee vault and extracts SPL token mint.
+- Creates (idempotent) destination ATA for claimer.
+- Applies optional compute budget (price + limit) instructions.
+- Inserts DBC claim fee instruction (placeholder discriminator until real one configured).
+- Supports simulation mode; returns logs + CU usage.
+
+The API route now delegates to this builder, ensuring consistent logic for both simulation and execution.

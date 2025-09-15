@@ -9,6 +9,7 @@ production‑ready.
 | ----------------- | ------------------------------------------------------------------------------ |
 | Wallet Connection | Able to connect Phantom / Solflare in mainnet (or devnet if configured)        |
 | RPC Env Vars      | `NEXT_PUBLIC_RPC_URL` (client) matches server `RPC_URL` when overridden        |
+| DBC Variables     | `DBC_PROGRAM_ID` and real `DBC_CLAIM_FEE_DISCRIMINATOR` set (avoid placeholder) |
 | Studio Runtimes   | DBC (and optionally DAMM v2) runtime build present so decoding + builders work |
 
 ## 2. Discovery Layer
@@ -92,6 +93,12 @@ Expect: HTTP 200, fields: `simulated`, `logs[]`, `unitsConsumed`, `tx`.
 
 Safety Note: Fast Mode uses skipPreflight + processed-first confirmation. For critical value
 withdrawals use normal mode with simulation.
+
+## 10.1 DBC Builder Placeholder Warning
+
+Until `DBC_CLAIM_FEE_DISCRIMINATOR` is populated with the production 8-byte discriminator the claim
+instruction will be a placeholder and will fail on-chain. Replace the default env placeholder as
+soon as the official value is confirmed from Meteora documentation / IDL.
 
 ## 10. Security / Safety Observations
 
