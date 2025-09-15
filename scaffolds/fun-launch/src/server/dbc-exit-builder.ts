@@ -48,11 +48,22 @@ export interface BuiltExitTx {
 const DEFAULT_DBC_PROGRAM = 'dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN';
 const PROGRAM_ID = new PublicKey(process.env.DBC_PROGRAM_ID || DEFAULT_DBC_PROGRAM);
 // 8-byte little-endian placeholder; MUST be overridden with real discriminator for production.
+let _placeholderWarned = false;
 const CLAIM_FEE_DISCRIMINATOR = ((): Buffer => {
-  const hex = (process.env.DBC_CLAIM_FEE_DISCRIMINATOR || '0102030405060708').replace(/^0x/, '');
+  const raw = process.env.DBC_CLAIM_FEE_DISCRIMINATOR || '0102030405060708';
+  const hex = raw.replace(/^0x/, '');
   if (hex.length !== 16) throw new Error('DBC_CLAIM_FEE_DISCRIMINATOR must be 8 bytes (16 hex chars)');
+  if (hex === '0102030405060708' && !_placeholderWarned) {
+    _placeholderWarned = true;
+    // eslint-disable-next-line no-console
+    console.warn('[dbc-exit-builder] Using placeholder DBC_CLAIM_FEE_DISCRIMINATOR. Replace with real 8-byte discriminator from Meteora DBC docs.');
+  }
   return Buffer.from(hex, 'hex');
 })();
+
+export function isUsingPlaceholderDiscriminator(): boolean {
+  return (process.env.DBC_CLAIM_FEE_DISCRIMINATOR || '0102030405060708') === '0102030405060708';
+}
 
 function buildClaimInstruction(pool: PublicKey, feeVault: PublicKey, owner: PublicKey, userTokenAccount: PublicKey): TransactionInstruction {
   const data = Buffer.alloc(8);

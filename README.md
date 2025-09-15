@@ -24,6 +24,10 @@ build • dev • type-check • lint • lint:fix • format • format:check �
 
 ## DBC One-Click Exit Overview
 
+Reference docs: Meteora DBC – https://docs.meteora.ag/overview/products/dbc/what-is-dbc
+
+Reference Meteora DBC documentation: https://docs.meteora.ag/overview/products/dbc/what-is-dbc
+
 The `scaffolds/fun-launch` app exposes a production build `/exit` route implementing a one‑click
 claim of accumulated DBC trading fees and withdrawal flow (current prototype focuses on fee claim
 transaction structure; full withdraw legs may be extended later). Key pieces:
