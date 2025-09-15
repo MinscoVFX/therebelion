@@ -73,14 +73,17 @@ For deep verification & test scripts see `EXIT_VERIFICATION.md`.
 
 ### Environment Configuration (DBC)
 
-Set the following to align with the live Meteora deployment:
+Copy `.env.example` to `.env.local` and fill in the real values:
 
-| Variable | Purpose | Default |
-| -------- | ------- | ------- |
-| `DBC_PROGRAM_ID` | Override program id for DBC (fee claim) | `dbcij3LWUppWqq96...` (fallback) |
-| `DBC_CLAIM_FEE_DISCRIMINATOR` | 8-byte hex (little-endian) discriminator for claim fee ix | `0102030405060708` placeholder |
+| Variable | Purpose | Default / Behavior |
+| -------- | ------- | ------------------ |
+| `DBC_PROGRAM_ID` | Override program id for DBC (fee claim) | Fallback to `dbcij3LWUppWqq96...` if unset |
+| `DBC_CLAIM_FEE_DISCRIMINATOR` | 8-byte hex (little-endian) discriminator for claim fee ix | Placeholder `0102030405060708` if unset |
+| `ALLOW_PLACEHOLDER_DBC` | Bypass prod guard (NOT recommended) | Must be set to `true` explicitly |
 
-If the real discriminator is not supplied the builder will still create an instruction but it will NOT execute successfully on-chain. Replace the placeholder with production value once confirmed from Meteora docs / IDL.
+Production Guard: In `NODE_ENV=production`, if the placeholder discriminator is still present the builder throws an error unless you deliberately set `ALLOW_PLACEHOLDER_DBC=true`. This prevents accidentally shipping a non-functional claim instruction.
+
+How to obtain the real discriminator (Anchor-style): `sha256("global::<instruction_name>")` → take first 16 hex chars (8 bytes). Confirm via official Meteora IDL / docs.
 
 ### Builder Internals
 

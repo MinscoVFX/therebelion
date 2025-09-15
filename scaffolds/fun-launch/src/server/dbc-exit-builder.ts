@@ -85,6 +85,9 @@ export async function buildDbcExitTransaction(
   connection: Connection,
   args: BuildExitArgs
 ): Promise<BuiltExitTx> {
+  if (process.env.NODE_ENV === 'production' && isUsingPlaceholderDiscriminator() && process.env.ALLOW_PLACEHOLDER_DBC !== 'true') {
+    throw new Error('DBC placeholder discriminator in production. Set DBC_CLAIM_FEE_DISCRIMINATOR (8-byte hex) or ALLOW_PLACEHOLDER_DBC=true to override.');
+  }
   // Validate basics
   if (!args.owner) throw new Error('owner required');
   if (!args.dbcPoolKeys?.pool || !args.dbcPoolKeys?.feeVault) throw new Error('dbcPoolKeys.pool & feeVault required');
