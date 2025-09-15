@@ -1,3 +1,4 @@
+/* eslint-env node */
 module.exports = {
   semi: true,
   trailingComma: 'es5',

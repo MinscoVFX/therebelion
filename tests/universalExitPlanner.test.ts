@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 import { describe, it, expect, vi } from 'vitest';
 import { planUniversalExits } from '../scaffolds/fun-launch/src/hooks/universalExitPlanner';
 
@@ -6,7 +7,7 @@ import { planUniversalExits } from '../scaffolds/fun-launch/src/hooks/universalE
 const mockTxBase64 = 'AQAAAA=='; // minimal base64 (not a real versioned tx, but planner not validating here)
 
 function mockFetchFactory() {
-  return vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+  return vi.fn(async (url: RequestInfo | URL) => {
     const u = String(url);
     if (u.endsWith('/api/dbc-discover')) {
       return new Response(JSON.stringify({ positions: [{ pool: 'PoolAAA', feeVault: 'FeeAAA' }] }), { status: 200 });
