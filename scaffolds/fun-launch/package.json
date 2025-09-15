@@ -70,6 +70,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --ext .ts,.tsx,.js --max-warnings=1000",
-    "start": "next start"
+    "start": "next start",
+    "env:check": "node -e \"process.env.POOL_CONFIG_KEY||process.exit(1)\" && node -e \"(process.env.RPC_ENDPOINT||process.env.NEXT_PUBLIC_RPC_URL)||process.exit(1)\" && node -e \"(process.env.DBC_CLAIM_FEE_DISCRIMINATOR?.length===16)||process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME||process.env.DBC_USE_IDL==='true'||process.exit(1)\"",
+    "health:local": "tsx src/pages/api/health.ts"
   }
 }

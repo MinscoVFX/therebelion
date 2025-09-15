@@ -12,6 +12,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "eslint src --ext .ts --fix && turbo lint",
+  "lint:ci": "eslint src --ext .ts --max-warnings=0 && turbo lint",
     "format": "prettier --write . && turbo format",
     "format:check": "prettier --check . && turbo format:check",
     "syncpack:check": "syncpack list-mismatches",

@@ -52,6 +52,37 @@ Status code is 200 when `ok=true` else 500 if any blocking errors (e.g., placeho
 
 Add this route to uptime monitoring for early detection of misconfiguration before users hit /exit.
 
+## Vercel Setup
+
+Deploy the `scaffolds/fun-launch` app via Vercel (root monorepo). Ensure the following environment variables are configured in the Vercel Project (Production + Preview as needed):
+
+Required:
+ - `POOL_CONFIG_KEY`
+ - One of: `RPC_ENDPOINT` OR `NEXT_PUBLIC_RPC_URL` (public) OR `RPC_URL` (legacy)
+ - One of (highest precedence first):
+   1. `DBC_CLAIM_FEE_DISCRIMINATOR` (16 hex chars)
+   2. `DBC_CLAIM_FEE_INSTRUCTION_NAME` (Anchor ix name)
+   3. `DBC_USE_IDL=true` plus an uploaded `dbc_idl.json` in the repo root
+
+Optional / Recommended:
+ - `DBC_PROGRAM_ID` (override if different from default)
+ - `ALLOWED_DBC_PROGRAM_IDS` (comma-separated allow list)
+ - `DBC_USE_IDL` (set `true` to auto-derive from IDL)
+ - `ALLOW_PLACEHOLDER_DBC` (ONLY for temporary staging bypass)
+
+The health endpoint `/api/health` must return `{"ok": true}` in Production. Any warning about placeholder discriminators must be resolved before launch. A failing health response (HTTP 500) blocks go‑live.
+
+Build Configuration:
+ - Root `vercel.json` specifies Node 20 runtime for API functions.
+ - Build command: `pnpm -w build` (workspace build) ensures shared packages are compiled before Next build.
+
+Troubleshooting:
+ - 500 on `/api/dbc-exit`: check logs for discriminator resolution error; ensure one of the envs or IDL path is set.
+ - Simulation errors: confirm the fee vault account and pool keys are correct; verify RPC performance.
+ - Placeholder warning persists: confirm the real 8‑byte hex differs from `0102030405060708` and no stray whitespace.
+
+Never commit real private keys or secrets. Only public program IDs and configuration values belong in env vars.
+
 ## DBC One-Click Exit Overview
 
 Reference docs: Meteora DBC – https://docs.meteora.ag/overview/products/dbc/what-is-dbc

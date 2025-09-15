@@ -35,7 +35,8 @@ export default function ExitPage() {
     simulateFirst: true,
     fastMode: false,
   });
-  const [action, setAction] = useState<'claim' | 'withdraw'>('claim');
+  // Force claim-only; withdraw path intentionally disabled until official integration
+  const action: 'claim' = 'claim';
 
   // Load preferences from localStorage
   useEffect(() => {
@@ -223,17 +224,8 @@ export default function ExitPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div>
             <label className="block text-sm font-medium text-neutral-300 mb-2">Action</label>
-            <select
-              value={action}
-              onChange={(e) => setAction((e.target as HTMLSelectElement).value as 'claim' | 'withdraw')}
-              className="w-full px-3 py-2 border border-neutral-600 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-neutral-800 text-neutral-100"
-            >
-              <option value="claim">Claim Fees Only</option>
-              <option value="withdraw" disabled>Full Withdraw (coming soon)</option>
-            </select>
-            {action === 'withdraw' && (
-              <p className="mt-1 text-xs text-amber-600">Withdraw not yet implemented – awaiting official DBC instruction layout.</p>
-            )}
+            <div className="w-full px-3 py-2 border border-neutral-600 rounded-md bg-neutral-800 text-neutral-100 text-sm">Claim Fees Only</div>
+            <p className="mt-1 text-xs text-neutral-500">Withdraw disabled – awaiting official DBC withdraw instruction layout.</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-neutral-300 mb-2">
