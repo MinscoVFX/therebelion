@@ -3,7 +3,7 @@ import { ComputeBudgetProgram } from "@solana/web3.js";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { owner, cuLimit: bodyCu, microLamports: bodyFee } = JSON.parse(req.body || "{}");
+  const { cuLimit: bodyCu, microLamports: bodyFee } = JSON.parse(req.body || "{}");
     let cuLimit = Number(bodyCu);
     let microLamports = Number(bodyFee);
     if (!Number.isFinite(cuLimit) || !Number.isFinite(microLamports)) {
@@ -24,7 +24,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ];
     // TODO: Add claim+withdraw instructions here
     res.status(200).json({ ok: true, computeBudgetIxs, cuLimit, microLamports });
-  } catch (e: any) {
-    res.status(500).json({ error: String(e?.message ?? e) });
+  } catch (e) {
+    const err = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: err });
   }
 }
