@@ -6,7 +6,7 @@ const OFFICIAL_DAMM_V2_PROGRAM_IDS = ["cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1s
 
 const envSchema = z.object({
   RPC_URL: z.string().min(1, "RPC_URL is required"),
-  DBC_CLAIM_FEE_INSTRUCTION_NAME: z.enum(["auto", "claim_creator_trading_fee", "claim_partner_trading_fee"]).optional(),
+  DBC_CLAIM_FEE_INSTRUCTION_NAME: z.enum(["auto", "claim_creator_trading_fee", "claim_partner_trading_fee", "claim_fee"]).optional(),
   DBC_CLAIM_FEE_DISCRIMINATOR: z.string().regex(/^[0-9a-fA-F]{16}$/).optional(),
   ALLOWED_DBC_PROGRAM_IDS: z.string().refine((val) => {
     try {
@@ -41,18 +41,20 @@ if (process.env.NODE_ENV === "production") {
 // Export dbcSelector
 export type DbcSelector =
   | { mode: "auto" }
-  | { mode: "name"; value: "claim_creator_trading_fee" | "claim_partner_trading_fee" }
+  | { mode: "name"; value: "claim_creator_trading_fee" | "claim_partner_trading_fee" | "claim_fee" }
   | { mode: "disc"; value: Uint8Array };
 
 export const dbcSelector: DbcSelector = (() => {
   if (process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME === "auto") return { mode: "auto" };
   if (
     process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME === "claim_creator_trading_fee" ||
-    process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME === "claim_partner_trading_fee"
+    process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME === "claim_partner_trading_fee" ||
+    process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME === "claim_fee"
   ) {
     const nameVal = process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME as
       | "claim_creator_trading_fee"
-      | "claim_partner_trading_fee";
+      | "claim_partner_trading_fee"
+      | "claim_fee";
     return { mode: "name", value: nameVal };
   }
   if (process.env.DBC_CLAIM_FEE_DISCRIMINATOR) {

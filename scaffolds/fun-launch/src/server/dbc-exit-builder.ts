@@ -87,7 +87,8 @@ function resolveClaimDiscriminator(): Buffer {
     if (idl) {
       const preferred = idl.instructions.find((i: any) => /claim/.test(i.name) && /fee/.test(i.name)) ||
         idl.instructions.find((i: any) => i.name === 'claim_partner_trading_fee') ||
-        idl.instructions.find((i: any) => i.name === 'claim_creator_trading_fee');
+        idl.instructions.find((i: any) => i.name === 'claim_creator_trading_fee') ||
+        idl.instructions.find((i: any) => i.name === 'claim_fee');
       if (preferred) {
         _discMeta = { source: 'idl', instructionName: preferred.name };
         return preferred.discriminator;
@@ -96,6 +97,9 @@ function resolveClaimDiscriminator(): Buffer {
   }
   const ixName = process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME;
   if (ixName) {
+    if (!['claim_partner_trading_fee','claim_creator_trading_fee','claim_fee'].includes(ixName.trim())) {
+      throw new Error(`Unsupported DBC_CLAIM_FEE_INSTRUCTION_NAME: ${ixName}`);
+    }
     const disc = anchorInstructionDiscriminator(ixName.trim());
     _discMeta = { source: 'name', instructionName: ixName.trim() };
     return disc;
@@ -108,6 +112,12 @@ function claimDisc(): Buffer {
     _claimDiscBuf = resolveClaimDiscriminator();
   }
   return _claimDiscBuf;
+}
+
+// Test helper: force claim discriminator resolution (not used in production paths directly)
+export function __resolveClaimDiscForTests(): string {
+  const buf = claimDisc();
+  return Buffer.from(buf).toString('hex');
 }
 
 function resolveWithdrawDiscriminator(): Buffer {

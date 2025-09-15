@@ -140,7 +140,7 @@ Copy `.env.example` to `.env.local` and fill in the real values:
 | -------- | ------- | ------------------ |
 | `DBC_PROGRAM_ID` | Override program id for DBC (fee claim) | Fallback to `dbcij3LWUppWqq96...` if unset |
 | `DBC_CLAIM_FEE_DISCRIMINATOR` | 8-byte hex (16 hex chars) discriminator for claim fee ix (explicit override – highest precedence) | REQUIRED unless using NAME or IDL |
-| `DBC_CLAIM_FEE_INSTRUCTION_NAME` | Anchor instruction name (e.g. `claim_partner_trading_fee`) to derive discriminator (sha256("global::<instruction_name>").slice(0,8)) | Optional (used if explicit hex unset) |
+| `DBC_CLAIM_FEE_INSTRUCTION_NAME` | Anchor instruction name (e.g. `claim_partner_trading_fee`, `claim_creator_trading_fee`, or short form `claim_fee`) to derive discriminator (sha256("global::<instruction_name>").slice(0,8)) | Optional (used if explicit hex unset) |
 | `ALLOWED_DBC_PROGRAM_IDS` | Comma-separated allow list of permitted DBC program IDs (safety gate) | (unset = allow any) |
 | `DBC_WITHDRAW_DISCRIMINATOR` | 8-byte hex for withdraw instruction | REQUIRED unless using NAME or IDL |
 | `DBC_WITHDRAW_INSTRUCTION_NAME` | Anchor instruction name to derive withdraw discriminator | Optional (used if explicit hex unset) |
