@@ -27,6 +27,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - name: Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-lint
+          restore-keys: |
+            turbo-${{ runner.os }}-
 
       # Ensure pnpm exists before using setup-node cache
       - name: Setup pnpm (pre-cache guard)
@@ -75,7 +82,7 @@ jobs:
           pnpm config set network-timeout 600000
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       # --- CI-only: silence the single lint false-positive in studio package ---
       # This does NOT touch your repo; it only appends during CI runtime.
@@ -93,7 +100,7 @@ jobs:
         run: pnpm format:check
 
       - name: Lint code
-        run: pnpm lint
+        run: pnpm ci:lint
 
       # TODO: Fix version mismatches before re-enabling
       # - name: Check dependency versions
@@ -105,6 +112,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - name: Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-build
+          restore-keys: |
+            turbo-${{ runner.os }}-
 
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
@@ -149,10 +163,10 @@ jobs:
           pnpm config set network-timeout 600000
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Build all packages
-        run: pnpm build
+        run: pnpm ci:build
 
   type-check:
     name: Type Check
@@ -160,6 +174,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - name: Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-typecheck
+          restore-keys: |
+            turbo-${{ runner.os }}-
 
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
@@ -204,10 +225,10 @@ jobs:
           pnpm config set network-timeout 600000
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Type check
-        run: pnpm exec tsc --noEmit --project tsconfig.typecheck.json
+        run: pnpm ci:typecheck
 
   test:
     name: Unit Tests
@@ -215,6 +236,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - name: Turbo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-test
+          restore-keys: |
+            turbo-${{ runner.os }}-
 
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
@@ -259,10 +287,10 @@ jobs:
           pnpm config set network-timeout 600000
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Run tests
-        run: pnpm test:run
+        run: pnpm ci:test
 
       - name: Upload coverage artifact (placeholder)
         if: always()
