@@ -35,8 +35,8 @@ export default function ExitPage() {
     simulateFirst: true,
     fastMode: false,
   });
-  // Force claim-only; withdraw path intentionally disabled until official integration
-  const action: 'claim' = 'claim';
+  // Claim-only mode (withdraw intentionally disabled). Previously stored an `action` const;
+  // removed unused variable to satisfy eslint @typescript-eslint/prefer-as-const / no-unused-vars.
 
   // Load preferences from localStorage
   useEffect(() => {

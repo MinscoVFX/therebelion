@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { loadDbcIdl, getClaimIxNameFromIdl } from '@/lib/dbc/idl';
+// Use relative import to avoid path alias resolution issues in Vitest environment
+import { loadDbcIdl, getClaimIxNameFromIdl } from '../../lib/dbc/idl';
 
 export const runtime = 'nodejs';
 
