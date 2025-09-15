@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Connection } from '@solana/web3.js';
-import { buildDbcExitTransaction } from '@/server/dbc-exit-builder';
+import { buildDbcExitTransaction, getClaimDiscriminatorMeta, getActiveClaimDiscriminatorHex } from '@/server/dbc-exit-builder';
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,6 +30,14 @@ export async function POST(request: NextRequest) {
     });
 
     const base64 = Buffer.from(built.tx.serialize()).toString('base64');
+    const discMeta = getClaimDiscriminatorMeta();
+    const discHex = getActiveClaimDiscriminatorHex();
+    const common = {
+      discriminator: discHex,
+      discriminatorSource: discMeta?.source,
+      discriminatorInstructionName: discMeta?.instructionName,
+      lastValidBlockHeight: built.lastValidBlockHeight,
+    };
     if (built.simulation) {
       return NextResponse.json({
         simulated: true,
@@ -37,13 +45,13 @@ export async function POST(request: NextRequest) {
         unitsConsumed: built.simulation.unitsConsumed,
         error: built.simulation.error,
         tx: base64,
-        lastValidBlockHeight: built.lastValidBlockHeight,
+        ...common,
       });
     }
     return NextResponse.json({
       simulated: false,
       tx: base64,
-      lastValidBlockHeight: built.lastValidBlockHeight,
+      ...common,
     });
   } catch (error) {
     console.error('DBC exit API error:', error);

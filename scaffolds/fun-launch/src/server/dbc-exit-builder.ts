@@ -64,6 +64,12 @@ function assertProgramAllowed(pk: PublicKey) {
 }
 // 8-byte little-endian placeholder; MUST be overridden with real discriminator for production.
 let _placeholderWarned = false;
+interface ClaimDiscResolutionMeta {
+  source: 'explicit' | 'name' | 'idl' | 'placeholder';
+  instructionName?: string;
+}
+let _discMeta: ClaimDiscResolutionMeta | null = null;
+export function getClaimDiscriminatorMeta(): ClaimDiscResolutionMeta | null { return _discMeta; }
 function resolveClaimDiscriminator(): Buffer {
   // 1. If an explicit 8-byte discriminator hex provided, use it first (authoritative override).
   const explicit = process.env.DBC_CLAIM_FEE_DISCRIMINATOR;
@@ -75,27 +81,35 @@ function resolveClaimDiscriminator(): Buffer {
       // eslint-disable-next-line no-console
       console.warn('[dbc-exit-builder] Using placeholder DBC_CLAIM_FEE_DISCRIMINATOR. Replace with real 8-byte discriminator from Meteora DBC docs or supply IDL.');
     }
+    _discMeta = { source: 'explicit' };
     return Buffer.from(hex, 'hex');
   }
 
-  // 2. Instruction name path via Anchor hashing if DBC_CLAIM_FEE_INSTRUCTION_NAME set.
+  // 2. IDL-based resolution first (gives us canonical names) if enabled or auto-detect env variable set.
+  const useIdl = process.env.DBC_USE_IDL === 'true' || process.env.DBC_CLAIM_USE_IDL_AUTO === 'true';
+  if (useIdl) {
+    const idl = loadDbcIdlIfAvailable();
+    if (idl) {
+      // broaden search: any instruction containing both 'claim' & 'fee'
+      const preferred = idl.instructions.find((i: any) => /claim/.test(i.name) && /fee/.test(i.name)) ||
+        idl.instructions.find((i: any) => i.name === 'claim_partner_trading_fee') ||
+        idl.instructions.find((i: any) => i.name === 'claim_creator_trading_fee');
+      if (preferred) {
+        _discMeta = { source: 'idl', instructionName: preferred.name };
+        return preferred.discriminator;
+      }
+    }
+  }
+
+  // 3. Instruction name path via Anchor hashing if DBC_CLAIM_FEE_INSTRUCTION_NAME set (fallback after IDL so explicit names still override).
   const ixName = process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME;
   if (ixName) {
     try {
       const disc = anchorInstructionDiscriminator(ixName.trim());
+      _discMeta = { source: 'name', instructionName: ixName.trim() };
       return disc;
     } catch (e) {
       throw new Error('Failed to derive discriminator from DBC_CLAIM_FEE_INSTRUCTION_NAME: ' + (e as any)?.message);
-    }
-  }
-
-  // 3. IDL-based resolution if enabled.
-  if (process.env.DBC_USE_IDL === 'true') {
-    const idl = loadDbcIdlIfAvailable();
-    if (idl) {
-      const preferred = idl.instructions.find((i: any) => i.name === 'claim_partner_trading_fee') ||
-        idl.instructions.find((i: any) => i.name === 'claim_creator_trading_fee');
-      if (preferred) return preferred.discriminator;
     }
   }
 
@@ -105,6 +119,7 @@ function resolveClaimDiscriminator(): Buffer {
     // eslint-disable-next-line no-console
     console.warn('[dbc-exit-builder] Falling back to placeholder discriminator. Provide DBC_CLAIM_FEE_DISCRIMINATOR, DBC_CLAIM_FEE_INSTRUCTION_NAME, or enable IDL.');
   }
+  _discMeta = { source: 'placeholder' };
   return Buffer.from('0102030405060708', 'hex');
 }
 const CLAIM_FEE_DISCRIMINATOR = resolveClaimDiscriminator();
