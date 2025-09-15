@@ -86,6 +86,7 @@ export async function POST(request: NextRequest) {
       slippageBps: body.slippageBps,
       computeUnitLimit: body.computeUnitLimit,
       simulateOnly: body.simulateOnly || body.simulateOnly === 1 || body.simulateOnly === '1',
+      claimDiscriminator: discriminatorInfo.discriminator,
     });
 
     const base64 = Buffer.from(built.tx.serialize()).toString('base64');

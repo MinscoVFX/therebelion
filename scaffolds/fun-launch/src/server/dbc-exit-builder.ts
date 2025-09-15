@@ -35,6 +35,8 @@ export interface BuildExitArgs {
   slippageBps?: number; // reserved / future use for withdraw quoting
   computeUnitLimit?: number;
   simulateOnly?: boolean;
+  // Optional externally-resolved claim fee discriminator (8 bytes). If provided it overrides all env logic.
+  claimDiscriminator?: Buffer;
 }
 
 export interface BuiltExitTx {
@@ -122,21 +124,27 @@ function resolveClaimDiscriminator(): Buffer {
   _discMeta = { source: 'placeholder' };
   return Buffer.from('0102030405060708', 'hex');
 }
-const CLAIM_FEE_DISCRIMINATOR = resolveClaimDiscriminator();
+// NOTE: We lazily resolve the module-level discriminator so that providing an explicit override to buildDbcExitTransaction
+// results in no unnecessary placeholder resolution or warnings.
+let _lazyDefaultDisc: Buffer | null = null;
+function getDefaultClaimDiscriminator(): Buffer {
+  if (_lazyDefaultDisc) return _lazyDefaultDisc;
+  _lazyDefaultDisc = resolveClaimDiscriminator();
+  return _lazyDefaultDisc;
+}
 
-// Expose a helper to introspect the active discriminator (used in tests for instruction-name path)
 export function getActiveClaimDiscriminatorHex(): string {
-  return CLAIM_FEE_DISCRIMINATOR.toString('hex');
+  return (_lazyDefaultDisc || getDefaultClaimDiscriminator()).toString('hex');
 }
 
 export function isUsingPlaceholderDiscriminator(): boolean {
-  const hex = CLAIM_FEE_DISCRIMINATOR.toString('hex');
+  const hex = (_lazyDefaultDisc || getDefaultClaimDiscriminator()).toString('hex');
   return hex === '0102030405060708';
 }
 
-function buildClaimInstruction(pool: PublicKey, feeVault: PublicKey, owner: PublicKey, userTokenAccount: PublicKey): TransactionInstruction {
+function buildClaimInstruction(pool: PublicKey, feeVault: PublicKey, owner: PublicKey, userTokenAccount: PublicKey, disc: Buffer): TransactionInstruction {
   const data = Buffer.alloc(8);
-  CLAIM_FEE_DISCRIMINATOR.copy(data); // direct copy
+  disc.copy(data); // direct copy
   return new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
@@ -182,8 +190,12 @@ export async function buildDbcExitTransaction(
   connection: Connection,
   args: BuildExitArgs
 ): Promise<BuiltExitTx> {
-  if (process.env.NODE_ENV === 'production' && isUsingPlaceholderDiscriminator() && process.env.ALLOW_PLACEHOLDER_DBC !== 'true') {
-    throw new Error('DBC placeholder discriminator in production. Set DBC_CLAIM_FEE_DISCRIMINATOR (8-byte hex) or ALLOW_PLACEHOLDER_DBC=true to override.');
+  const effectiveDisc = args.claimDiscriminator || getDefaultClaimDiscriminator();
+  if (process.env.NODE_ENV === 'production') {
+    const hex = effectiveDisc.toString('hex');
+    if (hex === '0102030405060708' && process.env.ALLOW_PLACEHOLDER_DBC !== 'true') {
+      throw new Error('DBC placeholder discriminator in production. Provide real discriminator via env or IDL.');
+    }
   }
   // Validate basics
   if (!args.owner) throw new Error('owner required');
@@ -227,7 +239,7 @@ export async function buildDbcExitTransaction(
 
   if (action === 'claim') {
     // Claim fees instruction
-    instructions.push(buildClaimInstruction(pool, feeVault, ownerPk, userTokenAccount));
+  instructions.push(buildClaimInstruction(pool, feeVault, ownerPk, userTokenAccount, effectiveDisc));
   } else if (action === 'withdraw') {
     // Attempt to build withdraw instructions (currently placeholder -> throw)
     buildWithdrawPlaceholderInstruction();
