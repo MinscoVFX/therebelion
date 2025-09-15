@@ -1,6 +1,7 @@
 # Meteora Invent Monorepo
 
 [![CI](https://github.com/MinscoVFX/therebelion/actions/workflows/ci.yml/badge.svg)](https://github.com/MinscoVFX/therebelion/actions/workflows/ci.yml)
+![Coverage](https://img.shields.io/badge/coverage-pending-lightgrey)
 
 Solana DeFi toolkit:
 
@@ -26,6 +27,16 @@ verification gate before commits or deployments. `pnpm env:check` performs stati
 
 Environment template: see `.env.example` for all supported variables (including
 `DBC_SUPPRESS_PLACEHOLDER_WARNING` for local development log noise suppression).
+
+### Coverage
+
+Unit test coverage is generated via Vitest (v8 provider). To run locally:
+
+```bash
+pnpm coverage
+```
+
+Artifacts (`lcov.info` + `coverage-summary.json`) are uploaded in CI. Once a coverage reporting service or threshold badge is integrated, replace the placeholder badge at the top.
 
 /exit verification: see EXIT_VERIFICATION.md and PARITY_SUMMARY.md.
 
