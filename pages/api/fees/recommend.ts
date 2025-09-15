@@ -11,23 +11,22 @@ import { resolveRpc } from "../../../src/lib/rpc";
  */
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-  const env = getEnv();
+  getEnv(); // ensure required env validated (result unused) 
   const connection = new Connection(resolveRpc(), "confirmed");
 
     // recentPrioritizationFees is available on many RPCs (Jito/RPCPool/Helius/Ankr etc.),
     // but we’ll gracefully fall back to static defaults if missing.
-    let fees: any[] = [];
-    try {
+  interface PriorityFeeEntry { prioritizationFee?: number | string; [k: string]: unknown }
+    let fees: PriorityFeeEntry[] = [];
+  try {
       // Some providers expose getRecentPrioritizationFees; others use getRecentPrioritizationFees({limit})
       // We attempt both patterns.
-      // @ts-ignore
-      fees = (await (connection as any).getRecentPrioritizationFees?.({})) ??
-             // @ts-ignore
-             (await (connection as any).getRecentPrioritizationFees?.()) ?? [];
-    } catch {}
+  const rpcExt = connection as unknown as { getRecentPrioritizationFees?: (arg?: unknown) => Promise<PriorityFeeEntry[]> };
+  fees = (await rpcExt.getRecentPrioritizationFees?.({})) ?? (await rpcExt.getRecentPrioritizationFees?.()) ?? [];
+  } catch { /* ignore fee fetch errors, fallback below */ }
 
-    const values = Array.isArray(fees)
-      ? fees.map((f) => Number(f?.prioritizationFee ?? 0)).filter((n) => Number.isFinite(n) && n >= 0)
+    const values: number[] = Array.isArray(fees)
+      ? fees.map((f: PriorityFeeEntry) => Number(f?.prioritizationFee ?? 0)).filter((n: number) => Number.isFinite(n) && n >= 0)
       : [];
 
     const defaultMicroLamports = 5_000;   // 5k microLamports/CU baseline
@@ -48,7 +47,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const cuLimit = 600_000; // safe headroom; adjust if your instructions are lighter/heavier
 
     res.status(200).json({ ok: true, microLamports: rec, cuLimit, source: values.length ? "recentFees" : "default" });
-  } catch (e:any) {
+  } catch {
     res.status(200).json({ ok: true, microLamports: 5_000, cuLimit: 600_000, source: "fallback" });
   }
 }

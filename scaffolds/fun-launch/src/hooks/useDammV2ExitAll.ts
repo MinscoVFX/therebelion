@@ -88,7 +88,7 @@ export function useDammV2ExitAll() {
 
       let conn: Connection = (window as any)._solanaWeb3ConnectionOverride;
       if (!conn) {
-        const endpoint = process.env.NEXT_PUBLIC_RPC_URL || process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
+  const endpoint = process.env.NEXT_PUBLIC_RPC_URL || process.env.RPC_URL || process.env.RPC_ENDPOINT || 'https://api.mainnet-beta.solana.com';
         conn = new Connection(endpoint, 'confirmed');
         (window as any)._solanaWeb3ConnectionOverride = conn;
       }

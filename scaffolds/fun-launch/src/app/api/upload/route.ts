@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { Connection, Transaction, SystemProgram, Keypair, PublicKey } from '@solana/web3.js';
+import { Connection, Transaction, SystemProgram, PublicKey } from '@solana/web3.js';
+import { resolveRpc } from '../../../lib/rpc';
 
 // Simplified placeholder: builds a dummy transaction representing pool creation.
 // In production this should:
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
     if (!mintStr || !userWallet) {
       return NextResponse.json({ error: 'mint and userWallet required' }, { status: 400 });
     }
-    const connection = new Connection(process.env.NEXT_PUBLIC_RPC_URL || process.env.RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
+  const connection = new Connection(resolveRpc(), 'confirmed');
     const recent = await connection.getLatestBlockhash();
 
     // Dummy tx: system program transfer 0 lamports (no-op) just to have a valid container

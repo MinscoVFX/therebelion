@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { Connection, VersionedTransaction, TransactionMessage, SystemProgram, PublicKey } from '@solana/web3.js';
+import { resolveRpc } from '../../../lib/rpc';
 
 // Auto-exit placeholder: build a trivial versioned tx so UI flow works.
 export async function POST(req: Request) {
@@ -8,7 +9,7 @@ export async function POST(req: Request) {
     const { ownerPubkey, priorityMicros } = body;
     if (!ownerPubkey) return NextResponse.json({ error: 'ownerPubkey required' }, { status: 400 });
 
-    const connection = new Connection(process.env.NEXT_PUBLIC_RPC_URL || process.env.RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
+  const connection = new Connection(resolveRpc(), 'confirmed');
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
 
     const payer = new PublicKey(ownerPubkey);

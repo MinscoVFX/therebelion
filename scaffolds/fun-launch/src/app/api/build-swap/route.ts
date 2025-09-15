@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { Connection, Transaction, SystemProgram, PublicKey } from '@solana/web3.js';
+import { resolveRpc } from '../../../lib/rpc';
 
 // Placeholder swap builder. In a real implementation this would:
 // - Fetch pool state
@@ -8,12 +9,12 @@ import { Connection, Transaction, SystemProgram, PublicKey } from '@solana/web3.
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { baseMint, payer, amountSol, prelaunch, blockhash } = body;
+  const { baseMint, payer, amountSol, blockhash } = body; // prelaunch currently unused
     if (!baseMint || !payer || !amountSol) {
       return NextResponse.json({ error: 'baseMint, payer, amountSol required' }, { status: 400 });
     }
 
-    const connection = new Connection(process.env.NEXT_PUBLIC_RPC_URL || process.env.RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
+  const connection = new Connection(resolveRpc(), 'confirmed');
     const recent = blockhash ? { blockhash, lastValidBlockHeight: 0 } : await connection.getLatestBlockhash();
 
     const tx = new Transaction({ feePayer: new PublicKey(payer), blockhash: recent.blockhash, lastValidBlockHeight: recent.lastValidBlockHeight });
