@@ -44,23 +44,39 @@ export default function ExitPage() {
   }
 
   return (
-    <div style={{ padding: 24 }}>
-      <h1>/exit — Claim Fees Only</h1>
-      <p style={{fontSize:14, marginTop:4, color:'#b45309'}}>Liquidity withdrawal is intentionally disabled (HTTP 501). Only fee claiming is available.</p>
-      {!publicKey ? <p>Connect your wallet</p> : <>
-  <button onClick={exitNow}>Claim Protocol Fees</button>
-    <div style={{ marginTop: 8, fontSize: 12 }}>Withdraw endpoint returns 501 while in claim-only mode.</div>
-        <label style={{ marginLeft: 16 }}>
-          <input type="checkbox" checked={ultraFastEnabled} onChange={e => setUltraFastEnabled(e.target.checked)} /> Ultra fast (skip preflight)
-        </label>
-        {feeRec && (
-          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
-            priority fee: {feeRec.microLamports.toLocaleString()} μ-lamports/cu · compute limit: {feeRec.cuLimit.toLocaleString()} cu ({feeRec.source})
+    <div>
+      <h1>Claim Fees Only</h1>
+      <p className="text-sm opacity-80">
+        Withdraws are temporarily disabled. You can claim fees; withdraw returns HTTP 501 by design.
+      </p>
+      {/* Withdraw UI removed/disabled */}
+      {/* existing Claim flow remains (simplified placeholder retained) */}
+      {!publicKey ? (
+        <p>Connect your wallet</p>
+      ) : (
+        <>
+          <button onClick={exitNow}>Claim Protocol Fees</button>
+          <div style={{ marginTop: 8, fontSize: 12 }}>
+            Withdraw endpoint returns 501 while in claim-only mode.
           </div>
-        )}
-      </>}
+          <label style={{ marginLeft: 16 }}>
+            <input
+              type="checkbox"
+              checked={ultraFastEnabled}
+              onChange={(e) => setUltraFastEnabled(e.target.checked)}
+            />{' '}
+            Ultra fast (skip preflight)
+          </label>
+          {feeRec && (
+            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
+              priority fee: {feeRec.microLamports.toLocaleString()} μ-lamports/cu · compute limit:{' '}
+              {feeRec.cuLimit.toLocaleString()} cu ({feeRec.source})
+            </div>
+          )}
+        </>
+      )}
       <p>Status: {status}</p>
-      <pre>{log.join("\n")}</pre>
+      <pre>{log.join('\n')}</pre>
     </div>
   );
 }
