@@ -23,6 +23,9 @@ describe('DBC Exit Builder discriminators', () => {
 
   it('has resolution meta source values', async () => {
     const mod = await import('../server/dbc-exit-builder');
+    // Trigger lazy resolution so meta objects populate
+    mod.getActiveClaimDiscriminatorHex();
+    mod.getActiveWithdrawDiscriminatorHex();
     const claimMeta = mod.getClaimDiscriminatorMeta();
     const withdrawMeta = mod.getWithdrawDiscriminatorMeta();
     expect(claimMeta?.source).toBeDefined();
