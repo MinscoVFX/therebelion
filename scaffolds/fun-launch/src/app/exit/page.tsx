@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+declare const window: any;
 import { useWallet, useUnifiedWalletContext } from '@jup-ag/wallet-adapter';
 import { useDbcPoolDiscovery } from '@/hooks/useDbcPoolDiscovery';
 import { useDbcInstantExit, type DbcPoolKeys } from '@/hooks/useDbcInstantExit';
@@ -31,7 +32,8 @@ export default function ExitPage() {
   // Load preferences from localStorage
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('dbc-exit-prefs');
+  if (typeof window === 'undefined') return;
+  const saved = window.localStorage.getItem('dbc-exit-prefs');
       if (saved) {
         const parsed = JSON.parse(saved);
         setPrefs((prev) => ({ ...prev, ...parsed }));
@@ -44,7 +46,8 @@ export default function ExitPage() {
   // Save preferences to localStorage
   useEffect(() => {
     try {
-      localStorage.setItem('dbc-exit-prefs', JSON.stringify(prefs));
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem('dbc-exit-prefs', JSON.stringify(prefs));
     } catch (err) {
       console.warn('Failed to save preferences:', err);
     }
@@ -134,7 +137,7 @@ export default function ExitPage() {
                   name="selectedPool"
                   value={pool.id}
                   checked={selectedPoolId === pool.id}
-                  onChange={(e) => setSelectedPoolId(e.target.value)}
+                  onChange={(e) => setSelectedPoolId((e.target as HTMLInputElement).value)}
                   className="mr-3"
                 />
                 <div className="flex-1">
@@ -167,7 +170,10 @@ export default function ExitPage() {
               max="3000000"
               value={prefs.priorityMicros}
               onChange={(e) =>
-                setPrefs((prev) => ({ ...prev, priorityMicros: Number(e.target.value) }))
+                setPrefs((prev) => ({
+                  ...prev,
+                  priorityMicros: Number((e.target as HTMLInputElement).value),
+                }))
               }
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -181,7 +187,10 @@ export default function ExitPage() {
               max="10000"
               value={prefs.slippageBps}
               onChange={(e) =>
-                setPrefs((prev) => ({ ...prev, slippageBps: Number(e.target.value) }))
+                setPrefs((prev) => ({
+                  ...prev,
+                  slippageBps: Number((e.target as HTMLInputElement).value),
+                }))
               }
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -200,7 +209,9 @@ export default function ExitPage() {
                 onChange={(e) =>
                   setPrefs((prev) => ({
                     ...prev,
-                    computeUnitLimit: e.target.value ? Number(e.target.value) : undefined,
+                    computeUnitLimit: (e.target as HTMLInputElement).value
+                      ? Number((e.target as HTMLInputElement).value)
+                      : undefined,
                   }))
                 }
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -215,7 +226,12 @@ export default function ExitPage() {
             <input
               type="checkbox"
               checked={prefs.simulateFirst && !prefs.fastMode}
-              onChange={(e) => setPrefs((prev) => ({ ...prev, simulateFirst: e.target.checked }))}
+              onChange={(e) =>
+                setPrefs((prev) => ({
+                  ...prev,
+                  simulateFirst: (e.target as HTMLInputElement).checked,
+                }))
+              }
               disabled={prefs.fastMode}
               className="mr-2"
             />
@@ -227,11 +243,14 @@ export default function ExitPage() {
               type="checkbox"
               checked={prefs.fastMode}
               onChange={(e) =>
-                setPrefs((prev) => ({
-                  ...prev,
-                  fastMode: e.target.checked,
-                  simulateFirst: e.target.checked ? false : prev.simulateFirst,
-                }))
+                setPrefs((prev) => {
+                  const checked = (e.target as HTMLInputElement).checked;
+                  return {
+                    ...prev,
+                    fastMode: checked,
+                    simulateFirst: checked ? false : prev.simulateFirst,
+                  };
+                })
               }
               className="mr-2"
             />

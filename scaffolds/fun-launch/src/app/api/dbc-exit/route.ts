@@ -1,12 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  Connection,
-  PublicKey,
-  Transaction,
-  ComputeBudgetProgram,
-  VersionedTransaction,
-  TransactionMessage,
-} from '@solana/web3.js';
+import { Connection, PublicKey, ComputeBudgetProgram, VersionedTransaction, TransactionMessage } from '@solana/web3.js';
 import {
   getAssociatedTokenAddressSync,
   createAssociatedTokenAccountIdempotentInstruction,
@@ -55,7 +48,7 @@ function createClaimTradingFeeInstruction(
 
 export async function POST(request: NextRequest) {
   try {
-    const body: RequestBody = await request.json();
+  const body = (await request.json()) as unknown as RequestBody; // runtime validation below
 
     // Validate required fields
     if (!body.owner || !body.dbcPoolKeys?.pool || !body.dbcPoolKeys?.feeVault) {
@@ -67,7 +60,8 @@ export async function POST(request: NextRequest) {
 
     // Validate ranges
     const priorityMicros = Math.max(0, Math.min(body.priorityMicros || 250_000, 3_000_000));
-    const slippageBps = Math.max(0, Math.min(body.slippageBps || 50, 10_000));
+  // Slippage currently unused in simplified claim flow (reserved for future multi‑ix bundles)
+  // const _slippageBps = Math.max(0, Math.min(body.slippageBps || 50, 10_000));
     const computeUnitLimit = body.computeUnitLimit
       ? Math.max(50_000, Math.min(body.computeUnitLimit, 1_400_000))
       : undefined;
@@ -141,14 +135,14 @@ export async function POST(request: NextRequest) {
         logs: simulation.value.logs || [],
         unitsConsumed: simulation.value.unitsConsumed || 0,
         error: simulation.value.err,
-        tx: tx.serialize().toString('base64'),
+  tx: Buffer.from(tx.serialize()).toString('base64'),
         lastValidBlockHeight,
       });
     }
 
     return NextResponse.json({
       simulated: false,
-      tx: tx.serialize().toString('base64'),
+  tx: Buffer.from(tx.serialize()).toString('base64'),
       lastValidBlockHeight,
     });
   } catch (error) {

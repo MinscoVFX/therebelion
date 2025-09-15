@@ -6,8 +6,8 @@ import {
   TOKEN_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
-import { SwapQuote, PoolInfo, TransactionResult } from '@/types/index.js';
-import { TOKENS } from '@/config/constants.js';
+import { SwapQuote, PoolInfo, TransactionResult } from '@/types/index';
+import { TOKENS } from '@/config/constants';
 
 export class MeteoraService {
   private connection: Connection;
@@ -69,9 +69,9 @@ export class MeteoraService {
   async createSwapTransaction(
     userPublicKey: PublicKey,
     inputMint: PublicKey,
-    outputMint: PublicKey,
-    _inputAmount: BN,
-    _minimumReceived: BN
+    outputMint: PublicKey
+    // _inputAmount: BN,
+    // _minimumReceived: BN
   ): Promise<Transaction | null> {
     try {
       const transaction = new Transaction();

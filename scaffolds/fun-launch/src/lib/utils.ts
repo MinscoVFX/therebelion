@@ -1,4 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
+// Declare window for SSR-safe type checking in aggregated config
+declare const window: any;
 import { twMerge } from 'tailwind-merge';
 
 export function cn(...inputs: ClassValue[]) {
@@ -25,7 +27,8 @@ export const getBaseUrl = () => {
       url = `https://jup.ag`;
     }
 
-    return typeof window === 'undefined' ? url : window.location.origin;
+      if (typeof window === 'undefined' || !window.location) return url;
+      return window.location.origin;
   }
 };
 

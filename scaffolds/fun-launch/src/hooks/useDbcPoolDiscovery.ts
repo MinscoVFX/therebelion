@@ -105,7 +105,7 @@ export function useDbcPoolDiscovery() {
         // Method 3: Use Meteora's official API if available
         try {
           const response = await fetch('https://app.meteora.ag/clmm-api/pair/all');
-          const meteoraPools = await response.json();
+          await response.json();
 
           // Filter for DBC pools that user has positions in
           // This would need proper integration with Meteora's API structure

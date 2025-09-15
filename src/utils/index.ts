@@ -89,8 +89,8 @@ export function calculatePriceImpact(
 export function validateSwapAmounts(
   inputAmount: BN,
   inputDecimals: number,
-  outputAmount: BN,
-  _outputDecimals: number
+  outputAmount: BN
+  // _outputDecimals: number
 ): { valid: boolean; error?: string } {
   if (inputAmount.lte(new BN(0))) {
     return { valid: false, error: 'Input amount must be greater than 0' };

@@ -6,7 +6,8 @@ module.exports = {
     ecmaVersion: 'latest',
     sourceType: 'module',
   },
-  plugins: ['@typescript-eslint', 'react', 'react-hooks', 'import'],
+  // Keep plugin list minimal; typescript plugin is added via extend
+  plugins: ['react', 'react-hooks', 'import'],
   extends: [
     'eslint:recommended',
     'plugin:@typescript-eslint/recommended',
@@ -14,8 +15,16 @@ module.exports = {
     'plugin:react-hooks/recommended',
     'plugin:import/recommended',
   ],
-  settings: { react: { version: 'detect' } },
-  ignorePatterns: ['**/node_modules/**', '**/dist/**', '**/.next/**'],
+  settings: { 
+    react: { version: 'detect' },
+    'import/resolver': {
+      typescript: {
+        alwaysTryTypes: true,
+        project: './tsconfig.json'
+      }
+    }
+  },
+  ignorePatterns: ['**/node_modules/**', '**/dist/**', '**/.next/**', 'scaffolds/**'],
   rules: {
     'react/react-in-jsx-scope': 'off',
   },

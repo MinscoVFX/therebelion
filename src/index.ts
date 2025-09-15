@@ -1,14 +1,14 @@
 import { Connection } from '@solana/web3.js';
-import { connectionService } from '@/services/connection.js';
-import { MeteoraService } from '@/services/meteora.js';
-import { TOKENS, PROGRAM_IDS } from '@/config/constants.js';
+import { connectionService } from '@/services/connection';
+import { MeteoraService } from '@/services/meteora';
+import { TOKENS, PROGRAM_IDS } from '@/config/constants';
 
 // Export all services and types
-export { MeteoraService } from '@/services/meteora.js';
-export { connectionService } from '@/services/connection.js';
-export * from '@/types/index.js';
-export * from '@/config/constants.js';
-export * from '@/utils/index.js';
+export { MeteoraService } from '@/services/meteora';
+export { connectionService } from '@/services/connection';
+export * from '@/types/index';
+export * from '@/config/constants';
+export * from '@/utils/index';
 
 // Initialize services
 export async function initializeLaunchpad() {
@@ -57,7 +57,7 @@ export const launchpadSDK: LaunchpadSDK = {
     getConnection: () => connectionService.getConnection(),
     getHealth: () => connectionService.getHealth(),
     getBlockHeight: () => connectionService.getBlockHeight(),
-    setCommitment: (commitment: any) => connectionService.setCommitment(commitment),
+    setCommitment: (commitment: string) => connectionService.setCommitment(commitment),
   },
   MeteoraService,
   TOKENS,

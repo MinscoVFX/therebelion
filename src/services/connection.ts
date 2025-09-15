@@ -1,14 +1,14 @@
-import { Connection, Commitment } from '@solana/web3.js';
-import { RPC_ENDPOINTS, NETWORK } from '@/config/constants.js';
+import { Connection } from '@solana/web3.js';
+import { RPC_ENDPOINTS, NETWORK } from '@/config/constants';
 
 class ConnectionService {
   private connection: Connection;
-  private commitment: Commitment = 'confirmed';
+  private commitment: string = 'confirmed';
 
   constructor() {
     const rpcUrl = RPC_ENDPOINTS[NETWORK];
     this.connection = new Connection(rpcUrl, {
-      commitment: this.commitment,
+      commitment: this.commitment as 'confirmed',
       confirmTransactionInitialTimeout: 60000,
     });
   }
@@ -31,10 +31,10 @@ class ConnectionService {
     return await this.connection.getBlockHeight();
   }
 
-  setCommitment(commitment: Commitment): void {
+  setCommitment(commitment: string): void {
     this.commitment = commitment;
     this.connection = new Connection(this.connection.rpcEndpoint, {
-      commitment: this.commitment,
+      commitment: this.commitment as 'confirmed',
       confirmTransactionInitialTimeout: 60000,
     });
   }

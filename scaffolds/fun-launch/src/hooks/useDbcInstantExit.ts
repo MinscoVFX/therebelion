@@ -74,7 +74,7 @@ export function useDbcInstantExit() {
   }, []);
 
   const exit = useCallback(
-    async (options: ExitOptions) => {
+    async (options: ExitOptions): Promise<string | undefined> => {
       if (!publicKey || !signTransaction) {
         throw new Error('Wallet not connected');
       }
@@ -98,7 +98,7 @@ export function useDbcInstantExit() {
       while (currentAttempt < maxAttempts) {
         if (abortController.signal.aborted) {
           setState((prev) => ({ ...prev, status: 'error', error: 'Aborted' }));
-          return;
+          return undefined;
         }
 
         currentAttempt++;
@@ -132,7 +132,14 @@ export function useDbcInstantExit() {
               throw new Error(`Simulation failed: ${simResponse.statusText}`);
             }
 
-            const simResult = await simResponse.json();
+            interface SimJson {
+              error?: any;
+              logs?: string[];
+              unitsConsumed?: number;
+              tx?: string;
+              lastValidBlockHeight?: number;
+            }
+            const simResult = (await simResponse.json()) as SimJson;
             if (simResult.error) {
               throw new Error(`Simulation error: ${JSON.stringify(simResult.error)}`);
             }
@@ -166,7 +173,12 @@ export function useDbcInstantExit() {
             throw new Error(`API error: ${response.statusText}`);
           }
 
-          const result = await response.json();
+          interface BuildJson {
+            error?: string;
+            tx: string;
+            lastValidBlockHeight: number;
+          }
+          const result = (await response.json()) as BuildJson;
           if (result.error) {
             throw new Error(result.error);
           }
@@ -244,7 +256,7 @@ export function useDbcInstantExit() {
 
           if (abortController.signal.aborted) {
             setState((prev) => ({ ...prev, status: 'error', error: 'Aborted' }));
-            return;
+            return undefined;
           }
 
           if (currentAttempt >= maxAttempts) {
@@ -265,6 +277,7 @@ export function useDbcInstantExit() {
           await new Promise((resolve) => setTimeout(resolve, 1000 + Math.random() * 1000));
         }
       }
+      return undefined;
     },
     [connection, publicKey, signTransaction]
   );

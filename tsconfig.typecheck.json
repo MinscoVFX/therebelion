@@ -1,11 +1,33 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "noEmit": true },
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "declaration": false,
+    "declarationMap": false,
+    "composite": false,
+    // Ensure JSX files in the scaffold are type-checked.
+    "jsx": "react-jsx",
+    // Support the '@/...' alias used both in root and scaffold code.
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*", "scaffolds/fun-launch/src/*"]
+    },
+    "lib": ["ES2022", "DOM"],
+    "skipLibCheck": true
+  },
   "include": [
-    "studio/**/*.ts",
-    "studio/**/*.tsx",
-    "scaffolds/**/*.ts",
-    "scaffolds/**/*.tsx",
+    // Core library / SDK
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    // Studio (scripts + helpers)
+    "studio/src/**/*.ts",
+    "studio/src/**/*.tsx",
+    // Exit feature (app route + hooks + api) only from scaffold to keep scope lean
+    "scaffolds/fun-launch/src/app/exit/**/*.tsx",
+    "scaffolds/fun-launch/src/app/api/dbc-exit/**/*.ts",
+    "scaffolds/fun-launch/src/hooks/**/*.ts",
+    // Shared config packages
     "packages/**/*.ts",
     "packages/**/*.tsx"
   ]

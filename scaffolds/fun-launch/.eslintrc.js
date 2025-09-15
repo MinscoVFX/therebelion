@@ -1,5 +1,6 @@
 /** @type {import('eslint').Linter.Config} */
 module.exports = {
+  root: true,
   parser: '@typescript-eslint/parser',
   parserOptions: {
     ecmaVersion: 'latest',
@@ -10,13 +11,14 @@ module.exports = {
     browser: true,
     es2022: true,
   },
-  plugins: ['@typescript-eslint', 'react', 'react-hooks', 'import', '@next/next'],
+  // Rely on extends to pull in most plugins; only declare Next.js explicitly to avoid duplicate resolution
+  plugins: ['@next/next'],
   extends: [
     'eslint:recommended',
-    'plugin:@typescript-eslint/recommended',
-    'plugin:react/recommended',
-    'plugin:react-hooks/recommended',
-    'plugin:import/recommended',
+  'plugin:@typescript-eslint/recommended',
+  'plugin:react/recommended',
+  'plugin:react-hooks/recommended',
+  'plugin:import/recommended',
     'plugin:@next/next/core-web-vitals',
   ],
   settings: {
