@@ -36,6 +36,12 @@ if (process.env.NODE_ENV === "production") {
   if (!process.env.RPC_URL || process.env.RPC_URL === "") {
     throw new Error("RPC_URL must be set in production");
   }
+  // Reject obvious placeholder discriminators if provided
+  const placeholderSet = new Set(["ffffffffffffffff", "eeeeeeeeeeeeeeee", "0000000000000000"]);
+  const disc = process.env.DBC_CLAIM_FEE_DISCRIMINATOR?.toLowerCase();
+  if (disc && placeholderSet.has(disc)) {
+    throw new Error(`Refusing to start with placeholder DBC_CLAIM_FEE_DISCRIMINATOR=${disc}`);
+  }
 }
 
 // Export dbcSelector
@@ -60,7 +66,8 @@ export const dbcSelector: DbcSelector = (() => {
   if (process.env.DBC_CLAIM_FEE_DISCRIMINATOR) {
     // Anchor discriminator = first 8 bytes of sha256("global:<name>")
     const hex = process.env.DBC_CLAIM_FEE_DISCRIMINATOR;
-    const arr = new Uint8Array(hex.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
+  const bytes = hex.match(/.{2}/g) || [];
+  const arr = new Uint8Array(bytes.map((b) => parseInt(b, 16)));
     return { mode: "disc", value: arr };
   }
   return { mode: "auto" };
