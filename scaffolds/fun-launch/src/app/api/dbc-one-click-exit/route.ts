@@ -3,7 +3,11 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { resolveRpc } from '../../../lib/rpc';
 import { buildDbcExitTransaction } from '../../../server/dbc-exit-builder';
-import { scanDbcPositionsUltraSafe } from '../../../server/dbc-adapter';
+import { 
+  scanDbcPositionsUltraSafe, 
+  discoverMigratedDbcPoolsViaNfts,
+  discoverMigratedDbcPoolsViaMetadata 
+} from '../../../server/dbc-adapter';
 
 /**
  * DBC One-Click Exit - Combines fee claiming and liquidity withdrawal
@@ -26,10 +30,25 @@ export async function POST(req: Request) {
     const connection = new Connection(resolveRpc(), 'confirmed');
     const owner = new PublicKey(ownerPubkey);
 
-    // Auto-discover DBC positions
-    const positions = await scanDbcPositionsUltraSafe({ connection, wallet: owner });
+    // Auto-discover DBC positions using multiple methods
+    console.log(`[DBC One-Click Exit] Discovering positions for: ${owner.toBase58()}`);
+    
+    const [lpPositions, nftPositions, metadataPositions] = await Promise.all([
+      scanDbcPositionsUltraSafe({ connection, wallet: owner }),
+      discoverMigratedDbcPoolsViaNfts({ connection, wallet: owner }),
+      discoverMigratedDbcPoolsViaMetadata({ connection, wallet: owner })
+    ]);
 
-    if (!positions || positions.length === 0) {
+    console.log(`[DBC One-Click Exit] Discovery results:`);
+    console.log(`- LP Positions: ${lpPositions?.length || 0}`);
+    console.log(`- NFT Positions: ${nftPositions?.length || 0}`);
+    console.log(`- Metadata Positions: ${metadataPositions?.length || 0}`);
+
+    // Use LP positions for building transactions (NFT positions need different handling)
+    const positions = lpPositions || [];
+    const totalPositionsFound = positions.length + (nftPositions?.length || 0) + (metadataPositions?.length || 0);
+
+    if (positions.length === 0) {
       // Get token accounts for debugging
       const tokenAccounts = await connection.getParsedTokenAccountsByOwner(owner, {
         programId: TOKEN_PROGRAM_ID,
@@ -49,11 +68,15 @@ export async function POST(req: Request) {
             wallet: owner.toBase58(),
             totalTokenAccounts: tokenAccounts.value.length,
             nonZeroTokenAccounts: nonZeroTokens.length,
+            lpPositions: positions.length,
+            nftPositions: nftPositions?.length || 0,
+            metadataPositions: metadataPositions?.length || 0,
+            totalPositionsFound,
             checkedPrograms: [
               'dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN',
               'cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG',
             ],
-            hint: 'DBC positions require LP tokens from participating in bonding curve pools',
+            hint: 'DBC positions require LP tokens from participating in bonding curve pools, or NFTs from migrated DAMM v2 pools',
           },
         },
         { status: 404 }
@@ -92,7 +115,7 @@ export async function POST(req: Request) {
       lastValidBlockHeight: combinedTx.lastValidBlockHeight,
       description: 'Combined DBC fee claim and liquidity withdrawal (auto-discovered)',
       selectedPool: dbcPoolKeys,
-      totalPositions: positions.length,
+      totalPositions: totalPositionsFound,
       actions: ['claim_trading_fees', 'withdraw_liquidity'],
       priorityMicrosUsed: priorityMicros,
       computeUnitLimit,
