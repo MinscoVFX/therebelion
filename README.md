@@ -17,6 +17,31 @@ pnpm build
 pnpm dev
 ```
 
+## Deployment (Vercel)
+
+Minimal production deployment uses the `scaffolds/fun-launch` Next.js app. Ensure the repo root (monorepo) is connected. Vercel will detect Next.js automatically; `vercel.json` pins build commands. Set these Environment Variables (Project → Settings → Environment Variables):
+
+Required (Production + Preview):
+- RPC_URL (or RPC_ENDPOINT or NEXT_PUBLIC_RPC_URL) – choose one canonical RPC; for client availability also set NEXT_PUBLIC_RPC_URL
+- ALLOWED_DBC_PROGRAM_IDS – JSON array including official id(s), e.g. ["dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN"]
+- ALLOWED_DAMM_V2_PROGRAM_IDS – JSON array including official id(s), e.g. ["cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG"]
+- DBC_CLAIM_FEE_DISCRIMINATOR or DBC_CLAIM_FEE_INSTRUCTION_NAME (or enable IDL via DBC_USE_IDL=true)
+
+Optional:
+- DBC_USE_IDL=true (auto derive discriminators if `dbc_idl.json` present)
+- DBC_CLAIM_FEE_INSTRUCTION_NAME=claim_fee (short-form) if you prefer name over explicit hex
+- MIGRATED_DBC_POOLS (comma list) for migrated filter in DAMM v2 exit-all
+
+Do NOT deploy with placeholder discriminators (ffffffffffffffff, eeeeeeeeeeeeeeee, 0000000000000000); the server will throw in production.
+
+Post-deploy validation checklist:
+1. Visit /api/health – JSON shows ok:true and which RPC var detected.
+2. Visit /exit – open devtools console; no placeholder discriminator warning.
+3. Trigger a simulation (simulateOnly default) – receives logs & unitsConsumed.
+4. Build a claim – server returns base64 tx.
+
+If any failure occurs re-check env names (Vercel upper-case) and redeploy. Lint/typecheck/test must be green (see CI badge) before relying on build artifacts.
+
 ## Scripts
 
 build • dev • type-check • lint • lint:fix • format • format:check • clean • ci • health • env:check • health:full
