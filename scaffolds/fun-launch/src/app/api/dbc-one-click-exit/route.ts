@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { Connection, PublicKey } from '@solana/web3.js';
+import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { resolveRpc } from '../../../lib/rpc';
 import { buildDbcExitTransaction } from '../../../server/dbc-exit-builder';
 import { scanDbcPositionsUltraSafe } from '../../../server/dbc-adapter';
@@ -29,8 +30,32 @@ export async function POST(req: Request) {
     const positions = await scanDbcPositionsUltraSafe({ connection, wallet: owner });
 
     if (!positions || positions.length === 0) {
+      // Get token accounts for debugging
+      const tokenAccounts = await connection.getParsedTokenAccountsByOwner(owner, {
+        programId: TOKEN_PROGRAM_ID,
+      });
+      
+      const nonZeroTokens = tokenAccounts.value.filter(
+        ({ account }) => {
+          const info: any = (account.data as any)?.parsed?.info;
+          return info?.tokenAmount?.amount !== '0';
+        }
+      );
+
       return NextResponse.json(
-        { error: 'No DBC positions found for this wallet' },
+        {
+          error: 'No DBC positions found for this wallet',
+          debug: {
+            wallet: owner.toBase58(),
+            totalTokenAccounts: tokenAccounts.value.length,
+            nonZeroTokenAccounts: nonZeroTokens.length,
+            checkedPrograms: [
+              'dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN',
+              'cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG',
+            ],
+            hint: 'DBC positions require LP tokens from participating in bonding curve pools',
+          },
+        },
         { status: 404 }
       );
     }
