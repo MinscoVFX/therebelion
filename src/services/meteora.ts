@@ -1,5 +1,6 @@
 import { Connection, PublicKey, Transaction, SystemProgram } from '@solana/web3.js';
-import { BN } from '@coral-xyz/anchor';
+// Use bn.js directly instead of relying on Anchor's re-export to avoid ESM/CJS named export issues.
+import BN from 'bn.js';
 import {
   getAssociatedTokenAddress,
   createAssociatedTokenAccountInstruction,

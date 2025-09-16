@@ -1,5 +1,5 @@
 import { PublicKey, Connection } from '@solana/web3.js';
-import { BN } from '@coral-xyz/anchor';
+import BN from 'bn.js';
 
 export function formatNumber(num: number, decimals: number = 2): string {
   if (num === 0) return '0';
