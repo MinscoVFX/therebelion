@@ -169,6 +169,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build studio package (required for tests)
+        run: cd studio && npm run build
+
       - name: Run tests with coverage
         run: pnpm ci:coverage
 
