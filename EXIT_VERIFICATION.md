@@ -5,12 +5,12 @@ production‑ready.
 
 ## 1. Environment Preconditions
 
-| Item              | Expectation                                                                    |
-| ----------------- | ------------------------------------------------------------------------------ |
-| Wallet Connection | Able to connect Phantom / Solflare in mainnet (or devnet if configured)        |
-| RPC Env Vars      | `NEXT_PUBLIC_RPC_URL` (client) matches server `RPC_URL` when overridden        |
+| Item              | Expectation                                                                     |
+| ----------------- | ------------------------------------------------------------------------------- |
+| Wallet Connection | Able to connect Phantom / Solflare in mainnet (or devnet if configured)         |
+| RPC Env Vars      | `NEXT_PUBLIC_RPC_URL` (client) matches server `RPC_URL` when overridden         |
 | DBC Variables     | `DBC_PROGRAM_ID` and real `DBC_CLAIM_FEE_DISCRIMINATOR` set (avoid placeholder) |
-| Studio Runtimes   | DBC (and optionally DAMM v2) runtime build present so decoding + builders work |
+| Studio Runtimes   | DBC (and optionally DAMM v2) runtime build present so decoding + builders work  |
 
 ## 2. Discovery Layer
 
@@ -45,19 +45,20 @@ production‑ready.
 
 Prototype auto batch (claim‑fee only) validation. Enable toggle on `/exit` page.
 
-| Scenario                | Steps / Action                                             | Expected                                                                                     |
-| ----------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Toggle Persistence      | Enable → reload page                                       | Toggle remains enabled (localStorage)                                                        |
-| Initial Run             | Click "Run Auto Batch Exit" with N positions               | Table appears with N rows status=pending                                                     |
-| Sequential Progression  | Observe statuses                                           | Row i moves pending→signed→sent→confirmed before i+1 begins                                  |
-| Explorer Links          | After confirmation                                         | Signature link opens Solana Explorer                                                         |
-| Error Handling          | Force one tx fail (e.g., bad discriminator)                | Failed row shows status=error + truncated error message                                      |
-| Abort Mid-Stream        | Click Abort Batch during row k sending/confirming          | Processing stops after current attempt; remaining rows stay pending                          |
-| Completion Timing       | After final row confirmed                                  | Footer shows total seconds (approx wall time)                                                |
-| Multiple Runs           | Run again after completion                                | Previous table persists; new run appends or replaces (current impl replaces state)           |
+| Scenario               | Steps / Action                                    | Expected                                                                           |
+| ---------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Toggle Persistence     | Enable → reload page                              | Toggle remains enabled (localStorage)                                              |
+| Initial Run            | Click "Run Auto Batch Exit" with N positions      | Table appears with N rows status=pending                                           |
+| Sequential Progression | Observe statuses                                  | Row i moves pending→signed→sent→confirmed before i+1 begins                        |
+| Explorer Links         | After confirmation                                | Signature link opens Solana Explorer                                               |
+| Error Handling         | Force one tx fail (e.g., bad discriminator)       | Failed row shows status=error + truncated error message                            |
+| Abort Mid-Stream       | Click Abort Batch during row k sending/confirming | Processing stops after current attempt; remaining rows stay pending                |
+| Completion Timing      | After final row confirmed                         | Footer shows total seconds (approx wall time)                                      |
+| Multiple Runs          | Run again after completion                        | Previous table persists; new run appends or replaces (current impl replaces state) |
 
-Limitation: Currently mode column = `claim` only (full liquidity withdrawal legs will be integrated once
-official instruction + discriminator confirmed – placeholder discriminator will not succeed on-chain).
+Limitation: Currently mode column = `claim` only (full liquidity withdrawal legs will be integrated
+once official instruction + discriminator confirmed – placeholder discriminator will not succeed
+on-chain).
 
 ## 6. Preference Persistence
 
@@ -136,59 +137,61 @@ This section complements earlier checks by validating the new combined multi‑p
 
 ### 12.1 Planning Phase
 
-| Scenario | Steps | Expected |
-| -------- | ----- | -------- |
+| Scenario        | Steps                                                | Expected                                                        |
+| --------------- | ---------------------------------------------------- | --------------------------------------------------------------- |
 | Mixed Positions | Wallet holds at least one DBC & one DAMM v2 position | Planner produces >=2 tasks (protocol set contains dbc & dammv2) |
-| DBC Only | Remove DAMM v2 position(s) | Only dbc tasks created |
-| DAMM v2 Only | Remove DBC positions | Only dammv2 tasks created |
-| None | Empty wallet | Planner returns 0 tasks; no execution started |
+| DBC Only        | Remove DAMM v2 position(s)                           | Only dbc tasks created                                          |
+| DAMM v2 Only    | Remove DBC positions                                 | Only dammv2 tasks created                                       |
+| None            | Empty wallet                                         | Planner returns 0 tasks; no execution started                   |
 
 ### 12.2 Execution Sequencing
 
-| Stage | Observation |
-| ----- | ----------- |
-| After Plan | Items list populated with status=pending |
-| Signing | First item status→signed before any second item mutation |
-| Send | signed→sent with transient absence of signature link until confirm |
-| Confirm | sent→confirmed; signature link (explorer) works |
-| Progression | Index increments strictly (no interleaving) |
+| Stage       | Observation                                                        |
+| ----------- | ------------------------------------------------------------------ |
+| After Plan  | Items list populated with status=pending                           |
+| Signing     | First item status→signed before any second item mutation           |
+| Send        | signed→sent with transient absence of signature link until confirm |
+| Confirm     | sent→confirmed; signature link (explorer) works                    |
+| Progression | Index increments strictly (no interleaving)                        |
 
 ### 12.3 Error Isolation
 
-Induce failure (e.g., tamper with one tx base64 in dev tools before signing): row transitions to error while subsequent rows continue to process.
+Induce failure (e.g., tamper with one tx base64 in dev tools before signing): row transitions to
+error while subsequent rows continue to process.
 
-| Test | Steps | Expected |
-| ---- | ----- | -------- |
-| Single Failure | Modify one serialized tx to corrupt bytes | That row = error; others unaffected |
-| Abort Midway | Click Abort after N confirmations | Remaining rows keep status=pending (not processed) |
+| Test           | Steps                                     | Expected                                           |
+| -------------- | ----------------------------------------- | -------------------------------------------------- |
+| Single Failure | Modify one serialized tx to corrupt bytes | That row = error; others unaffected                |
+| Abort Midway   | Click Abort after N confirmations         | Remaining rows keep status=pending (not processed) |
 
 ### 12.4 DAMM v2 Withdraw Specific
 
-| Scenario | Expected |
-| -------- | -------- |
-| Full Removal | Position after confirm shows 0 liquidity (RPC refresh) |
-| Explorer CU | Transaction CU usage within reasonable bounds (no runaway) |
+| Scenario     | Expected                                                   |
+| ------------ | ---------------------------------------------------------- |
+| Full Removal | Position after confirm shows 0 liquidity (RPC refresh)     |
+| Explorer CU  | Transaction CU usage within reasonable bounds (no runaway) |
 
 ### 12.5 DBC Claim Coexistence
 
-| Scenario | Expected |
-| -------- | -------- |
-| Mixed Batch | Both claim & withdraw signatures present in chronological order |
-| Placeholder Discriminator (dev) | Claim tx may fail; withdraw continues |
+| Scenario                        | Expected                                                        |
+| ------------------------------- | --------------------------------------------------------------- |
+| Mixed Batch                     | Both claim & withdraw signatures present in chronological order |
+| Placeholder Discriminator (dev) | Claim tx may fail; withdraw continues                           |
 
 ### 12.6 Post-Run Summary (Manual)
 
-Record: total tasks, successes, failures, abort flag, wall time (end-start). Future enhancement: automatic persisted JSON summary.
+Record: total tasks, successes, failures, abort flag, wall time (end-start). Future enhancement:
+automatic persisted JSON summary.
 
 ### 12.7 Safety Checks
 
-| Check | Expectation |
-| ----- | ----------- |
-| Program IDs | All DBC transactions use configured `DBC_PROGRAM_ID` | 
-| Priority Clamp | microLamports never exceed 3,000,000 |
-| Serialization | No task with invalid base64 (planner would have thrown) |
+| Check          | Expectation                                             |
+| -------------- | ------------------------------------------------------- |
+| Program IDs    | All DBC transactions use configured `DBC_PROGRAM_ID`    |
+| Priority Clamp | microLamports never exceed 3,000,000                    |
+| Serialization  | No task with invalid base64 (planner would have thrown) |
 
 ### 12.8 Regression Guard Ideas
 
-Automated integration test (future): mock fetch endpoints returning deterministic tx; assert sequential status transitions.
-
+Automated integration test (future): mock fetch endpoints returning deterministic tx; assert
+sequential status transitions.

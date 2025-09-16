@@ -11,7 +11,5 @@
       "maxDuration": 30
     }
   },
-  "env": {
-
-  }
+  "env": {}
 }

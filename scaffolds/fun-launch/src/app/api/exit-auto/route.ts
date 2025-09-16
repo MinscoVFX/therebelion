@@ -1,5 +1,11 @@
 import { NextResponse } from 'next/server';
-import { Connection, VersionedTransaction, TransactionMessage, SystemProgram, PublicKey } from '@solana/web3.js';
+import {
+  Connection,
+  VersionedTransaction,
+  TransactionMessage,
+  SystemProgram,
+  PublicKey,
+} from '@solana/web3.js';
 import { resolveRpc } from '../../../lib/rpc';
 
 // Auto-exit placeholder: build a trivial versioned tx so UI flow works.
@@ -9,21 +15,23 @@ export async function POST(req: Request) {
     const { ownerPubkey, priorityMicros } = body;
     if (!ownerPubkey) return NextResponse.json({ error: 'ownerPubkey required' }, { status: 400 });
 
-  const connection = new Connection(resolveRpc(), 'confirmed');
+    const connection = new Connection(resolveRpc(), 'confirmed');
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
 
     const payer = new PublicKey(ownerPubkey);
     const msg = new TransactionMessage({
       payerKey: payer,
       recentBlockhash: blockhash,
-      instructions: [
-        SystemProgram.transfer({ fromPubkey: payer, toPubkey: payer, lamports: 0 }),
-      ],
+      instructions: [SystemProgram.transfer({ fromPubkey: payer, toPubkey: payer, lamports: 0 })],
     }).compileToV0Message();
     const vtx = new VersionedTransaction(msg);
     const b64 = Buffer.from(vtx.serialize()).toString('base64');
 
-    return NextResponse.json({ tx: b64, lastValidBlockHeight, priorityMicrosUsed: priorityMicros || null });
+    return NextResponse.json({
+      tx: b64,
+      lastValidBlockHeight,
+      priorityMicrosUsed: priorityMicros || null,
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'internal error' }, { status: 500 });
   }

@@ -142,9 +142,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(rpcPayload),
     });
-    const json = (await resp
-      .json()
-      .catch(() => null)) as { error?: string; result?: string } | null;
+    const json = (await resp.json().catch(() => null)) as {
+      error?: string;
+      result?: string;
+    } | null;
 
     if (!resp.ok || !json || json.error) {
       return bad(res, 502, 'sendBundle failed', { providerResponse: json || (await resp.text()) });

@@ -16,35 +16,49 @@ describe('DBC program allow list', () => {
   });
 
   it('throws when program not in allow list', async () => {
-  process.env.ALLOWED_DBC_PROGRAM_IDS = 'SomeOtherProgram1111111111111111111111111111111';
-  process.env.DBC_CLAIM_FEE_DISCRIMINATOR = '0102030405060708';
-  process.env.DBC_WITHDRAW_DISCRIMINATOR = '1112131415161718';
-    await expect(import('../scaffolds/fun-launch/src/server/dbc-exit-builder'))
-      .resolves.toBeTruthy();
-    const { buildDbcExitTransaction } = await import('../scaffolds/fun-launch/src/server/dbc-exit-builder');
+    process.env.ALLOWED_DBC_PROGRAM_IDS = 'SomeOtherProgram1111111111111111111111111111111';
+    process.env.DBC_CLAIM_FEE_DISCRIMINATOR = '0102030405060708';
+    process.env.DBC_WITHDRAW_DISCRIMINATOR = '1112131415161718';
+    await expect(
+      import('../scaffolds/fun-launch/src/server/dbc-exit-builder')
+    ).resolves.toBeTruthy();
+    const { buildDbcExitTransaction } = await import(
+      '../scaffolds/fun-launch/src/server/dbc-exit-builder'
+    );
     await expect(async () => {
       await buildDbcExitTransaction({} as any, {
         owner: '11111111111111111111111111111111',
-        dbcPoolKeys: { pool: '11111111111111111111111111111111', feeVault: '11111111111111111111111111111111' },
+        dbcPoolKeys: {
+          pool: '11111111111111111111111111111111',
+          feeVault: '11111111111111111111111111111111',
+        },
       });
     }).rejects.toThrow(/not in ALLOWED_DBC_PROGRAM_IDS/);
   });
 
   it('allows when program present in allow list', async () => {
     // Use default program id from builder
-  process.env.ALLOWED_DBC_PROGRAM_IDS = 'dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN';
-  process.env.DBC_CLAIM_FEE_DISCRIMINATOR = '0102030405060708';
-  process.env.DBC_WITHDRAW_DISCRIMINATOR = '1112131415161718';
-    const { buildDbcExitTransaction } = await import('../scaffolds/fun-launch/src/server/dbc-exit-builder');
+    process.env.ALLOWED_DBC_PROGRAM_IDS = 'dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN';
+    process.env.DBC_CLAIM_FEE_DISCRIMINATOR = '0102030405060708';
+    process.env.DBC_WITHDRAW_DISCRIMINATOR = '1112131415161718';
+    const { buildDbcExitTransaction } = await import(
+      '../scaffolds/fun-launch/src/server/dbc-exit-builder'
+    );
     // Minimal mock connection implementing just the methods we need.
     const mockConnection = {
       getAccountInfo: async () => ({ data: Buffer.alloc(165, 1) }), // sufficient length to mimic SPL token account
-      getLatestBlockhash: async () => ({ blockhash: '1111111111111111111111111111111111111111111111', lastValidBlockHeight: 123 }),
+      getLatestBlockhash: async () => ({
+        blockhash: '1111111111111111111111111111111111111111111111',
+        lastValidBlockHeight: 123,
+      }),
       simulateTransaction: async () => ({ value: { logs: [], unitsConsumed: 0, err: null } }),
     } as any;
     const result = await buildDbcExitTransaction(mockConnection, {
       owner: '11111111111111111111111111111111',
-      dbcPoolKeys: { pool: '11111111111111111111111111111111', feeVault: '11111111111111111111111111111111' },
+      dbcPoolKeys: {
+        pool: '11111111111111111111111111111111',
+        feeVault: '11111111111111111111111111111111',
+      },
       simulateOnly: true,
     });
     expect(result.simulation).toBeDefined(); // ensure we actually executed path, not blocked by allow list

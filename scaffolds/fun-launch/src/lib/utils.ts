@@ -27,8 +27,8 @@ export const getBaseUrl = () => {
       url = `https://jup.ag`;
     }
 
-      if (typeof window === 'undefined' || !window.location) return url;
-      return window.location.origin;
+    if (typeof window === 'undefined' || !window.location) return url;
+    return window.location.origin;
   }
 };
 

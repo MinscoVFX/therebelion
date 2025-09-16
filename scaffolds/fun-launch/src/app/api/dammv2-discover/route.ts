@@ -19,29 +19,39 @@ export async function POST(req: NextRequest) {
 
     const cp = new CpAmm(connection);
     // Prefer canonical helper; fall back if sdk shape changes.
-    const helper: any = (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
+    const helper: any =
+      (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
     if (!helper) return NextResponse.json({ positions: [] });
 
     let rawPositions: any[] = [];
     try {
       rawPositions = await helper({ owner });
     } catch (e) {
-      return NextResponse.json({ positions: [], warning: 'position scan failed', detail: (e as any)?.message });
+      return NextResponse.json({
+        positions: [],
+        warning: 'position scan failed',
+        detail: (e as any)?.message,
+      });
     }
 
-    const positions = rawPositions.map(p => {
-      const acct = p.account || {}; // sdk dependent shape
-      return {
-        position: (p.publicKey || acct.publicKey)?.toBase58?.() || null,
-        pool: acct.pool?.toBase58?.() || null,
-        lpMint: acct.lpMint?.toBase58?.() || acct.lp_token_mint?.toBase58?.() || null,
-        liquidity: acct.liquidity?.toString?.() || null,
-      };
-    }).filter(p => p.position && p.pool);
+    const positions = rawPositions
+      .map((p) => {
+        const acct = p.account || {}; // sdk dependent shape
+        return {
+          position: (p.publicKey || acct.publicKey)?.toBase58?.() || null,
+          pool: acct.pool?.toBase58?.() || null,
+          lpMint: acct.lpMint?.toBase58?.() || acct.lp_token_mint?.toBase58?.() || null,
+          liquidity: acct.liquidity?.toString?.() || null,
+        };
+      })
+      .filter((p) => p.position && p.pool);
 
     return NextResponse.json({ positions });
   } catch (error) {
     console.error('[dammv2-discover] error', error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'internal error' }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'internal error' },
+      { status: 500 }
+    );
   }
 }

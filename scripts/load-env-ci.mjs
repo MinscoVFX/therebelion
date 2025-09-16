@@ -28,7 +28,7 @@ for (const line of content.split(/\r?\n/)) {
   }
 }
 
-const [,, cmd, ...args] = process.argv;
+const [, , cmd, ...args] = process.argv;
 if (!cmd) {
   console.error('[env-loader] No command provided to execute after loading env.');
   process.exit(1);

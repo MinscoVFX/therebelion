@@ -29,4 +29,6 @@ if (diff > 1) {
   console.error(`Coverage badge drift detected: badge=${badgePct}% actual=${linesPct}% (>1%)`);
   process.exit(1);
 }
-console.log(`Coverage badge within tolerance: badge=${badgePct}% actual=${linesPct}% (diff=${diff}%)`);
+console.log(
+  `Coverage badge within tolerance: badge=${badgePct}% actual=${linesPct}% (diff=${diff}%)`
+);

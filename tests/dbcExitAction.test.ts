@@ -10,7 +10,9 @@ beforeAll(() => {
 let buildDbcExitTransaction: any;
 beforeAll(async () => {
   // Dynamic import after env set
-  ({ buildDbcExitTransaction } = await import('../scaffolds/fun-launch/src/server/dbc-exit-builder'));
+  ({ buildDbcExitTransaction } = await import(
+    '../scaffolds/fun-launch/src/server/dbc-exit-builder'
+  ));
 });
 import { Connection, Keypair } from '@solana/web3.js';
 
@@ -21,10 +23,19 @@ class MockConnection extends Connection {
     // Return minimal SPL token account-like buffer (at least 64 bytes) with dummy mint/owner.
     const data = Buffer.alloc(165); // standard token account size
     // leave zeros; builder slices mint(0..32) and owner(32..64)
-    return { data, executable: false, lamports: 1, owner: Keypair.generate().publicKey, rentEpoch: 0 } as any;
+    return {
+      data,
+      executable: false,
+      lamports: 1,
+      owner: Keypair.generate().publicKey,
+      rentEpoch: 0,
+    } as any;
   }
 }
-const connection = new MockConnection(process.env.RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
+const connection = new MockConnection(
+  process.env.RPC_URL || 'https://api.mainnet-beta.solana.com',
+  'confirmed'
+);
 
 // NOTE: This test only validates builder branching logic & immediate errors; it doesn't sign or send.
 

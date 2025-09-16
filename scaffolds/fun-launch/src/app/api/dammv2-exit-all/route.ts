@@ -31,17 +31,22 @@ export async function POST(req: NextRequest) {
 
     const connection = new Connection(resolveRpc(), 'confirmed');
 
-  // Dynamic import so monkey-patched CpAmm in tests is respected
-  const { CpAmm } = await import('@meteora-ag/cp-amm-sdk');
-  const cp = new CpAmm(connection);
-    const helper: any = (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
-    if (!helper) return NextResponse.json({ error: 'sdk position helper missing' }, { status: 500 });
+    // Dynamic import so monkey-patched CpAmm in tests is respected
+    const { CpAmm } = await import('@meteora-ag/cp-amm-sdk');
+    const cp = new CpAmm(connection);
+    const helper: any =
+      (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
+    if (!helper)
+      return NextResponse.json({ error: 'sdk position helper missing' }, { status: 500 });
 
     let rawPositions: any[] = [];
     try {
       rawPositions = await helper({ owner });
     } catch (e) {
-      return NextResponse.json({ error: 'position scan failed', detail: (e as any)?.message }, { status: 500 });
+      return NextResponse.json(
+        { error: 'position scan failed', detail: (e as any)?.message },
+        { status: 500 }
+      );
     }
 
     // Normalize
@@ -78,7 +83,7 @@ export async function POST(req: NextRequest) {
 
     const priorityMicros = Math.max(0, Math.min(body.priorityMicros ?? 250_000, 3_000_000));
 
-  const results: { position: string; pool: string; status: string; reason?: string }[] = [];
+    const results: { position: string; pool: string; status: string; reason?: string }[] = [];
     const txs: string[] = [];
     const simulations: any[] = [];
 
@@ -90,22 +95,44 @@ export async function POST(req: NextRequest) {
       const poolBase58 = entry.pool!.toBase58();
 
       // Pre-classify skip reasons before any heavy builder logic so tests can reliably assert.
-      const acctOwner = (entry.raw.account?.owner || entry.raw.account?.authority || entry.raw.account?.positionOwner);
-      const ownerMismatch = acctOwner && acctOwner.toBase58 && acctOwner.toBase58() !== owner.toBase58();
+      const acctOwner =
+        entry.raw.account?.owner ||
+        entry.raw.account?.authority ||
+        entry.raw.account?.positionOwner;
+      const ownerMismatch =
+        acctOwner && acctOwner.toBase58 && acctOwner.toBase58() !== owner.toBase58();
       const vestingsArr = entry.raw.account?.vestings || entry.raw.account?.lockedVestings;
       const hasLocked = Array.isArray(vestingsArr) && vestingsArr.length > 0;
       if (hasLocked) {
-        results.push({ position: positionBase58, pool: poolBase58, status: 'skipped', reason: 'locked-vesting' });
+        results.push({
+          position: positionBase58,
+          pool: poolBase58,
+          status: 'skipped',
+          reason: 'locked-vesting',
+        });
         // still continue to next position
         continue;
       }
       if (ownerMismatch) {
-        results.push({ position: positionBase58, pool: poolBase58, status: 'skipped', reason: 'owner-mismatch' });
+        results.push({
+          position: positionBase58,
+          pool: poolBase58,
+          status: 'skipped',
+          reason: 'owner-mismatch',
+        });
         continue;
       }
 
-      if (!entry.liquidity || (entry.liquidity.cmp && entry.liquidity.cmp(new (entry.liquidity.constructor)(0)) === 0)) {
-        results.push({ position: positionBase58, pool: poolBase58, status: 'skipped', reason: 'zero-liquidity' });
+      if (
+        !entry.liquidity ||
+        (entry.liquidity.cmp && entry.liquidity.cmp(new entry.liquidity.constructor(0)) === 0)
+      ) {
+        results.push({
+          position: positionBase58,
+          pool: poolBase58,
+          status: 'skipped',
+          reason: 'zero-liquidity',
+        });
         continue;
       }
 
@@ -120,8 +147,14 @@ export async function POST(req: NextRequest) {
             positionNftAccount: entry.raw.account?.positionNftAccount || entry.positionPk,
             tokenAMint: entry.raw.account?.tokenAMint || entry.raw.account?.tokenA,
             tokenBMint: entry.raw.account?.tokenBMint || entry.raw.account?.tokenB,
-            tokenAVault: entry.raw.account?.tokenAVault || entry.raw.account?.tokenAReserve || entry.raw.account?.vaultA,
-            tokenBVault: entry.raw.account?.tokenBVault || entry.raw.account?.tokenBReserve || entry.raw.account?.vaultB,
+            tokenAVault:
+              entry.raw.account?.tokenAVault ||
+              entry.raw.account?.tokenAReserve ||
+              entry.raw.account?.vaultA,
+            tokenBVault:
+              entry.raw.account?.tokenBVault ||
+              entry.raw.account?.tokenBReserve ||
+              entry.raw.account?.vaultB,
             tokenAProgram: entry.raw.account?.tokenAProgram,
             tokenBProgram: entry.raw.account?.tokenBProgram,
             vestings: [],
@@ -140,15 +173,26 @@ export async function POST(req: NextRequest) {
             tokenBAmountThreshold: 0,
             tokenAMint: entry.raw.account?.tokenAMint || entry.raw.account?.tokenA,
             tokenBMint: entry.raw.account?.tokenBMint || entry.raw.account?.tokenB,
-            tokenAVault: entry.raw.account?.tokenAVault || entry.raw.account?.tokenAReserve || entry.raw.account?.vaultA,
-            tokenBVault: entry.raw.account?.tokenBVault || entry.raw.account?.tokenBReserve || entry.raw.account?.vaultB,
+            tokenAVault:
+              entry.raw.account?.tokenAVault ||
+              entry.raw.account?.tokenAReserve ||
+              entry.raw.account?.vaultA,
+            tokenBVault:
+              entry.raw.account?.tokenBVault ||
+              entry.raw.account?.tokenBReserve ||
+              entry.raw.account?.vaultB,
             tokenAProgram: entry.raw.account?.tokenAProgram,
             tokenBProgram: entry.raw.account?.tokenBProgram,
             vestings: [],
             currentPoint: entry.raw.account?.currentPoint || 0,
           });
         } else {
-          results.push({ position: positionBase58, pool: poolBase58, status: 'skipped', reason: 'no-builder' });
+          results.push({
+            position: positionBase58,
+            pool: poolBase58,
+            status: 'skipped',
+            reason: 'no-builder',
+          });
           continue;
         }
       } catch (e: any) {
@@ -167,7 +211,7 @@ export async function POST(req: NextRequest) {
         if (Array.isArray(builder.ixs)) ixs = builder.ixs;
         else if (builder.build) {
           const built = await builder.build();
-            // built can be array or object
+          // built can be array or object
           if (Array.isArray(built)) ixs = built;
           else if (built?.instructions) ixs = built.instructions;
         } else if (builder.tx?.instructions) {
@@ -184,7 +228,12 @@ export async function POST(req: NextRequest) {
       }
 
       if (!ixs.length) {
-        results.push({ position: positionBase58, pool: poolBase58, status: 'skipped', reason: 'empty-instructions' });
+        results.push({
+          position: positionBase58,
+          pool: poolBase58,
+          status: 'skipped',
+          reason: 'empty-instructions',
+        });
         continue;
       }
 
@@ -201,15 +250,23 @@ export async function POST(req: NextRequest) {
       const tx = new VersionedTransaction(msg);
 
       if (body.simulateOnly) {
-        const sim = await connection.simulateTransaction(tx, { commitment: 'confirmed', sigVerify: false });
+        const sim = await connection.simulateTransaction(tx, {
+          commitment: 'confirmed',
+          sigVerify: false,
+        });
         simulations.push({
           position: positionBase58,
-            logs: sim.value.logs,
-            units: sim.value.unitsConsumed,
-            err: sim.value.err || null,
+          logs: sim.value.logs,
+          units: sim.value.unitsConsumed,
+          err: sim.value.err || null,
         });
         if (sim.value.err) {
-          results.push({ position: positionBase58, pool: poolBase58, status: 'skipped', reason: 'simulation-error' });
+          results.push({
+            position: positionBase58,
+            pool: poolBase58,
+            status: 'skipped',
+            reason: 'simulation-error',
+          });
           continue;
         }
       }
@@ -231,6 +288,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ positions: results, txs, lastValidBlockHeight });
   } catch (error) {
     console.error('[dammv2-exit-all] error', error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'internal error' }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'internal error' },
+      { status: 500 }
+    );
   }
 }

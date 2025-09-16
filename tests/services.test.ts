@@ -11,8 +11,12 @@ describe('services: connection + meteora', () => {
   });
 
   it('connectionService falls back to default RPC when resolveRpc throws', async () => {
-    vi.mock('@/lib/rpc', () => ({ resolveRpc: () => { throw new Error('missing env'); } }));
-  const { connectionService } = await import('../src/services/connection');
+    vi.mock('@/lib/rpc', () => ({
+      resolveRpc: () => {
+        throw new Error('missing env');
+      },
+    }));
+    const { connectionService } = await import('../src/services/connection');
     const conn = connectionService.getConnection();
     expect(typeof conn.rpcEndpoint).toBe('string');
   });
@@ -22,12 +26,16 @@ describe('services: connection + meteora', () => {
     vi.mock('@solana/web3.js', async (orig) => {
       const base: any = await orig();
       class FakeConnection extends base.Connection {
-        constructor() { super('http://localhost:1234'); }
-        getSlot(): Promise<number> { return fake.getSlot(); }
+        constructor() {
+          super('http://localhost:1234');
+        }
+        getSlot(): Promise<number> {
+          return fake.getSlot();
+        }
       }
       return { ...base, Connection: FakeConnection };
     });
-  const { connectionService } = await import('../src/services/connection');
+    const { connectionService } = await import('../src/services/connection');
     const ok = await connectionService.getHealth();
     expect(ok).toBe(false);
   });
@@ -35,7 +43,7 @@ describe('services: connection + meteora', () => {
   it('MeteoraService getPoolInfo returns mock object on existing account', async () => {
     const acctInfo = { data: new Uint8Array(100) };
     vi.spyOn(Connection.prototype, 'getAccountInfo').mockResolvedValue(acctInfo as any);
-  const { MeteoraService } = await import('../src/services/meteora');
+    const { MeteoraService } = await import('../src/services/meteora');
     const svc = new MeteoraService(new Connection('http://localhost:8899'));
     const pk = new PublicKey('11111111111111111111111111111111');
     const info = await svc.getPoolInfo(pk);
@@ -45,40 +53,42 @@ describe('services: connection + meteora', () => {
 
   it('MeteoraService getPoolInfo returns null on error', async () => {
     vi.spyOn(Connection.prototype, 'getAccountInfo').mockRejectedValue(new Error('fail'));
-  const { MeteoraService } = await import('../src/services/meteora');
+    const { MeteoraService } = await import('../src/services/meteora');
     const svc = new MeteoraService(new Connection('http://localhost:8899'));
     const info = await svc.getPoolInfo(new PublicKey('11111111111111111111111111111111'));
     expect(info).toBeNull();
   });
 
   it('MeteoraService getSwapQuote returns computed values', async () => {
-  const { MeteoraService } = await import('../src/services/meteora');
+    const { MeteoraService } = await import('../src/services/meteora');
     const svc = new MeteoraService(new Connection('http://localhost:8899'));
-  // Use two distinct valid base58 public keys (System Program and a made-up but valid 32-byte key)
-  const inMint = new PublicKey('11111111111111111111111111111111'); // system program (all ones) is valid
-  const outMint = new PublicKey('2n5R9Z3QmrxgVtKJp1pC5aYVY1xq4oX7kK9PpLx9d9qS');
+    // Use two distinct valid base58 public keys (System Program and a made-up but valid 32-byte key)
+    const inMint = new PublicKey('11111111111111111111111111111111'); // system program (all ones) is valid
+    const outMint = new PublicKey('2n5R9Z3QmrxgVtKJp1pC5aYVY1xq4oX7kK9PpLx9d9qS');
     const inputAmount = new BN(1000);
     const quote = await svc.getSwapQuote(inMint, outMint, inputAmount, 100); // 1% slippage
-  expect(quote).not.toBeNull();
-  if (!quote) throw new Error('quote should not be null');
-  expect(quote.outputAmount.toString()).toBe('950');
-  expect(quote.minimumReceived.toString()).toBe('941');
+    expect(quote).not.toBeNull();
+    if (!quote) throw new Error('quote should not be null');
+    expect(quote.outputAmount.toString()).toBe('950');
+    expect(quote.minimumReceived.toString()).toBe('941');
   });
 
   it('MeteoraService createSwapTransaction builds ATA and transfer', async () => {
     vi.spyOn(Connection.prototype, 'getAccountInfo').mockResolvedValue(null as any); // Force ATA creation path
-  const { MeteoraService } = await import('../src/services/meteora');
+    const { MeteoraService } = await import('../src/services/meteora');
     const svc = new MeteoraService(new Connection('http://localhost:8899'));
     const user = new PublicKey('11111111111111111111111111111111');
     const tx = await svc.createSwapTransaction(user, user, user);
-  expect(tx).toBeInstanceOf(Transaction);
-  if (!tx) throw new Error('tx should be defined');
-  expect(tx.instructions.length).toBeGreaterThanOrEqual(2); // create ATA + transfer
+    expect(tx).toBeInstanceOf(Transaction);
+    if (!tx) throw new Error('tx should be defined');
+    expect(tx.instructions.length).toBeGreaterThanOrEqual(2); // create ATA + transfer
   });
 
   it('MeteoraService executeSwap returns success flag from confirmation', async () => {
-    const confirm = vi.spyOn(Connection.prototype, 'confirmTransaction').mockResolvedValue({ value: { err: null } } as any);
-  const { MeteoraService } = await import('../src/services/meteora');
+    const confirm = vi
+      .spyOn(Connection.prototype, 'confirmTransaction')
+      .mockResolvedValue({ value: { err: null } } as any);
+    const { MeteoraService } = await import('../src/services/meteora');
     const svc = new MeteoraService(new Connection('http://localhost:8899'));
     const res = await svc.executeSwap(new Transaction(), 'abc');
     expect(confirm).toHaveBeenCalled();
@@ -87,7 +97,7 @@ describe('services: connection + meteora', () => {
 
   it('MeteoraService executeSwap handles error', async () => {
     vi.spyOn(Connection.prototype, 'confirmTransaction').mockRejectedValue(new Error('net fail'));
-  const { MeteoraService } = await import('../src/services/meteora');
+    const { MeteoraService } = await import('../src/services/meteora');
     const svc = new MeteoraService(new Connection('http://localhost:8899'));
     const res = await svc.executeSwap(new Transaction(), 'def');
     expect(res.success).toBe(false);

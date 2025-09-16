@@ -7,10 +7,14 @@ function withPatchedCpAmm(mockPositions: any[], fn: () => Promise<void>) {
   const original = real.CpAmm;
   real.CpAmm = class MockCp {
     connection: any;
-    constructor(c: any) { this.connection = c; }
+    constructor(c: any) {
+      this.connection = c;
+    }
     getAllPositionNftAccountByOwner = async () => mockPositions;
   } as any;
-  return fn().finally(() => { real.CpAmm = original; });
+  return fn().finally(() => {
+    real.CpAmm = original;
+  });
 }
 
 // We import the handler function directly and invoke it with a mock NextRequest-like object.
@@ -59,14 +63,27 @@ describe('dammv2-exit-all route', () => {
     // Fake PublicKey objects with toBase58
     const pk = (s: string) => ({ toBase58: () => s });
     const positions = [
-      { // locked vesting skip
+      {
+        // locked vesting skip
         publicKey: pk('pos1'),
-        account: { publicKey: pk('pos1'), pool: pk('pool1'), liquidity: { cmp: () => 1 }, vestings: [ { amount: 1 } ], owner: pk(owner) }
+        account: {
+          publicKey: pk('pos1'),
+          pool: pk('pool1'),
+          liquidity: { cmp: () => 1 },
+          vestings: [{ amount: 1 }],
+          owner: pk(owner),
+        },
       },
-      { // owner mismatch skip
+      {
+        // owner mismatch skip
         publicKey: pk('pos2'),
-        account: { publicKey: pk('pos2'), pool: pk('pool2'), liquidity: { cmp: () => 1 }, owner: pk(other) }
-      }
+        account: {
+          publicKey: pk('pos2'),
+          pool: pk('pool2'),
+          liquidity: { cmp: () => 1 },
+          owner: pk(other),
+        },
+      },
     ];
     await withPatchedCpAmm(positions as any, async () => {
       const req: any = { json: async () => ({ owner }) };

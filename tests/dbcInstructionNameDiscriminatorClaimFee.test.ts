@@ -7,7 +7,7 @@ describe('DBC instruction-name discriminator (claim_fee)', () => {
     process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME = 'claim_fee';
     const mod = await import('../scaffolds/fun-launch/src/server/dbc-exit-builder');
     if (mod.__resetDbcExitBuilderCacheForTests) mod.__resetDbcExitBuilderCacheForTests();
-  const hex = mod.__resolveClaimDiscForTests();
+    const hex = mod.__resolveClaimDiscForTests();
     const meta = mod.getClaimDiscriminatorMeta();
     expect(meta?.instructionName).toBe('claim_fee');
     expect(hex).toHaveLength(16);

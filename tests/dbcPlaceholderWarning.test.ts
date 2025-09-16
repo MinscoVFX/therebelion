@@ -9,7 +9,8 @@ describe('DBC placeholder removal (updated behavior)', () => {
     vi.resetModules();
     vi.spyOn(console, 'warn').mockImplementation((...args: any[]) => {
       // suppress known external binding warning noise so it doesn't fail expectations
-      if (typeof args[0] === 'string' && args[0].startsWith('bigint: Failed to load bindings')) return;
+      if (typeof args[0] === 'string' && args[0].startsWith('bigint: Failed to load bindings'))
+        return;
     });
   });
 

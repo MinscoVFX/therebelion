@@ -54,7 +54,11 @@ async function findVanityKeypair(suffix: string, maxSeconds = 30) {
 async function safeJson<T = any>(resp: Response, fallback: T | null = null): Promise<T | null> {
   const text = await resp.text().catch(() => '');
   if (!text) return fallback;
-  try { return JSON.parse(text) as T; } catch { return fallback; }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return fallback;
+  }
 }
 
 async function getJitoTipAccounts(): Promise<string[]> {
@@ -150,7 +154,10 @@ export default function CreatePool() {
           }),
         });
 
-        const uploadJson = await safeJson<{ poolTx?: string; pool?: string; error?: string }>(uploadResponse, null);
+        const uploadJson = await safeJson<{ poolTx?: string; pool?: string; error?: string }>(
+          uploadResponse,
+          null
+        );
         if (!uploadResponse.ok || !uploadJson?.poolTx) {
           throw new Error(uploadJson?.error || 'Upload/build failed');
         }
@@ -166,10 +173,12 @@ export default function CreatePool() {
 
         if (mintIsSignerIndex !== -1) {
           // Use partialSign for non-wallet key first.
-            createTx.partialSign(keyPair);
+          createTx.partialSign(keyPair);
         } else {
           // Diagnostic only – mint may legitimately not be part of stub tx yet.
-          console.warn('[create-pool] Mint key not present as signer in returned tx; skipping mint partialSign');
+          console.warn(
+            '[create-pool] Mint key not present as signer in returned tx; skipping mint partialSign'
+          );
         }
 
         // Diagnostic: log which signers are expected and which have signatures BEFORE wallet signing.
@@ -232,7 +241,10 @@ export default function CreatePool() {
               blockhash: String(createTx.recentBlockhash || ''), // share blockhash
             }),
           });
-          const buildSwapJson = await safeJson<{ swapTx?: string; error?: string }>(buildSwapRes, null);
+          const buildSwapJson = await safeJson<{ swapTx?: string; error?: string }>(
+            buildSwapRes,
+            null
+          );
           if (!buildSwapRes.ok || !buildSwapJson?.swapTx) {
             throw new Error(buildSwapJson?.error || 'Failed to build swap');
           }
@@ -274,7 +286,10 @@ export default function CreatePool() {
               waitForLanded: true,
             }),
           });
-          const sendJson = await safeJson<{ success?: boolean; status?: string; error?: string }>(sendRes, null);
+          const sendJson = await safeJson<{ success?: boolean; status?: string; error?: string }>(
+            sendRes,
+            null
+          );
           if (!sendRes.ok || !sendJson?.success) {
             throw new Error(sendJson?.error || 'Bundle submission failed');
           }
@@ -286,7 +301,10 @@ export default function CreatePool() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ signedTransaction: signedCreateB64 }),
           });
-          const sendJson = await safeJson<{ success?: boolean; error?: string }>(sendResponse, null);
+          const sendJson = await safeJson<{ success?: boolean; error?: string }>(
+            sendResponse,
+            null
+          );
           if (!sendResponse.ok || !sendJson?.success) {
             throw new Error(sendJson?.error || 'Send failed');
           }

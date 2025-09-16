@@ -3,7 +3,7 @@ name: Prod Smoke
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [main]
 
 permissions:
   contents: read

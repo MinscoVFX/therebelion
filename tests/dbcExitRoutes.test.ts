@@ -9,8 +9,12 @@ async function invoke(handler: any, reqInit: Partial<any> = {}) {
   const res: any = {
     status: (code: number) => {
       statusCode = code;
-      return { json: (obj: any) => { jsonBody = obj; } };
-    }
+      return {
+        json: (obj: any) => {
+          jsonBody = obj;
+        },
+      };
+    },
   };
   const req: any = {
     method: reqInit.method || 'POST',
@@ -33,7 +37,9 @@ describe('exit API route suite', () => {
     const mod = await import('../pages/api/exit/build');
     const cuLimit = 777777;
     const microLamports = 12345;
-    const { statusCode, jsonBody } = await invoke(mod.default, { body: JSON.stringify({ cuLimit, microLamports }) });
+    const { statusCode, jsonBody } = await invoke(mod.default, {
+      body: JSON.stringify({ cuLimit, microLamports }),
+    });
     expect(statusCode).toBe(200);
     expect(jsonBody.ok).toBe(true);
     expect(jsonBody.cuLimit).toBe(cuLimit);

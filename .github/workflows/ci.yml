@@ -12,8 +12,8 @@ env:
   RPC_URL: https://api.mainnet-beta.solana.com
   NEXT_PUBLIC_RPC_URL: https://api.mainnet-beta.solana.com
   # Blank discriminators ensure code path exercises lazy resolution without failing build
-  DBC_CLAIM_FEE_DISCRIMINATOR: ""
-  DBC_WITHDRAW_DISCRIMINATOR: ""
+  DBC_CLAIM_FEE_DISCRIMINATOR: ''
+  DBC_WITHDRAW_DISCRIMINATOR: ''
   CI: true
 
 concurrency:

@@ -14,7 +14,7 @@ export default defineConfig({
         'scaffolds/fun-launch/src/server/**/*.ts',
         'scaffolds/fun-launch/src/hooks/**/*.ts',
         'scaffolds/fun-launch/src/app/api/**/*.ts',
-        'src/**/*.ts'
+        'src/**/*.ts',
       ],
       exclude: [
         'dist/**',
@@ -28,7 +28,7 @@ export default defineConfig({
         'scaffolds/fun-launch/src/pages/**',
         'scaffolds/fun-launch/.next/**',
         'studio/**',
-        'packages/**'
+        'packages/**',
       ],
       thresholds: {
         // Raised after adding API + service tests (current ~25% lines, >50% funcs/branches). Non-regression guard.

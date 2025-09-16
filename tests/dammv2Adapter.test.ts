@@ -1,13 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { PublicKey, ComputeBudgetProgram, TransactionInstruction } from '@solana/web3.js';
-import { buildDammV2RemoveAllLpIxs, DammV2PoolKeys } from '../scaffolds/fun-launch/src/server/dammv2-adapter';
+import {
+  buildDammV2RemoveAllLpIxs,
+  DammV2PoolKeys,
+} from '../scaffolds/fun-launch/src/server/dammv2-adapter';
 
 // Minimal mock Connection (only methods we call)
-interface TokenAccountBalanceLike { context: { slot: number }; value: { amount: string; decimals: number; uiAmount: number; uiAmountString: string }; }
+interface TokenAccountBalanceLike {
+  context: { slot: number };
+  value: { amount: string; decimals: number; uiAmount: number; uiAmountString: string };
+}
 class MockConnection {
   constructor(public rpcEndpoint: string = 'http://localhost') {}
   async getTokenAccountBalance(): Promise<TokenAccountBalanceLike> {
-    return { context: { slot: 0 }, value: { amount: '123456', decimals: 6, uiAmount: 0, uiAmountString: '0' } };
+    return {
+      context: { slot: 0 },
+      value: { amount: '123456', decimals: 6, uiAmount: 0, uiAmountString: '0' },
+    };
   }
 }
 
@@ -43,27 +52,46 @@ function makeRuntime(removeOk = true): Record<string, unknown> {
 describe('dammv2 adapter', () => {
   it('throws if builder missing', async () => {
     await expect(
-  buildDammV2RemoveAllLpIxs({ connection: new MockConnection() as unknown as import('@solana/web3.js').Connection, owner, poolKeys: makePool(), runtimeModule: makeRuntime(false) })
+      buildDammV2RemoveAllLpIxs({
+        connection: new MockConnection() as unknown as import('@solana/web3.js').Connection,
+        owner,
+        poolKeys: makePool(),
+        runtimeModule: makeRuntime(false),
+      })
     ).rejects.toThrow(/remove-liquidity function not found/);
   });
 
   it('throws if lp amount zero', async () => {
-  // Intentionally not reusing a connection instance across tests; each call constructs minimal mock
+    // Intentionally not reusing a connection instance across tests; each call constructs minimal mock
     // Monkey patch balance to zero
     class ZeroLpConnection extends MockConnection {
       async getTokenAccountBalance(): Promise<TokenAccountBalanceLike> {
-        return { context: { slot: 0 }, value: { amount: '0', decimals: 6, uiAmount: 0, uiAmountString: '0' } };
+        return {
+          context: { slot: 0 },
+          value: { amount: '0', decimals: 6, uiAmount: 0, uiAmountString: '0' },
+        };
       }
     }
     const zeroConn = new ZeroLpConnection() as unknown as import('@solana/web3.js').Connection;
     await expect(
-      buildDammV2RemoveAllLpIxs({ connection: zeroConn, owner, poolKeys: makePool(), runtimeModule: makeRuntime(true) })
+      buildDammV2RemoveAllLpIxs({
+        connection: zeroConn,
+        owner,
+        poolKeys: makePool(),
+        runtimeModule: makeRuntime(true),
+      })
     ).rejects.toThrow(/No LP tokens/);
   });
 
   it('returns expected instructions when lp present', async () => {
-  const conn = new MockConnection() as unknown as import('@solana/web3.js').Connection;
-    const ixs = await buildDammV2RemoveAllLpIxs({ connection: conn, owner, poolKeys: makePool(), runtimeModule: makeRuntime(true), priorityMicros: 500_000 });
+    const conn = new MockConnection() as unknown as import('@solana/web3.js').Connection;
+    const ixs = await buildDammV2RemoveAllLpIxs({
+      connection: conn,
+      owner,
+      poolKeys: makePool(),
+      runtimeModule: makeRuntime(true),
+      priorityMicros: 500_000,
+    });
     // Expect: compute budget + 2 ATA create + remove builder = >=4
     expect(ixs.length).toBeGreaterThanOrEqual(4);
     // First should be compute budget

@@ -7,7 +7,13 @@ class ConnectionService {
   private commitment: string = 'confirmed';
 
   constructor() {
-  const rpcUrl = (() => { try { return resolveRpc(); } catch { return RPC_ENDPOINTS[NETWORK]; } })();
+    const rpcUrl = (() => {
+      try {
+        return resolveRpc();
+      } catch {
+        return RPC_ENDPOINTS[NETWORK];
+      }
+    })();
     this.connection = new Connection(rpcUrl, {
       commitment: this.commitment as 'confirmed',
       confirmTransactionInitialTimeout: 60000,

@@ -16,15 +16,27 @@ export async function POST(req: Request) {
     if (!mintStr || !userWallet) {
       return NextResponse.json({ error: 'mint and userWallet required' }, { status: 400 });
     }
-  const connection = new Connection(resolveRpc(), 'confirmed');
+    const connection = new Connection(resolveRpc(), 'confirmed');
     const recent = await connection.getLatestBlockhash();
 
     // Dummy tx: system program transfer 0 lamports (no-op) just to have a valid container
-    const tx = new Transaction({ feePayer: new PublicKey(userWallet), blockhash: recent.blockhash, lastValidBlockHeight: recent.lastValidBlockHeight });
+    const tx = new Transaction({
+      feePayer: new PublicKey(userWallet),
+      blockhash: recent.blockhash,
+      lastValidBlockHeight: recent.lastValidBlockHeight,
+    });
     // Could add memo or compute budget instructions here
-    tx.add(SystemProgram.transfer({ fromPubkey: new PublicKey(userWallet), toPubkey: new PublicKey(userWallet), lamports: 0 }));
+    tx.add(
+      SystemProgram.transfer({
+        fromPubkey: new PublicKey(userWallet),
+        toPubkey: new PublicKey(userWallet),
+        lamports: 0,
+      })
+    );
 
-    const serialized = tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('base64');
+    const serialized = tx
+      .serialize({ requireAllSignatures: false, verifySignatures: false })
+      .toString('base64');
     return NextResponse.json({ poolTx: serialized, pool: mintStr });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'internal error' }, { status: 500 });
