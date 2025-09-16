@@ -12,6 +12,14 @@ interface ExitPreferences {
   slippageBps: number;
 }
 
+interface DebugPosition {
+  mint: string;
+  tokenAccount: string;
+  name?: string;
+  symbol?: string;
+  updateAuthority?: string;
+}
+
 function solscanUrl(sig: string, endpoint: string) {
   const lower = endpoint?.toLowerCase?.() ?? '';
   if (lower.includes('devnet')) return `https://solscan.io/tx/${sig}?cluster=devnet`;
@@ -29,6 +37,39 @@ export default function ExitPage() {
     computeUnitLimit: 400_000,
     slippageBps: 100, // 1% slippage tolerance like Meteora website
   });
+  
+  // Debug mode state
+  const [debugMode, setDebugMode] = useState(false);
+  const [debugPositions, setDebugPositions] = useState<DebugPosition[]>([]);
+  const [debugLoading, setDebugLoading] = useState(false);
+
+  // Check for debug mode on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const debug = params.get('debug') === '1';
+      setDebugMode(debug);
+    }
+  }, []);
+
+  // Fetch debug positions when debug mode is enabled and wallet connected
+  useEffect(() => {
+    if (debugMode && connected && publicKey && !debugLoading) {
+      setDebugLoading(true);
+      fetch(`/api/dbc-discover?wallet=${publicKey.toBase58()}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.positions) {
+            setDebugPositions(data.positions);
+          }
+        })
+        .catch(err => {
+          console.error('Debug fetch error:', err);
+          setDebugPositions([]);
+        })
+        .finally(() => setDebugLoading(false));
+    }
+  }, [debugMode, connected, publicKey, debugLoading]);
 
   // restore prefs
   useEffect(() => {
@@ -135,6 +176,39 @@ export default function ExitPage() {
         transaction that claims all trading fees and withdraws 100% of your liquidity - just like
         the Meteora website transaction you referenced.
       </p>
+
+      {debugMode && (
+        <div className="mb-6 bg-red-950/30 border border-red-600/40 rounded-lg p-4">
+          <h2 className="text-lg font-semibold mb-3 text-red-300">🐛 Debug Mode</h2>
+          <p className="text-xs text-red-200 mb-3">
+            Debug mode is enabled via ?debug=1. This section shows raw position discovery data.
+          </p>
+          {debugLoading ? (
+            <div className="text-red-200 text-sm">Loading positions...</div>
+          ) : (
+            <div>
+              <p className="text-sm text-red-200 mb-2">
+                Found {debugPositions.length} DBC-like position(s):
+              </p>
+              {debugPositions.length === 0 ? (
+                <div className="text-red-300 text-xs">No positions found</div>
+              ) : (
+                <div className="space-y-2">
+                  {debugPositions.map((pos, i) => (
+                    <div key={i} className="bg-red-900/20 border border-red-700/30 rounded p-3 text-xs">
+                      <div><strong>Mint:</strong> {pos.mint}</div>
+                      <div><strong>Token Account:</strong> {pos.tokenAccount}</div>
+                      {pos.name && <div><strong>Name:</strong> {pos.name}</div>}
+                      {pos.symbol && <div><strong>Symbol:</strong> {pos.symbol}</div>}
+                      {pos.updateAuthority && <div><strong>Update Authority:</strong> {pos.updateAuthority}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mt-8 bg-neutral-850 rounded-lg border border-neutral-700/60 p-6">
         <h2 className="text-lg font-semibold mb-4 text-neutral-50">Exit Parameters</h2>

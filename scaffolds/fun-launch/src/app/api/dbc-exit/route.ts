@@ -20,6 +20,12 @@ export async function POST(req: Request) {
       url.searchParams.get('simulateOnly') === '1' ||
       url.searchParams.get('simulateOnly') === 'true';
 
+    // NEW: positionMint support (ready for builder interface update)
+    // let positionMint: PublicKey | undefined
+    // if (typeof body.positionMint === 'string') {
+    //   try { positionMint = new PublicKey(body.positionMint) } catch {}
+    // }
+
     // Validate minimal fields; claim & combined require feeVault; withdraw only needs pool.
     if (
       !body.owner ||
@@ -56,6 +62,7 @@ export async function POST(req: Request) {
       slippageBps: body.slippageBps,
       computeUnitLimit: body.computeUnitLimit,
       simulateOnly,
+      // positionMint, // TODO: harmless if undefined - needs builder interface update
     });
 
     const base64 = Buffer.from(built.tx.serialize()).toString('base64');
