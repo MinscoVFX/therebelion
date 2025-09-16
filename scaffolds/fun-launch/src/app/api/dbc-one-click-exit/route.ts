@@ -3,10 +3,10 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { resolveRpc } from '../../../lib/rpc';
 import { buildDbcExitTransaction } from '../../../server/dbc-exit-builder';
-import { 
-  scanDbcPositionsUltraSafe, 
+import {
+  scanDbcPositionsUltraSafe,
   discoverMigratedDbcPoolsViaNfts,
-  discoverMigratedDbcPoolsViaMetadata 
+  discoverMigratedDbcPoolsViaMetadata,
 } from '../../../server/dbc-adapter';
 
 /**
@@ -32,11 +32,11 @@ export async function POST(req: Request) {
 
     // Auto-discover DBC positions using multiple methods
     console.log(`[DBC One-Click Exit] Discovering positions for: ${owner.toBase58()}`);
-    
+
     const [lpPositions, nftPositions, metadataPositions] = await Promise.all([
       scanDbcPositionsUltraSafe({ connection, wallet: owner }),
       discoverMigratedDbcPoolsViaNfts({ connection, wallet: owner }),
-      discoverMigratedDbcPoolsViaMetadata({ connection, wallet: owner })
+      discoverMigratedDbcPoolsViaMetadata({ connection, wallet: owner }),
     ]);
 
     console.log(`[DBC One-Click Exit] Discovery results:`);
@@ -46,20 +46,19 @@ export async function POST(req: Request) {
 
     // Use LP positions for building transactions (NFT positions need different handling)
     const positions = lpPositions || [];
-    const totalPositionsFound = positions.length + (nftPositions?.length || 0) + (metadataPositions?.length || 0);
+    const totalPositionsFound =
+      positions.length + (nftPositions?.length || 0) + (metadataPositions?.length || 0);
 
     if (positions.length === 0) {
       // Get token accounts for debugging
       const tokenAccounts = await connection.getParsedTokenAccountsByOwner(owner, {
         programId: TOKEN_PROGRAM_ID,
       });
-      
-      const nonZeroTokens = tokenAccounts.value.filter(
-        ({ account }) => {
-          const info: any = (account.data as any)?.parsed?.info;
-          return info?.tokenAmount?.amount !== '0';
-        }
-      );
+
+      const nonZeroTokens = tokenAccounts.value.filter(({ account }) => {
+        const info: any = (account.data as any)?.parsed?.info;
+        return info?.tokenAmount?.amount !== '0';
+      });
 
       return NextResponse.json(
         {
