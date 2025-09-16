@@ -1,3 +1,4 @@
+export const runtime = 'nodejs';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from 'next/server';
 import { Connection, PublicKey } from '@solana/web3.js';
@@ -63,7 +64,7 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const walletStr = searchParams.get('wallet') || '';
-    if (!walletStr) return NextResponse.json({ error: 'wallet missing' }, { status: 400 });
+  if (!walletStr) return NextResponse.json({ error: 'wallet missing' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
 
     const owner = new PublicKey(walletStr);
 
@@ -111,8 +112,8 @@ export async function GET(req: Request) {
       }
     }
 
-    return NextResponse.json({ wallet: walletStr, positions });
+  return NextResponse.json({ wallet: walletStr, positions }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+  return NextResponse.json({ error: String(e) }, { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
 }

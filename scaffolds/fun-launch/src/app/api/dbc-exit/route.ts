@@ -1,3 +1,4 @@
+export const runtime = 'nodejs';
 import { NextResponse } from 'next/server';
 import { Connection } from '@solana/web3.js';
 import { resolveRpc } from '@/lib/rpc';
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
           unitsConsumed: 0,
           txBase64: '',
           warning: 'simulateOnly stub returned due to missing required fields',
-        });
+        }, { headers: { 'Cache-Control': 'no-store' } });
       }
       return NextResponse.json(
         {
@@ -49,7 +50,7 @@ export async function POST(req: Request) {
             'Missing required fields: owner, dbcPoolKeys.pool' +
             (action === 'claim' || action === 'claim_and_withdraw' ? ', dbcPoolKeys.feeVault' : ''),
         },
-        { status: 400 }
+        { status: 400, headers: { 'Cache-Control': 'no-store' } }
       );
     }
 
@@ -160,18 +161,18 @@ export async function POST(req: Request) {
         error: built.simulation.error,
         txBase64: base64,
         ...common,
-      });
+      }, { headers: { 'Cache-Control': 'no-store' } });
     }
     return NextResponse.json({
       simulated: false,
       txBase64: base64,
       ...common,
-    });
+    }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     console.error('DBC exit API error:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Internal server error' },
-      { status: 500 }
+      { status: 500, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 }
@@ -185,7 +186,7 @@ export async function GET(req: Request) {
   if (action === 'withdraw') {
     return new Response(
       JSON.stringify({ error: 'withdraw is intentionally disabled (claim-only)' }),
-      { status: 501, headers: { 'content-type': 'application/json' } }
+      { status: 501, headers: { 'content-type': 'application/json', 'Cache-Control': 'no-store' } }
     );
   }
   // Delegate GET to POST to reuse logic
