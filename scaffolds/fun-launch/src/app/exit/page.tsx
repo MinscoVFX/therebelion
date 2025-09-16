@@ -80,8 +80,8 @@ export default function ExitPage() {
       <div className="max-w-2xl mx-auto p-8 text-center min-h-screen flex flex-col items-center justify-center bg-neutral-900 text-neutral-100">
         <h1 className="text-3xl font-bold mb-6">Claim Fees Only</h1>
         <p className="text-neutral-400 mb-8">
-          Withdraws are disabled. Connect your wallet to claim protocol / fee rewards where
-          supported.
+          Withdraws are temporarily disabled. Connect your wallet to claim protocol / fee rewards
+          where supported.
         </p>
         <button
           onClick={() => setShowModal(true)}

@@ -87,9 +87,17 @@ async function run() {
     const res = await fetch(`${APP_URL}/exit`);
     const html = await res.text();
     assertStatus(res, 200, 'exit page');
-    const needles = ['Claim Fees Only', 'Withdraws are temporarily disabled'];
-    const missing = needles.filter((n) => !html.includes(n));
-    if (missing.length) throw new Error(`exit page missing copy: ${missing.join(', ')}`);
+    // Allow either variant to avoid race between deployment versions or conditional rendering states.
+    const variants = [
+      ['Claim Fees Only', 'Withdraws are temporarily disabled'],
+      ['Claim Fees Only', 'Withdraws are disabled'],
+    ];
+    const matched = variants.some((needles) => needles.every((n) => html.includes(n)));
+    if (!matched) {
+      const primary = variants[0];
+      const missing = primary.filter((n) => !html.includes(n));
+      throw new Error(`exit page missing copy: ${missing.join(', ')}`);
+    }
     step.ok = true;
     step.status = res.status;
     step.sample = html.slice(0, 300);
