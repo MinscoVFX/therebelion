@@ -31,6 +31,28 @@ class MockConnection extends Connection {
       rentEpoch: 0,
     } as any;
   }
+
+  override async getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
+    return {
+      blockhash: Keypair.generate().publicKey.toBase58(),
+      lastValidBlockHeight: 123,
+    };
+  }
+
+  override async simulateTransaction(
+    _tx?: unknown,
+    _config?: unknown
+  ): Promise<{
+    value: { logs: string[]; unitsConsumed: number; err: null };
+  }> {
+    return {
+      value: {
+        logs: ['mock simulate'],
+        unitsConsumed: 5000,
+        err: null,
+      },
+    };
+  }
 }
 const connection = new MockConnection(
   process.env.RPC_URL || 'https://api.mainnet-beta.solana.com',
