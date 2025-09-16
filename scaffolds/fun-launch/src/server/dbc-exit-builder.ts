@@ -317,7 +317,22 @@ export async function buildDbcExitTransaction(
     throw new Error(`Unsupported DBC exit action: ${action}`);
   }
 
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+  let blockhash: string;
+  let lastValidBlockHeight: number;
+  try {
+    const latest = await connection.getLatestBlockhash('confirmed');
+    blockhash = latest.blockhash;
+    lastValidBlockHeight = latest.lastValidBlockHeight;
+  } catch (error) {
+    if (!args.simulateOnly) throw error;
+    // When tests or local development environments run in offline mode we still want to
+    // produce a transaction object for simulation. Provide a deterministic blockhash placeholder
+    // so the message compiles and rely on the RPC `replaceRecentBlockhash` flag during simulation
+    // to substitute a real blockhash when available.
+    blockhash = '11111111111111111111111111111111';
+    lastValidBlockHeight = 0;
+  }
+
   const msg = new TransactionMessage({
     payerKey: ownerPk,
     recentBlockhash: blockhash,
@@ -326,19 +341,33 @@ export async function buildDbcExitTransaction(
   const tx = new VersionedTransaction(msg);
 
   if (args.simulateOnly) {
-    const sim = await connection.simulateTransaction(tx, {
-      commitment: 'confirmed',
-      sigVerify: false,
-    });
-    return {
-      tx,
-      lastValidBlockHeight,
-      simulation: {
-        logs: sim.value.logs || [],
-        unitsConsumed: sim.value.unitsConsumed || 0,
-        error: sim.value.err || undefined,
-      },
-    };
+    try {
+      const sim = await connection.simulateTransaction(tx, {
+        commitment: 'confirmed',
+        sigVerify: false,
+        replaceRecentBlockhash: true,
+      });
+      return {
+        tx,
+        lastValidBlockHeight,
+        simulation: {
+          logs: sim.value.logs || [],
+          unitsConsumed: sim.value.unitsConsumed || 0,
+          error: sim.value.err || undefined,
+        },
+      };
+    } catch (error) {
+      console.warn('[dbc-exit-builder] simulateTransaction failed, returning stub result', error);
+      return {
+        tx,
+        lastValidBlockHeight,
+        simulation: {
+          logs: [],
+          unitsConsumed: 0,
+          error,
+        },
+      };
+    }
   }
 
   return { tx, lastValidBlockHeight };
