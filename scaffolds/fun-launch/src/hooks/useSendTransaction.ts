@@ -62,7 +62,7 @@ export function useSendTransaction() {
       }
 
       const raw = signed.serialize();
-  const sig = await connection.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 3 });
+      const sig = await connection.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 3 });
       await connection.confirmTransaction({
         signature: sig,
         blockhash: vtx.message.recentBlockhash,

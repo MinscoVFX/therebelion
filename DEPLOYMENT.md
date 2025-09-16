@@ -65,25 +65,25 @@ Cons:
 
 Variables you likely need (configure in Vercel → Project → Settings → Environment Variables):
 
-| Variable                      | Required?                    | Scope        | Notes                                                                                                   |
-| ----------------------------- | ---------------------------- | ------------ | ------------------------------------------------------------------------------------------------------- |
-| `RPC_URL`                     | Yes                          | Server       | Primary Solana RPC endpoint (private strongly recommended).                                            |
-| `NEXT_PUBLIC_RPC_URL`         | One of (with RPC_URL)        | Client       | Public RPC if exposing to browser; omit if you proxy all requests server-side.                         |
-| `ALLOWED_DBC_PROGRAM_IDS`     | Recommended (prod)           | Both         | JSON array string including official program IDs (see code).                                           |
-| `ALLOWED_DAMM_V2_PROGRAM_IDS` | Recommended (prod)           | Both         | JSON array string including official DAMM v2 program IDs.                                              |
-| `DBC_CLAIM_FEE_INSTRUCTION_NAME` | Optional                  | Server       | One of: `auto`, `claim_creator_trading_fee`, `claim_partner_trading_fee`, `claim_fee`.                  |
-| `DBC_CLAIM_FEE_DISCRIMINATOR` | Optional (mutually exclusive)| Server       | 16 hex chars; overrides instruction name if provided and valid.                                        |
-| `NEXT_PUBLIC_PUBLIC_BASE_URL` | Optional                     | Client       | If you need absolute canonical links; otherwise relative URLs are fine.                                |
-| `R2_ACCESS_KEY_ID`            | Optional                     | Server       | Required only if enabling R2 uploads for token logos (future enhancement).                              |
-| `R2_SECRET_ACCESS_KEY`        | Optional                     | Server       | R2 secret key.                                                                                          |
-| `R2_ACCOUNT_ID`               | Optional                     | Server       | R2 account identifier.                                                                                 |
-| `R2_BUCKET`                   | Optional                     | Server       | Bucket name.                                                                                            |
-| `R2_PUBLIC_BASE`              | Optional                     | Both         | Public base URL for assets served from R2.                                                             |
-| `NEXT_PUBLIC_ENABLE_DEV_PREBUY` | Optional (default true)    | Client       | If set to `false`, hides or disables the dev pre-buy (bundle) flow in create pool UI.                   |
-| `NEXT_PUBLIC_ENABLE_VANITY`   | Optional (default true)      | Client       | If set to `false`, removes the vanity mint suffix generation UI.                                       |
-| `NEXT_PUBLIC_LOG_LEVEL`       | Optional                     | Client       | `debug`/`info`/`warn` to tune console noise in production previews.                                    |
-| `APP_URL`                     | Optional (deploy check)      | Server/CI    | Used by `vercel:health-check` script; falls back to `VERCEL_URL` if absent.                            |
-| `COV_MIN_BRANCHES` etc.       | CI only                      | CI           | Coverage gates (see `scripts/coverage-threshold-check.mjs`).                                            |
+| Variable                         | Required?                     | Scope     | Notes                                                                                  |
+| -------------------------------- | ----------------------------- | --------- | -------------------------------------------------------------------------------------- |
+| `RPC_URL`                        | Yes                           | Server    | Primary Solana RPC endpoint (private strongly recommended).                            |
+| `NEXT_PUBLIC_RPC_URL`            | One of (with RPC_URL)         | Client    | Public RPC if exposing to browser; omit if you proxy all requests server-side.         |
+| `ALLOWED_DBC_PROGRAM_IDS`        | Recommended (prod)            | Both      | JSON array string including official program IDs (see code).                           |
+| `ALLOWED_DAMM_V2_PROGRAM_IDS`    | Recommended (prod)            | Both      | JSON array string including official DAMM v2 program IDs.                              |
+| `DBC_CLAIM_FEE_INSTRUCTION_NAME` | Optional                      | Server    | One of: `auto`, `claim_creator_trading_fee`, `claim_partner_trading_fee`, `claim_fee`. |
+| `DBC_CLAIM_FEE_DISCRIMINATOR`    | Optional (mutually exclusive) | Server    | 16 hex chars; overrides instruction name if provided and valid.                        |
+| `NEXT_PUBLIC_PUBLIC_BASE_URL`    | Optional                      | Client    | If you need absolute canonical links; otherwise relative URLs are fine.                |
+| `R2_ACCESS_KEY_ID`               | Optional                      | Server    | Required only if enabling R2 uploads for token logos (future enhancement).             |
+| `R2_SECRET_ACCESS_KEY`           | Optional                      | Server    | R2 secret key.                                                                         |
+| `R2_ACCOUNT_ID`                  | Optional                      | Server    | R2 account identifier.                                                                 |
+| `R2_BUCKET`                      | Optional                      | Server    | Bucket name.                                                                           |
+| `R2_PUBLIC_BASE`                 | Optional                      | Both      | Public base URL for assets served from R2.                                             |
+| `NEXT_PUBLIC_ENABLE_DEV_PREBUY`  | Optional (default true)       | Client    | If set to `false`, hides or disables the dev pre-buy (bundle) flow in create pool UI.  |
+| `NEXT_PUBLIC_ENABLE_VANITY`      | Optional (default true)       | Client    | If set to `false`, removes the vanity mint suffix generation UI.                       |
+| `NEXT_PUBLIC_LOG_LEVEL`          | Optional                      | Client    | `debug`/`info`/`warn` to tune console noise in production previews.                    |
+| `APP_URL`                        | Optional (deploy check)       | Server/CI | Used by `vercel:health-check` script; falls back to `VERCEL_URL` if absent.            |
+| `COV_MIN_BRANCHES` etc.          | CI only                       | CI        | Coverage gates (see `scripts/coverage-threshold-check.mjs`).                           |
 
 ### Minimal Production Set
 
@@ -221,11 +221,13 @@ This section details the operational steps for launching a new token pool using 
 
 ### 2. Connect Wallet
 
-Open the site, connect a supported Solana wallet. Verify `/api/health` returns `ok: true` (RPC reachable).
+Open the site, connect a supported Solana wallet. Verify `/api/health` returns `ok: true` (RPC
+reachable).
 
 ### 3. Prepare Token Metadata
 
 Gather:
+
 - Token name (>= 3 chars)
 - Symbol
 - 1:1 square logo (PNG recommended) – file is base64 uploaded via `/api/upload`.
@@ -233,11 +235,13 @@ Gather:
 
 ### 4. (Optional) Vanity Mint Suffix
 
-If enabled, enter up to 4 Base58 chars. The client will search for up to 30 seconds. If timeout occurs, a normal mint is generated.
+If enabled, enter up to 4 Base58 chars. The client will search for up to 30 seconds. If timeout
+occurs, a normal mint is generated.
 
 ### 5. Submit Create Form
 
 The UI will:
+
 1. Convert logo to base64.
 2. POST to `/api/upload` (builds initial create transaction & stores metadata).
 3. Decode & partially sign (vanity mint keypair if included).
@@ -246,8 +250,10 @@ The UI will:
 ### 6. (Optional) Dev Pre-Buy Bundle
 
 If dev pre-buy enabled and amount > 0, the client:
+
 1. Calls `/api/build-swap` with the create transaction's blockhash (prelaunch mode).
-2. Receives a placeholder swap transaction (currently a no-op transfer; replace with real route logic as needed).
+2. Receives a placeholder swap transaction (currently a no-op transfer; replace with real route
+   logic as needed).
 3. Optionally appends a Jito tip transfer if `/api/jito-bundle` returns accounts.
 4. Signs & bundles both transactions through `/api/send-transaction` with `waitForLanded=true`.
 
@@ -257,7 +263,8 @@ If no dev pre-buy, only the create transaction is sent to `/api/send-transaction
 
 ### 8. Confirmation & UI State
 
-Success toast shown; UI sets `poolCreated=true`. Add any post-creation navigation (future enhancement: redirect to pool detail page).
+Success toast shown; UI sets `poolCreated=true`. Add any post-creation navigation (future
+enhancement: redirect to pool detail page).
 
 ### 9. Post-Launch Verification
 
@@ -268,8 +275,11 @@ Success toast shown; UI sets `poolCreated=true`. Add any post-creation navigatio
 ### 10. Rollback Strategy
 
 If a launch fails mid-bundle:
-- The mint might exist without liquidity; you can relaunch using same UI if state is still consistent or discard and generate a new vanity.
-- If a partial transaction consumed fees, review logs via explorer for root cause (RPC rate limit, priority fee insufficient, etc.).
+
+- The mint might exist without liquidity; you can relaunch using same UI if state is still
+  consistent or discard and generate a new vanity.
+- If a partial transaction consumed fees, review logs via explorer for root cause (RPC rate limit,
+  priority fee insufficient, etc.).
 
 ---
 
@@ -279,39 +289,46 @@ If a launch fails mid-bundle:
 - [ ] Add server-side validation for uploaded logo size & MIME type.
 - [ ] Add rate limiting (e.g., per-IP) to create & upload endpoints.
 - [ ] Introduce feature flags to disable vanity and dev pre-buy in production if not desired.
-- [ ] Expand integration tests for create + bundle path (currently partially covered by unit tests only).
+- [ ] Expand integration tests for create + bundle path (currently partially covered by unit tests
+      only).
 - [ ] Implement better error surfaces (map common RPC errors to user-friendly messages).
 
 ---
 
 ## Environment Variable Quick Reference Table
 
-| Category    | Vars                                                                                             |
-| ----------- | ------------------------------------------------------------------------------------------------ |
-| Core RPC    | `RPC_URL`, `NEXT_PUBLIC_RPC_URL`                                                                 |
-| Program IDs | `ALLOWED_DBC_PROGRAM_IDS`, `ALLOWED_DAMM_V2_PROGRAM_IDS`                                         |
-| DBC Fees    | `DBC_CLAIM_FEE_INSTRUCTION_NAME`, `DBC_CLAIM_FEE_DISCRIMINATOR`                                   |
-| Features    | `NEXT_PUBLIC_ENABLE_DEV_PREBUY`, `NEXT_PUBLIC_ENABLE_VANITY`                                     |
-| Assets/R2   | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_PUBLIC_BASE`       |
-| Misc        | `NEXT_PUBLIC_PUBLIC_BASE_URL`, `NEXT_PUBLIC_LOG_LEVEL`, `APP_URL`                                |
+| Category    | Vars                                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------ |
+| Core RPC    | `RPC_URL`, `NEXT_PUBLIC_RPC_URL`                                                           |
+| Program IDs | `ALLOWED_DBC_PROGRAM_IDS`, `ALLOWED_DAMM_V2_PROGRAM_IDS`                                   |
+| DBC Fees    | `DBC_CLAIM_FEE_INSTRUCTION_NAME`, `DBC_CLAIM_FEE_DISCRIMINATOR`                            |
+| Features    | `NEXT_PUBLIC_ENABLE_DEV_PREBUY`, `NEXT_PUBLIC_ENABLE_VANITY`                               |
+| Assets/R2   | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_PUBLIC_BASE` |
+| Misc        | `NEXT_PUBLIC_PUBLIC_BASE_URL`, `NEXT_PUBLIC_LOG_LEVEL`, `APP_URL`                          |
 
 ---
 
 ## Signer Validation Note (2025-09)
 
-To prevent opaque wallet adapter errors like `unknown signer: <pubkey>` a proactive transaction signer validation utility was introduced in `scaffolds/fun-launch/src/lib/txSigners.ts`.
+To prevent opaque wallet adapter errors like `unknown signer: <pubkey>` a proactive transaction
+signer validation utility was introduced in `scaffolds/fun-launch/src/lib/txSigners.ts`.
 
 Key points:
 
-- All locally generated Keypairs (e.g. vanity mint) must partially sign the transaction before the wallet adapter prompt.
-- We now assert (via `assertOnlyAllowedUnsignedSigners`) that only the connected wallet public key remains as an unsigned required signer. If another required signer is still present, a descriptive client error is thrown early instead of surfacing the generic wallet error.
+- All locally generated Keypairs (e.g. vanity mint) must partially sign the transaction before the
+  wallet adapter prompt.
+- We now assert (via `assertOnlyAllowedUnsignedSigners`) that only the connected wallet public key
+  remains as an unsigned required signer. If another required signer is still present, a descriptive
+  client error is thrown early instead of surfacing the generic wallet error.
 - Integrated today in:
   - `useSendTransaction` hook (central path for sending single tx)
   - `pages/create-pool.tsx` (pool creation + optional dev pre-buy flow)
 
 When adding new flows that assemble transactions with ephemeral Keypairs:
+
 1. Partially sign with those Keypairs immediately after building the transaction.
-2. Either rely on `useSendTransaction` (already guarded) or call `assertOnlyAllowedUnsignedSigners(tx, [wallet.publicKey])` manually before invoking `wallet.signTransaction`.
+2. Either rely on `useSendTransaction` (already guarded) or call
+   `assertOnlyAllowedUnsignedSigners(tx, [wallet.publicKey])` manually before invoking
+   `wallet.signTransaction`.
 
 This keeps user-facing signing UX reliable and eliminates the prior “unknown signer” confusion.
-
