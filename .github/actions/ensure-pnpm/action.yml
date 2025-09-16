@@ -1,0 +1,39 @@
+name: Ensure pnpm
+description: Ensure pnpm is available via pnpm/action-setup or Corepack fallback with retry.
+runs:
+  using: composite
+  steps:
+    - name: Setup pnpm (action)
+      uses: pnpm/action-setup@v4
+      continue-on-error: true
+      with:
+        version: 10.14.0
+    - name: Corepack fallback with retry
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v pnpm >/dev/null 2>&1; then
+          echo "pnpm already present: $(pnpm -v)"; exit 0; fi
+        echo 'pnpm missing; attempting Corepack fallback (up to 3 tries)'
+        corepack enable || true
+        for i in 1 2 3; do
+          echo "Attempt $i: corepack prepare pnpm@10.14.0 --activate";
+          if corepack prepare pnpm@10.14.0 --activate; then
+            break
+          fi
+          sleep $((i*2))
+        done
+        if ! command -v pnpm >/dev/null 2>&1; then
+          echo '::error::Failed to provision pnpm after retries'; exit 1; fi
+        pnpm -v
+    - name: Sanitize npm registries
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "registry=https://registry.npmjs.org/" > ~/.npmrc
+        pnpm config set registry https://registry.npmjs.org/
+        npm config set registry https://registry.npmjs.org/
+        pnpm config delete @jsr:registry || true
+        npm config delete @jsr:registry || true
+        pnpm config set fetch-retries 4
+        pnpm config set network-timeout 600000
