@@ -59,9 +59,10 @@ describe('services: connection + meteora', () => {
   const outMint = new PublicKey('2n5R9Z3QmrxgVtKJp1pC5aYVY1xq4oX7kK9PpLx9d9qS');
     const inputAmount = new BN(1000);
     const quote = await svc.getSwapQuote(inMint, outMint, inputAmount, 100); // 1% slippage
-    expect(quote).not.toBeNull();
-    expect(quote!.outputAmount.toString()).toBe('950');
-    expect(quote!.minimumReceived.toString()).toBe('941');
+  expect(quote).not.toBeNull();
+  if (!quote) throw new Error('quote should not be null');
+  expect(quote.outputAmount.toString()).toBe('950');
+  expect(quote.minimumReceived.toString()).toBe('941');
   });
 
   it('MeteoraService createSwapTransaction builds ATA and transfer', async () => {
@@ -70,8 +71,9 @@ describe('services: connection + meteora', () => {
     const svc = new MeteoraService(new Connection('http://localhost:8899'));
     const user = new PublicKey('11111111111111111111111111111111');
     const tx = await svc.createSwapTransaction(user, user, user);
-    expect(tx).toBeInstanceOf(Transaction);
-    expect(tx!.instructions.length).toBeGreaterThanOrEqual(2); // create ATA + transfer
+  expect(tx).toBeInstanceOf(Transaction);
+  if (!tx) throw new Error('tx should be defined');
+  expect(tx.instructions.length).toBeGreaterThanOrEqual(2); // create ATA + transfer
   });
 
   it('MeteoraService executeSwap returns success flag from confirmation', async () => {
