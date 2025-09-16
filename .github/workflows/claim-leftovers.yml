@@ -39,6 +39,33 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      - name: Setup pnpm (post PATH restore)
+        uses: pnpm/action-setup@v4
+        continue-on-error: true
+        with:
+          version: 10.14.0
+
+      - name: Ensure pnpm present (Corepack fallback)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v pnpm >/dev/null 2>&1; then
+            echo 'pnpm not found; enabling via Corepack fallback'
+            corepack enable
+            corepack prepare pnpm@10.14.0 --activate
+          fi
+          pnpm -v
+
+      - name: Sanitize npm registries (consistency)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "registry=https://registry.npmjs.org/" > ~/.npmrc
+          pnpm config set registry https://registry.npmjs.org/
+          npm config set registry https://registry.npmjs.org/
+          pnpm config delete @jsr:registry || true
+          npm config delete @jsr:registry || true
+
       - name: Validate required secrets
         shell: bash
         run: |

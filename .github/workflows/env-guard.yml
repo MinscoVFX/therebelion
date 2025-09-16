@@ -16,8 +16,20 @@ jobs:
         with:
           node-version: 20
           cache: 'pnpm'
-      - name: Install pnpm
-        run: npm i -g pnpm@10.14.0
+      - name: Setup pnpm (action)
+        uses: pnpm/action-setup@v4
+        continue-on-error: true
+        with:
+          version: 10.14.0
+      - name: Ensure pnpm (Corepack fallback)
+        run: |
+          set -euo pipefail
+          if ! command -v pnpm >/dev/null 2>&1; then
+            echo 'pnpm missing; enabling via Corepack fallback'
+            corepack enable
+            corepack prepare pnpm@10.14.0 --activate
+          fi
+          pnpm -v
       - name: Install deps (frozen lockfile)
         run: pnpm install --frozen-lockfile
       - name: Prepare env file

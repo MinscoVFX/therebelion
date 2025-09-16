@@ -16,10 +16,27 @@ jobs:
       APP_URL: https://therebelion-fun-launch.vercel.app
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: node -v && npm -v
+          cache: 'pnpm'
+      - name: Setup pnpm (action)
+        uses: pnpm/action-setup@v4
+        continue-on-error: true
+        with:
+          version: 10.14.0
+      - name: Ensure pnpm (Corepack fallback)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v pnpm >/dev/null 2>&1; then
+            echo 'pnpm missing; enabling via Corepack fallback'
+            corepack enable
+            corepack prepare pnpm@10.14.0 --activate
+          fi
+          pnpm -v
+      - run: node -v && npm -v && pnpm -v
       - name: Ensure script exists
         run: |
           test -f scripts/prod-smoke.mjs || { echo "missing scripts/prod-smoke.mjs"; exit 1; }
