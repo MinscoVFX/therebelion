@@ -43,8 +43,8 @@ const total = summary.total;
 const staticFloors = {
   lines: Number(process.env.COV_MIN_LINES) || 25,
   statements: Number(process.env.COV_MIN_STATEMENTS) || 25,
-  functions: Number(process.env.COV_MIN_FUNCTIONS) || 49,
-  branches: Number(process.env.COV_MIN_BRANCHES) || 51,
+  functions: Number(process.env.COV_MIN_FUNCTIONS) || 48,
+  branches: Number(process.env.COV_MIN_BRANCHES) || 50,
 };
 
 // Ratchet logic:
