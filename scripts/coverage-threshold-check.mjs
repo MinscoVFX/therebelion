@@ -51,7 +51,9 @@ const staticFloors = {
 //    failing if regression beyond allowed drift.
 const baseline = readJSON(BASELINE_PATH);
 const ratchetEnabled = process.env.COV_RATCHET === '1';
-const tolerance = Number(process.env.COV_RATCHET_TOLERANCE || '0.25'); // allow small float regression due to rounding
+const tolerance = Number(process.env.COV_RATCHET_TOLERANCE || '0.25'); // ratchet-only tolerance
+// Global non-ratchet tolerance (applies when ratchet disabled) to permit tiny incidental dips.
+const globalTolerance = Number(process.env.COV_TOLERANCE || '0');
 
 const effectiveFloors = { ...staticFloors };
 if (baseline && baseline.total) {
@@ -80,8 +82,11 @@ if (baseline && baseline.total) {
 const failures = [];
 for (const k of Object.keys(effectiveFloors)) {
   const pct = (total[k] && total[k].pct) || 0;
-  if (pct < effectiveFloors[k]) {
-    failures.push({ metric: k, pct, required: effectiveFloors[k] });
+  const required = effectiveFloors[k];
+  // When ratchet disabled, allow pct to be within globalTolerance below required before failing.
+  const allowedFloor = ratchetEnabled ? required : required - globalTolerance;
+  if (pct < allowedFloor) {
+    failures.push({ metric: k, pct, required });
   }
 }
 
@@ -94,7 +99,7 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log('Coverage thresholds satisfied. Effective floors:', effectiveFloors);
+console.log('Coverage thresholds satisfied. Effective floors:', effectiveFloors, 'tolerance:', { ratchetTolerance: tolerance, globalTolerance });
 
 // Optionally write / update baseline (only if improved). Controlled by COV_UPDATE_BASELINE=1
 if (process.env.COV_UPDATE_BASELINE === '1') {

@@ -10,7 +10,6 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
-import path from 'path';
 import { getDammV2Runtime } from './studioRuntime';
 
 /** DAMM v2 pool keys we care about */
@@ -28,20 +27,6 @@ export type DammV2PoolKeys = {
 async function importDammRuntime(): Promise<any> {
   const mod = await getDammV2Runtime();
   if (mod) return mod;
-  const legacy = [
-    '@meteora-invent/studio/dist/lib/damm_v2/index.js',
-    path.join(process.cwd(), '../../studio/dist/lib/damm_v2/index.js'),
-    path.join(process.cwd(), '../../studio/src/lib/damm_v2/index.ts'),
-  ];
-  for (const c of legacy) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const resolved = require.resolve(c);
-      return await import(/* webpackIgnore: true */ resolved);
-    } catch {
-      /* continue */
-    }
-  }
   throw new Error('Studio DAMM v2 module not found (build @meteora-invent/studio).');
 }
 
