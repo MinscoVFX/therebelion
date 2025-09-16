@@ -157,11 +157,51 @@ export default function CreatePool() {
 
         const { poolTx, pool } = uploadJson as { poolTx: string; pool?: string | null };
 
-        // Step 2: Decode tx, sign with mint authority (keyPair), then user wallet
+        // Step 2: Decode tx
         const createTx = Transaction.from(Buffer.from(poolTx, 'base64'));
-        createTx.sign(keyPair);
+
+        // Determine if the mint pubkey is actually a required signer in the message.
+        const msgKeys = createTx.compileMessage().accountKeys;
+        const mintIsSignerIndex = msgKeys.findIndex((k) => k.equals(keyPair.publicKey));
+
+        if (mintIsSignerIndex !== -1) {
+          // Use partialSign for non-wallet key first.
+            createTx.partialSign(keyPair);
+        } else {
+          // Diagnostic only – mint may legitimately not be part of stub tx yet.
+          console.warn('[create-pool] Mint key not present as signer in returned tx; skipping mint partialSign');
+        }
+
+        // Diagnostic: log which signers are expected and which have signatures BEFORE wallet signing.
+        try {
+          const preSignStatus = createTx.signatures.map((s, i) => ({
+            index: i,
+            key: msgKeys[i]?.toBase58(),
+            hasSig: !!s.signature,
+          }));
+          // Only log in dev / preview to reduce noise in production (adjust as needed)
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[create-pool] Pre-wallet signer status', preSignStatus);
+          }
+        } catch {
+          /* swallow signer status diagnostic failure */
+        }
 
         const signedCreate = await signTransaction(createTx);
+        // Post-sign diagnostics
+        try {
+          if (process.env.NODE_ENV !== 'production') {
+            const postSignStatus = signedCreate.signatures.map((s, i) => ({
+              index: i,
+              key: msgKeys[i]?.toBase58(),
+              hasSig: !!s.signature,
+            }));
+            console.log('[create-pool] Post-wallet signer status', postSignStatus);
+          }
+        } catch {
+          /* swallow signer status diagnostic failure */
+        }
+
         const signedCreateB64 = Buffer.from(signedCreate.serialize()).toString('base64');
 
         // Should we dev pre-buy (bundled)?
