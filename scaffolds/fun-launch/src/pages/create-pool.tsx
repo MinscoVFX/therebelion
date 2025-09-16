@@ -9,7 +9,7 @@ const useFormAny = (ReactForm as any).useForm as any;
 
 import { Button } from '@/components/ui/button';
 import { Keypair, Transaction, PublicKey, SystemProgram } from '@solana/web3.js';
-import { assertOnlyAllowedUnsignedSigners } from '@/lib/txSigners';
+import { assertOnlyAllowedUnsignedSignersLegacy } from '@/lib/txSigners';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
 
@@ -199,7 +199,7 @@ export default function CreatePool() {
 
         // Validate that after partial signing (if any) only the wallet remains unsigned.
         try {
-          assertOnlyAllowedUnsignedSigners(createTx as any, [publicKey]);
+          assertOnlyAllowedUnsignedSignersLegacy(createTx, [publicKey]);
         } catch (e: any) {
           throw new Error(`Create transaction signer validation failed: ${e?.message || e}`);
         }
@@ -283,7 +283,7 @@ export default function CreatePool() {
           }
 
           try {
-            assertOnlyAllowedUnsignedSigners(swapTx as any, [publicKey]);
+            assertOnlyAllowedUnsignedSignersLegacy(swapTx, [publicKey]);
           } catch (e: any) {
             throw new Error(`Swap transaction signer validation failed: ${e?.message || e}`);
           }
