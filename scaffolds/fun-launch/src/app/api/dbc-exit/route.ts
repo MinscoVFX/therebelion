@@ -14,7 +14,8 @@ export async function POST(req: Request) {
     const url = new URL(req.url);
     const qpAction = (url.searchParams.get('action') || '').toLowerCase();
     const body = (await req.json().catch(() => ({}) as any)) as any;
-    const action = (body.action || qpAction || 'claim').toLowerCase();
+    let action = (body.action || qpAction || 'claim').toLowerCase();
+    const originalRequestedAction = action; // keep track for fallback metadata
     const simulateOnly =
       body.simulateOnly === true ||
       url.searchParams.get('simulateOnly') === '1' ||
@@ -54,16 +55,61 @@ export async function POST(req: Request) {
 
     const connection = new Connection(resolveRpc(), 'confirmed');
 
-    const built = await buildDbcExitTransaction(connection, {
-      owner: body.owner,
-      dbcPoolKeys: body.dbcPoolKeys,
-      action,
-      priorityMicros: body.priorityMicros,
-      slippageBps: body.slippageBps,
-      computeUnitLimit: body.computeUnitLimit,
-      simulateOnly,
-      // positionMint, // TODO: harmless if undefined - needs builder interface update
-    });
+    // Withdraw-first fallback logic: if client or query requests 'withdraw_first' (or plain 'withdraw')
+    // we attempt withdraw; on a controlled failure we degrade to claim to avoid user friction.
+    // Accept synonyms: 'withdraw_first', 'prefer_withdraw'.
+    const withdrawPreferred = ['withdraw_first', 'prefer_withdraw'].includes(originalRequestedAction);
+    if (withdrawPreferred) {
+      action = 'withdraw';
+    }
+
+    let built;
+    let fallbackTriggered: undefined | {
+      from: string;
+      to: string;
+      reason: string;
+    };
+    try {
+      built = await buildDbcExitTransaction(connection, {
+        owner: body.owner,
+        dbcPoolKeys: body.dbcPoolKeys,
+        action,
+        priorityMicros: body.priorityMicros,
+        slippageBps: body.slippageBps,
+        computeUnitLimit: body.computeUnitLimit,
+        simulateOnly,
+      });
+    } catch (withdrawErr) {
+      // Only fallback if withdraw was attempted & claim is viable
+      if ((action === 'withdraw' || action === 'claim_and_withdraw') && !simulateOnly) {
+        // Basic heuristics: program error, missing discriminator, or explicit marker from builder.
+        const msg = withdrawErr instanceof Error ? withdrawErr.message : String(withdrawErr);
+        const isRecoverable = /discriminator|instruction|withdraw|not supported|Program failed/i.test(msg);
+        if (isRecoverable) {
+          try {
+            action = 'claim';
+            built = await buildDbcExitTransaction(connection, {
+              owner: body.owner,
+              dbcPoolKeys: body.dbcPoolKeys,
+              action: 'claim',
+              priorityMicros: body.priorityMicros,
+              slippageBps: body.slippageBps,
+              computeUnitLimit: body.computeUnitLimit,
+              simulateOnly,
+            });
+            fallbackTriggered = { from: 'withdraw', to: 'claim', reason: msg.slice(0, 280) };
+          } catch (claimErr) {
+            // If claim also fails, rethrow original withdraw error context + claim failure snippet
+            const cmsg = claimErr instanceof Error ? claimErr.message : String(claimErr);
+            throw new Error(`Withdraw attempt failed (${msg}); claim fallback also failed (${cmsg})`);
+          }
+        } else {
+          throw withdrawErr;
+        }
+      } else {
+        throw withdrawErr;
+      }
+    }
 
     const base64 = Buffer.from(built.tx.serialize()).toString('base64');
     const metas = [] as any[];
@@ -102,6 +148,9 @@ export async function POST(req: Request) {
     const common = {
       instructions: metas,
       lastValidBlockHeight: built.lastValidBlockHeight,
+      requestedAction: originalRequestedAction,
+      effectiveAction: action,
+      fallback: fallbackTriggered,
     };
     if (built.simulation) {
       return NextResponse.json({
