@@ -10,6 +10,7 @@ import {
 } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import path from 'path';
+import { getDbcRuntime, getDammV2Runtime } from './studioRuntime';
 import {
   Metadata,
   PROGRAM_ID as TOKEN_METADATA_PROGRAM_ID,
@@ -55,51 +56,46 @@ export type BulletproofExitResult = {
   finalAmount?: bigint;
 };
 
-// Predeclare potential runtime module paths so bundler can statically analyze
-const STUDIO_RUNTIME_CANDIDATES = {
-  dbc: [
+// Centralized runtime access (preferred). We keep a legacy fallback only if central path missing.
+async function importDbcRuntime(): Promise<any> {
+  const mod = await getDbcRuntime();
+  if (mod) return mod;
+  // Legacy fallback (dist paths) kept for monorepo dev edge cases.
+  const legacyCandidates = [
     '@meteora-invent/studio/dist/lib/dbc/index.js',
     path.join(process.cwd(), '../../studio/dist/lib/dbc/index.js'),
     path.join(process.cwd(), '../../studio/src/lib/dbc/index.ts'),
-  ],
-  damm_v2: [
-    '@meteora-invent/studio/dist/lib/damm_v2/index.js',
-    path.join(process.cwd(), '../../studio/dist/lib/damm_v2/index.js'),
-    path.join(process.cwd(), '../../studio/src/lib/damm_v2/index.ts'),
-  ],
-} as const;
-
-function resolveFirstAvailable(kind: keyof typeof STUDIO_RUNTIME_CANDIDATES): string | null {
-  for (const candidate of STUDIO_RUNTIME_CANDIDATES[kind]) {
+  ];
+  for (const c of legacyCandidates) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      return require.resolve(candidate);
+      const resolved = require.resolve(c);
+      return await import(/* webpackIgnore: true */ resolved);
     } catch {
-      /* continue search */
+      /* continue */
     }
   }
-  return null;
+  throw new Error('Studio DBC runtime not found (build @meteora-invent/studio).');
 }
 
 async function importDammV2Runtime(): Promise<any | null> {
-  const target = resolveFirstAvailable('damm_v2');
-  if (!target) return null;
-  try {
-    // Use dynamic import with fully-resolved absolute string constant (no expression building)
-    return await import(/* webpackIgnore: true */ target);
-  } catch {
-    return null;
+  const mod = await getDammV2Runtime();
+  if (mod) return mod;
+  const legacyCandidates = [
+    '@meteora-invent/studio/dist/lib/damm_v2/index.js',
+    path.join(process.cwd(), '../../studio/dist/lib/damm_v2/index.js'),
+    path.join(process.cwd(), '../../studio/src/lib/damm_v2/index.ts'),
+  ];
+  for (const c of legacyCandidates) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const resolved = require.resolve(c);
+      return await import(/* webpackIgnore: true */ resolved);
+    } catch {
+      /* continue */
+    }
   }
-}
-
-async function importDbcRuntime(): Promise<any> {
-  const target = resolveFirstAvailable('dbc');
-  if (!target) {
-    throw new Error('Studio DBC module not found (build studio or keep it in the monorepo).');
-  }
-  const mod = await import(/* webpackIgnore: true */ target);
-  if (!mod) throw new Error('Failed to import DBC runtime.');
-  return mod;
+  return null; // optional in this adapter
 }
 
 async function decodeDbcPool(

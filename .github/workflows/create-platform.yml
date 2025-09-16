@@ -11,18 +11,21 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
-          run_install: true
+          cache: pnpm
       - name: Ensure pnpm (composite)
         uses: ./.github/actions/ensure-pnpm
+
+      - name: Install dependencies (root)
+        run: pnpm install --frozen-lockfile
 
       # --- IMPORTANT: install the SDK where the script lives ---
       - name: Install Raydium SDK deps (fun-launch)

@@ -27,6 +27,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
       - name: Turbo cache
         uses: actions/cache@v4
         with:
@@ -78,6 +82,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
       - name: Turbo cache
         uses: actions/cache@v4
         with:
@@ -106,6 +114,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
       - name: Turbo cache
         uses: actions/cache@v4
         with:
@@ -134,6 +146,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
       - name: Turbo cache
         uses: actions/cache@v4
         with:
@@ -155,6 +171,28 @@ jobs:
 
       - name: Run tests with coverage
         run: pnpm ci:coverage
+
+      - name: Enforce coverage thresholds (dynamic baseline)
+        env:
+          COV_MIN_LINES: 24
+          COV_MIN_STATEMENTS: 24
+          COV_MIN_FUNCTIONS: 50
+          COV_MIN_BRANCHES: 52
+          COV_RATCHET: 1
+          # Allow updating baseline automatically only on direct pushes to main (not pull requests)
+          COV_UPDATE_BASELINE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && '1' || '0' }}
+        run: node scripts/coverage-threshold-check.mjs
+
+      - name: Append coverage summary
+        if: always()
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            echo '### Coverage Summary' >> $GITHUB_STEP_SUMMARY
+            echo '\n' >> $GITHUB_STEP_SUMMARY
+            node -e "const s=require('./coverage/coverage-summary.json').total; console.log('| Metric | % | Covered/Total |'); console.log('|--------|---|---------------|'); for (const k of ['lines','statements','functions','branches']) { const m=s[k]; if(!m) continue; console.log(`| ${k} | ${m.pct} | ${m.covered}/${m.total} |`); }" >> $GITHUB_STEP_SUMMARY
+          else
+            echo 'No coverage summary found.' >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Upload coverage lcov
         if: always()

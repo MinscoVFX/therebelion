@@ -11,6 +11,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 import path from 'path';
+import { getDammV2Runtime } from './studioRuntime';
 
 /** DAMM v2 pool keys we care about */
 export type DammV2PoolKeys = {
@@ -24,30 +25,24 @@ export type DammV2PoolKeys = {
   authorityPda: PublicKey;
 };
 
-function resolveStudioDammV2(): string | null {
-  const candidates = [
+async function importDammRuntime(): Promise<any> {
+  const mod = await getDammV2Runtime();
+  if (mod) return mod;
+  const legacy = [
     '@meteora-invent/studio/dist/lib/damm_v2/index.js',
     path.join(process.cwd(), '../../studio/dist/lib/damm_v2/index.js'),
     path.join(process.cwd(), '../../studio/src/lib/damm_v2/index.ts'),
   ];
-  for (const c of candidates) {
+  for (const c of legacy) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      return require.resolve(c);
+      const resolved = require.resolve(c);
+      return await import(/* webpackIgnore: true */ resolved);
     } catch {
-      /* skip */
+      /* continue */
     }
   }
-  return null;
-}
-
-async function importDammRuntime(): Promise<any> {
-  const target = resolveStudioDammV2();
-  if (!target)
-    throw new Error('Studio DAMM v2 module not found (build studio or keep it in the monorepo).');
-  const mod = await import(/* webpackIgnore: true */ target);
-  if (!mod) throw new Error('Failed to import DAMM v2 runtime.');
-  return mod;
+  throw new Error('Studio DAMM v2 module not found (build @meteora-invent/studio).');
 }
 
 function pickRemoveBuilder(
