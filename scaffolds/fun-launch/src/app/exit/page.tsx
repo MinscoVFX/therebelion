@@ -13,11 +13,24 @@ interface ExitPreferences {
 }
 
 interface DebugPosition {
-  mint: string;
-  tokenAccount: string;
-  name?: string;
-  symbol?: string;
-  updateAuthority?: string;
+  programId: string;
+  lpAmount: string;
+  estimatedValueUsd: number | null;
+  poolKeys: {
+    pool: string;
+    feeVault: string;
+    tokenA: string | null;
+    tokenB: string | null;
+    lpMint: string | null;
+    userLpToken: string | null;
+    userTokenA: string | null;
+    userTokenB: string | null;
+  };
+}
+
+interface DebugNftPools {
+  runtime: string[];
+  metadata: string[];
 }
 
 function solscanUrl(sig: string, endpoint: string) {
@@ -41,12 +54,15 @@ export default function ExitPage() {
   // Debug mode state
   const [debugMode, setDebugMode] = useState(false);
   const [debugPositions, setDebugPositions] = useState<DebugPosition[]>([]);
+  const [debugNftPools, setDebugNftPools] = useState<DebugNftPools | null>(null);
   const [debugLoading, setDebugLoading] = useState(false);
 
   // Positions pill state
   const [posCount, setPosCount] = useState<number | null>(null);
   const [posLoading, setPosLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const runtimePools = debugNftPools?.runtime ?? [];
+  const metadataPools = debugNftPools?.metadata ?? [];
 
   // Check for debug mode on mount
   useEffect(() => {
@@ -59,22 +75,91 @@ export default function ExitPage() {
 
   // Fetch debug positions when debug mode is enabled and wallet connected
   useEffect(() => {
-    if (debugMode && connected && publicKey && !debugLoading) {
+    if (!debugMode) {
+      setDebugPositions([]);
+      setDebugNftPools(null);
+      setDebugLoading(false);
+      return;
+    }
+    if (!connected || !publicKey) {
+      setDebugPositions([]);
+      setDebugNftPools(null);
+      setDebugLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadDebug = async () => {
       setDebugLoading(true);
-      fetch(`/api/dbc-discover?wallet=${publicKey.toBase58()}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.positions) {
-            setDebugPositions(data.positions);
-          }
-        })
-        .catch((err) => {
+      try {
+        const res = await fetch(`/api/exit-tools?wallet=${publicKey.toBase58()}`);
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const message = typeof body?.error === 'string' ? body.error : `HTTP ${res.status}`;
+          throw new Error(message);
+        }
+        const rawPositions = Array.isArray(body?.positions) ? body.positions : [];
+        const parsedPositions = rawPositions
+          .map((pos: any): DebugPosition | null => {
+            const poolKeys = pos?.poolKeys;
+            if (!poolKeys || typeof poolKeys.pool !== 'string' || typeof poolKeys.feeVault !== 'string') {
+              return null;
+            }
+            const programId = typeof pos?.programId === 'string' ? pos.programId : '';
+            const lpAmount =
+              typeof pos?.lpAmount === 'string'
+                ? pos.lpAmount
+                : pos?.lpAmount != null
+                ? String(pos.lpAmount)
+                : '0';
+            return {
+              programId,
+              lpAmount,
+              estimatedValueUsd:
+                typeof pos?.estimatedValueUsd === 'number' ? pos.estimatedValueUsd : null,
+              poolKeys: {
+                pool: poolKeys.pool,
+                feeVault: poolKeys.feeVault,
+                tokenA: typeof poolKeys.tokenA === 'string' ? poolKeys.tokenA : null,
+                tokenB: typeof poolKeys.tokenB === 'string' ? poolKeys.tokenB : null,
+                lpMint: typeof poolKeys.lpMint === 'string' ? poolKeys.lpMint : null,
+                userLpToken: typeof poolKeys.userLpToken === 'string' ? poolKeys.userLpToken : null,
+                userTokenA: typeof poolKeys.userTokenA === 'string' ? poolKeys.userTokenA : null,
+                userTokenB: typeof poolKeys.userTokenB === 'string' ? poolKeys.userTokenB : null,
+              },
+            };
+          })
+          .filter((pos): pos is DebugPosition => Boolean(pos));
+        if (cancelled) return;
+        setDebugPositions(parsedPositions);
+        if (body?.nftPools) {
+          setDebugNftPools({
+            runtime: Array.isArray(body.nftPools.runtime) ? body.nftPools.runtime : [],
+            metadata: Array.isArray(body.nftPools.metadata) ? body.nftPools.metadata : [],
+          });
+        } else {
+          setDebugNftPools({ runtime: [], metadata: [] });
+        }
+      } catch (err) {
+        if (!cancelled) {
           console.error('Debug fetch error:', err);
           setDebugPositions([]);
-        })
-        .finally(() => setDebugLoading(false));
-    }
-  }, [debugMode, connected, publicKey, debugLoading]);
+          setDebugNftPools(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setDebugLoading(false);
+        }
+      }
+    };
+
+    void loadDebug();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debugMode, connected, publicKey]);
 
   // Fetch positions count for pill
   useEffect(() => {
@@ -88,7 +173,7 @@ export default function ExitPage() {
     const ac = new AbortController();
     abortRef.current = ac;
 
-    const url = `/api/dbc-discover?wallet=${publicKey.toBase58()}`;
+    const url = `/api/exit-tools?wallet=${publicKey.toBase58()}`;
     fetch(url, { signal: ac.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((j) => {
@@ -239,44 +324,103 @@ export default function ExitPage() {
           {debugLoading ? (
             <div className="text-red-200 text-sm">Loading positions...</div>
           ) : (
-            <div>
-              <p className="text-sm text-red-200 mb-2">
-                Found {debugPositions.length} DBC-like position(s):
-              </p>
-              {debugPositions.length === 0 ? (
-                <div className="text-red-300 text-xs">No positions found</div>
-              ) : (
-                <div className="space-y-2">
-                  {debugPositions.map((pos, i) => (
-                    <div
-                      key={i}
-                      className="bg-red-900/20 border border-red-700/30 rounded p-3 text-xs"
-                    >
-                      <div>
-                        <strong>Mint:</strong> {pos.mint}
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-red-200 mb-2">
+                  Found {debugPositions.length} DBC LP position(s) via server tools:
+                </p>
+                {debugPositions.length === 0 ? (
+                  <div className="text-red-300 text-xs">No LP positions detected</div>
+                ) : (
+                  <div className="space-y-2">
+                    {debugPositions.map((pos, i) => (
+                      <div
+                        key={i}
+                        className="bg-red-900/20 border border-red-700/30 rounded p-3 text-xs space-y-1"
+                      >
+                        <div>
+                          <strong>Program:</strong> {pos.programId || 'Unknown'}
+                        </div>
+                        <div>
+                          <strong>Pool:</strong> {pos.poolKeys.pool}
+                        </div>
+                        <div>
+                          <strong>Fee Vault:</strong> {pos.poolKeys.feeVault}
+                        </div>
+                        {pos.poolKeys.lpMint && (
+                          <div>
+                            <strong>LP Mint:</strong> {pos.poolKeys.lpMint}
+                          </div>
+                        )}
+                        {pos.poolKeys.tokenA && (
+                          <div>
+                            <strong>Token A:</strong> {pos.poolKeys.tokenA}
+                          </div>
+                        )}
+                        {pos.poolKeys.tokenB && (
+                          <div>
+                            <strong>Token B:</strong> {pos.poolKeys.tokenB}
+                          </div>
+                        )}
+                        {pos.poolKeys.userLpToken && (
+                          <div>
+                            <strong>User LP Token Account:</strong> {pos.poolKeys.userLpToken}
+                          </div>
+                        )}
+                        {pos.poolKeys.userTokenA && (
+                          <div>
+                            <strong>User Token A Account:</strong> {pos.poolKeys.userTokenA}
+                          </div>
+                        )}
+                        {pos.poolKeys.userTokenB && (
+                          <div>
+                            <strong>User Token B Account:</strong> {pos.poolKeys.userTokenB}
+                          </div>
+                        )}
+                        <div>
+                          <strong>LP Balance (raw):</strong> {pos.lpAmount}
+                        </div>
+                        {typeof pos.estimatedValueUsd === 'number' &&
+                          Number.isFinite(pos.estimatedValueUsd) && (
+                            <div>
+                              <strong>Estimated Value (USD):</strong>{' '}
+                              ${pos.estimatedValueUsd.toFixed(2)}
+                            </div>
+                          )}
                       </div>
-                      <div>
-                        <strong>Token Account:</strong> {pos.tokenAccount}
-                      </div>
-                      {pos.name && (
-                        <div>
-                          <strong>Name:</strong> {pos.name}
-                        </div>
-                      )}
-                      {pos.symbol && (
-                        <div>
-                          <strong>Symbol:</strong> {pos.symbol}
-                        </div>
-                      )}
-                      {pos.updateAuthority && (
-                        <div>
-                          <strong>Update Authority:</strong> {pos.updateAuthority}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="pt-3 border-t border-red-800/30">
+                <p className="text-sm text-red-200 mb-2">Migration heuristics (NFT discovery)</p>
+                <div className="grid gap-3 text-xs text-red-200 md:grid-cols-2">
+                  <div>
+                    <strong>Runtime helper pools</strong>
+                    {runtimePools.length ? (
+                      <ul className="list-disc list-inside mt-1 space-y-1">
+                        {runtimePools.map((pk) => (
+                          <li key={`runtime-${pk}`}>{pk}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="text-red-300 text-[11px]">No runtime-discovered pools</div>
+                    )}
+                  </div>
+                  <div>
+                    <strong>Metadata hint pools</strong>
+                    {metadataPools.length ? (
+                      <ul className="list-disc list-inside mt-1 space-y-1">
+                        {metadataPools.map((pk) => (
+                          <li key={`metadata-${pk}`}>{pk}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="text-red-300 text-[11px]">No metadata-discovered pools</div>
+                    )}
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
           )}
         </div>
