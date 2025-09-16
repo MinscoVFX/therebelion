@@ -252,9 +252,11 @@ chore: update dependencies
 
 1. **Fork and Clone**: Fork the repository and clone your fork
 2. **Branch**: Create a feature branch from `develop`
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
+
 3. **Develop**: Make your changes following the guidelines above
 4. **Test**: Ensure all tests pass and linting is clean
 5. **Commit**: Use conventional commit messages
