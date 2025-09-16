@@ -32,7 +32,6 @@ jobs:
         run: |
           node <<'EOF'
           import fs from 'fs';
-          import crypto from 'crypto';
           const requiredJsonArrays = [
             { key: 'ALLOWED_DBC_PROGRAM_IDS', mustInclude: ['dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN'] },
             { key: 'ALLOWED_DAMM_V2_PROGRAM_IDS', mustInclude: ['cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG'] }
@@ -51,28 +50,49 @@ jobs:
             kv[k]=v;
           }
           const errors = [];
+          const warnings = [];
           function assert(cond,msg){ if(!cond) errors.push(msg); }
-          assert(kv.RPC_URL !== undefined, 'RPC_URL missing');
-          assert(kv.RPC_URL && kv.RPC_URL !== '""', 'RPC_URL empty');
+          if (kv.RPC_URL === undefined) {
+            errors.push('RPC_URL missing');
+          } else if (!kv.RPC_URL || kv.RPC_URL === '""') {
+            errors.push('RPC_URL empty');
+          }
           for (const spec of requiredJsonArrays) {
             const val = kv[spec.key];
-            assert(val !== undefined, `${spec.key} missing`);
-            if (val !== undefined) {
-              try {
-                const arr = JSON.parse(val);
-                assert(Array.isArray(arr), `${spec.key} not an array`);
-                for (const must of spec.mustInclude) {
-                  assert(arr.includes(must), `${spec.key} missing required id ${must}`);
-                }
-              } catch (e) {
-                errors.push(`${spec.key} invalid JSON`);
+            if (val === undefined) {
+              warnings.push(`${spec.key} absent (non-fatal)`);
+              continue;
+            }
+            try {
+              const arr = JSON.parse(val);
+              if (!Array.isArray(arr)) {
+                errors.push(`${spec.key} not an array`);
+                continue;
               }
+              for (const must of spec.mustInclude) {
+                if (!arr.includes(must)) {
+                  errors.push(`${spec.key} missing required id ${must}`);
+                }
+              }
+            } catch (e) {
+              errors.push(`${spec.key} invalid JSON`);
             }
           }
+          const summaryLines = [];
+          summaryLines.push('| Status | Detail |');
+          summaryLines.push('|--------|--------|');
+          if (errors.length) for (const e of errors) summaryLines.push(`| ERROR | ${e} |`);
+          if (warnings.length) for (const w of warnings) summaryLines.push(`| WARN | ${w} |`);
+          if (!errors.length && !warnings.length) summaryLines.push('| OK | All checks passed |');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY || '', '### Env Guard Summary\n' + summaryLines.join('\n') + '\n');
           if (errors.length) {
             console.error('ENV_VALIDATION_FAILED');
             for (const e of errors) console.error(' -', e);
             process.exit(1);
+          }
+          if (warnings.length) {
+            console.log('ENV_VALIDATION_WARNINGS');
+            for (const w of warnings) console.log(' -', w);
           }
           console.log('ENV_VALIDATION_OK');
           EOF

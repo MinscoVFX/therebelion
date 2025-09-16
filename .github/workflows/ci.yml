@@ -194,6 +194,10 @@ jobs:
             echo 'No coverage summary found.' >> $GITHUB_STEP_SUMMARY
           fi
 
+      - name: Coverage delta vs baseline
+        if: always()
+        run: node scripts/print-coverage-delta.mjs
+
       - name: Upload coverage lcov
         if: always()
         uses: actions/upload-artifact@v4
