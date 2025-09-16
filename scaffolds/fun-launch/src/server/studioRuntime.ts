@@ -6,7 +6,8 @@ let dbcCache: any | undefined;
 export async function getDammV2Runtime() {
   if (dammCache !== undefined) return dammCache;
   try {
-    dammCache = await import('@meteora-invent/studio/lib/damm_v2');
+    const studio = await import('@meteora-invent/studio');
+    dammCache = studio.damm_v2;
   } catch {
     dammCache = null;
   }
@@ -15,7 +16,8 @@ export async function getDammV2Runtime() {
 export async function getDbcRuntime() {
   if (dbcCache !== undefined) return dbcCache;
   try {
-    dbcCache = await import('@meteora-invent/studio/lib/dbc');
+    const studio = await import('@meteora-invent/studio');
+    dbcCache = studio.dbc;
   } catch {
     dbcCache = null;
   }

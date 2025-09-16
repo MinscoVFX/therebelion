@@ -20,7 +20,7 @@ function resolveStudioDammV2(): string | null {
   try {
     // Prefer resolving via the workspace package name
     // (works when @meteora-invent/studio is a dependency of fun-launch)
-    return require.resolve('@meteora-invent/studio/dist/lib/damm_v2/index.js');
+    return require.resolve('@meteora-invent/studio');
   } catch {
     // Fallback to a relative path from fun-launch after Turbo build
     try {
