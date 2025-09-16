@@ -76,14 +76,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         exitTxBase64 = Buffer.from(built.tx.serialize()).toString('base64');
       } catch (e) {
         // Surface error but keep compute budget information
-        return res
-          .status(400)
-          .json({
-            ok: false,
-            cuLimit,
-            microLamports,
-            error: e instanceof Error ? e.message : String(e),
-          });
+        return res.status(400).json({
+          ok: false,
+          cuLimit,
+          microLamports,
+          error: e instanceof Error ? e.message : String(e),
+        });
       }
     }
     res

@@ -58,14 +58,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Also recommend a compute unit limit, tuned for claim + withdraw
     const cuLimit = 600_000; // safe headroom; adjust if your instructions are lighter/heavier
 
-    res
-      .status(200)
-      .json({
-        ok: true,
-        microLamports: rec,
-        cuLimit,
-        source: values.length ? 'recentFees' : 'default',
-      });
+    res.status(200).json({
+      ok: true,
+      microLamports: rec,
+      cuLimit,
+      source: values.length ? 'recentFees' : 'default',
+    });
   } catch {
     res.status(200).json({ ok: true, microLamports: 5_000, cuLimit: 600_000, source: 'fallback' });
   }
