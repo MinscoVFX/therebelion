@@ -8,7 +8,7 @@ const modules = [
   'src/lib/meteora/dammv2.ts',
   'src/lib/meteora/migration.ts',
   'src/lib/meteora/universalExit.ts',
-  'src/utils/index.ts'
+  'src/utils/index.ts',
 ];
 
 describe('Core module smoke imports', () => {

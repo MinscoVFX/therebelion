@@ -18,8 +18,12 @@ import fs from 'fs';
 const SUMMARY_PATH = 'coverage/coverage-summary.json';
 const BASELINE_PATH = '.coverage-baseline.json';
 
-function readJSON(p){
-  try { return JSON.parse(fs.readFileSync(p,'utf8')); } catch { return null; }
+function readJSON(p) {
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 if (!fs.existsSync(SUMMARY_PATH)) {
@@ -95,11 +99,16 @@ if (failures.length) {
   for (const f of failures) {
     console.error(` - ${f.metric}: ${f.pct}% < required ${f.required}%`);
   }
-  console.error('\nTo adjust floors: set env vars COV_MIN_LINES, COV_MIN_STATEMENTS, COV_MIN_FUNCTIONS, COV_MIN_BRANCHES');
+  console.error(
+    '\nTo adjust floors: set env vars COV_MIN_LINES, COV_MIN_STATEMENTS, COV_MIN_FUNCTIONS, COV_MIN_BRANCHES'
+  );
   process.exit(1);
 }
 
-console.log('Coverage thresholds satisfied. Effective floors:', effectiveFloors, 'tolerance:', { ratchetTolerance: tolerance, globalTolerance });
+console.log('Coverage thresholds satisfied. Effective floors:', effectiveFloors, 'tolerance:', {
+  ratchetTolerance: tolerance,
+  globalTolerance,
+});
 
 // Optionally write / update baseline (only if improved). Controlled by COV_UPDATE_BASELINE=1
 if (process.env.COV_UPDATE_BASELINE === '1') {

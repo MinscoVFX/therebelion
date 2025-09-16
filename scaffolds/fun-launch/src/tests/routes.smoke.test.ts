@@ -13,7 +13,7 @@ const routePaths = [
   'app/api/exit-auto/route.ts',
   'app/api/jito-bundle/route.ts',
   'app/api/send-transaction/route.ts',
-  'app/api/upload/route.ts'
+  'app/api/upload/route.ts',
 ] as const;
 
 describe('API route smoke imports', () => {
@@ -22,7 +22,7 @@ describe('API route smoke imports', () => {
       try {
         const mod = await import(`../${rel}`);
         // If handler functions (GET/POST) exist, invoke with minimal mock Request if safe.
-        const handler = (mod.GET || mod.POST || mod.default);
+        const handler = mod.GET || mod.POST || mod.default;
         if (typeof handler === 'function') {
           // Provide a lightweight Request/NextRequest shape.
           const req: any = { method: 'GET', json: async () => ({}), body: null };
@@ -30,7 +30,7 @@ describe('API route smoke imports', () => {
             // Swallow any runtime errors; coverage still counts module load + attempted call.
             await Promise.race([
               Promise.resolve(handler(req)),
-              new Promise(res => setTimeout(res, 50))
+              new Promise((res) => setTimeout(res, 50)),
             ]);
           } catch {
             // Ignore - we only care about executing code paths for baseline coverage.

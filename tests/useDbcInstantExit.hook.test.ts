@@ -6,7 +6,13 @@ import { useDbcInstantExit } from '../scaffolds/fun-launch/src/hooks/useDbcInsta
 // Minimal mocks for wallet adapter context
 vi.mock('@solana/wallet-adapter-react', () => {
   return {
-    useConnection: () => ({ connection: { getLatestBlockhash: vi.fn().mockResolvedValue({ blockhash: 'abc', lastValidBlockHeight: 1 }) } }),
+    useConnection: () => ({
+      connection: {
+        getLatestBlockhash: vi
+          .fn()
+          .mockResolvedValue({ blockhash: 'abc', lastValidBlockHeight: 1 }),
+      },
+    }),
     useWallet: () => ({
       publicKey: { toString: () => 'WalletPubkey1111111111111111111111111111111111' },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -26,14 +32,20 @@ describe('useDbcInstantExit hook', () => {
   });
 
   it('progresses through simulation failure then reports error', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: true, text: async () => JSON.stringify({ logs: ['log1'], unitsConsumed: 5000, tx: 'BASE64TX' }) });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      text: async () => JSON.stringify({ logs: ['log1'], unitsConsumed: 5000, tx: 'BASE64TX' }),
+    });
     mockFetch.mockResolvedValueOnce({ ok: false, statusText: 'Bad Request', text: async () => '' });
 
     const { result } = renderHook(() => useDbcInstantExit());
     await act(async () => {
       try {
         await result.current.exit({
-          dbcPoolKeys: { pool: 'Pool111111111111111111111111111111111111', feeVault: 'Fee1111111111111111111111111111111111111' },
+          dbcPoolKeys: {
+            pool: 'Pool111111111111111111111111111111111111',
+            feeVault: 'Fee1111111111111111111111111111111111111',
+          },
           action: 'claim',
           simulateFirst: true,
         });
@@ -43,6 +55,8 @@ describe('useDbcInstantExit hook', () => {
     });
 
     expect(result.current.state.attempt).toBeGreaterThanOrEqual(1);
-    expect(result.current.state.status === 'error' || result.current.state.status === 'building').toBeTruthy();
+    expect(
+      result.current.state.status === 'error' || result.current.state.status === 'building'
+    ).toBeTruthy();
   });
 });

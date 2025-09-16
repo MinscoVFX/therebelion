@@ -23,7 +23,8 @@ vi.mock('../scaffolds/fun-launch/src/hooks/universalExitPlanner', () => ({
 }));
 
 vi.mock('../scaffolds/fun-launch/src/hooks/signingUtils', () => ({
-  signTransactionsAdaptive: vi.fn(async (_wallet: any, txs: any[]) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+  signTransactionsAdaptive: vi.fn(async (_wallet: any, txs: any[]) => ({
+    // eslint-disable-line @typescript-eslint/no-explicit-any
     signed: txs,
     errors: txs.map(() => null),
     usedBatch: true,
@@ -49,11 +50,17 @@ import * as web3 from '@solana/web3.js';
 
 // Force deserialize to return a stub no matter the input (some nested imports may have pulled real class)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-vi.spyOn(web3 as any, 'VersionedTransaction', 'get').mockReturnValue(class VT {
-  message = { recentBlockhash: 'RBH' };
-  static deserialize() { return new VT(); }
-  serialize() { return Buffer.from('signed'); }
-});
+vi.spyOn(web3 as any, 'VersionedTransaction', 'get').mockReturnValue(
+  class VT {
+    message = { recentBlockhash: 'RBH' };
+    static deserialize() {
+      return new VT();
+    }
+    serialize() {
+      return Buffer.from('signed');
+    }
+  }
+);
 
 describe('useUniversalExit', () => {
   beforeEach(() => {
