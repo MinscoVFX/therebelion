@@ -21,14 +21,8 @@ jobs:
         with:
           version: 10.14.0
           run_install: true
-
-      - name: Ensure pnpm present (Corepack fallback)
-        run: |
-          if ! command -v pnpm >/dev/null 2>&1; then
-            corepack enable
-            corepack prepare pnpm@10.14.0 --activate
-          fi
-          pnpm -v
+      - name: Ensure pnpm (composite)
+        uses: ./.github/actions/ensure-pnpm
 
       # --- IMPORTANT: install the SDK where the script lives ---
       - name: Install Raydium SDK deps (fun-launch)

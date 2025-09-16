@@ -21,21 +21,8 @@ jobs:
         with:
           node-version: 20
           cache: 'pnpm'
-      - name: Setup pnpm (action)
-        uses: pnpm/action-setup@v4
-        continue-on-error: true
-        with:
-          version: 10.14.0
-      - name: Ensure pnpm (Corepack fallback)
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! command -v pnpm >/dev/null 2>&1; then
-            echo 'pnpm missing; enabling via Corepack fallback'
-            corepack enable
-            corepack prepare pnpm@10.14.0 --activate
-          fi
-          pnpm -v
+      - name: Ensure pnpm (composite)
+        uses: ./.github/actions/ensure-pnpm
       - run: node -v && npm -v && pnpm -v
       - name: Install dependencies (shallow)
         run: pnpm install --frozen-lockfile --filter .
