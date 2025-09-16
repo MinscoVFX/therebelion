@@ -65,18 +65,36 @@ Cons:
 
 Variables you likely need (configure in Vercel → Project → Settings → Environment Variables):
 
-| Variable                      | Required?             | Scope  | Notes                                                    |
-| ----------------------------- | --------------------- | ------ | -------------------------------------------------------- |
-| `RPC_URL`                     | Yes (server)          | Server | Solana RPC endpoint (private preferred).                 |
-| `NEXT_PUBLIC_RPC_URL`         | One of (with RPC_URL) | Client | Public RPC if exposing to browser.                       |
-| `ALLOWED_DBC_PROGRAM_IDS`     | Recommended           | Both   | Comma-separated or JSON list of allowed DBC program IDs. |
-| `ALLOWED_DAMM_V2_PROGRAM_IDS` | Recommended           | Both   | Same pattern for DAMM v2.                                |
-| `NEXT_PUBLIC_PUBLIC_BASE_URL` | Optional              | Client | Used if the app builds absolute links.                   |
-| `R2_ACCESS_KEY_ID`            | Optional              | Server | If using R2 storage flows.                               |
-| `R2_SECRET_ACCESS_KEY`        | Optional              | Server | Secret key for R2.                                       |
-| `R2_ACCOUNT_ID`               | Optional              | Server | R2 account identifier.                                   |
-| `R2_BUCKET`                   | Optional              | Server | Default bucket.                                          |
-| `R2_PUBLIC_BASE`              | Optional              | Both   | Public accessible base URL for bucket assets.            |
+| Variable                      | Required?                    | Scope        | Notes                                                                                                   |
+| ----------------------------- | ---------------------------- | ------------ | ------------------------------------------------------------------------------------------------------- |
+| `RPC_URL`                     | Yes                          | Server       | Primary Solana RPC endpoint (private strongly recommended).                                            |
+| `NEXT_PUBLIC_RPC_URL`         | One of (with RPC_URL)        | Client       | Public RPC if exposing to browser; omit if you proxy all requests server-side.                         |
+| `ALLOWED_DBC_PROGRAM_IDS`     | Recommended (prod)           | Both         | JSON array string including official program IDs (see code).                                           |
+| `ALLOWED_DAMM_V2_PROGRAM_IDS` | Recommended (prod)           | Both         | JSON array string including official DAMM v2 program IDs.                                              |
+| `DBC_CLAIM_FEE_INSTRUCTION_NAME` | Optional                  | Server       | One of: `auto`, `claim_creator_trading_fee`, `claim_partner_trading_fee`, `claim_fee`.                  |
+| `DBC_CLAIM_FEE_DISCRIMINATOR` | Optional (mutually exclusive)| Server       | 16 hex chars; overrides instruction name if provided and valid.                                        |
+| `NEXT_PUBLIC_PUBLIC_BASE_URL` | Optional                     | Client       | If you need absolute canonical links; otherwise relative URLs are fine.                                |
+| `R2_ACCESS_KEY_ID`            | Optional                     | Server       | Required only if enabling R2 uploads for token logos (future enhancement).                              |
+| `R2_SECRET_ACCESS_KEY`        | Optional                     | Server       | R2 secret key.                                                                                          |
+| `R2_ACCOUNT_ID`               | Optional                     | Server       | R2 account identifier.                                                                                 |
+| `R2_BUCKET`                   | Optional                     | Server       | Bucket name.                                                                                            |
+| `R2_PUBLIC_BASE`              | Optional                     | Both         | Public base URL for assets served from R2.                                                             |
+| `NEXT_PUBLIC_ENABLE_DEV_PREBUY` | Optional (default true)    | Client       | If set to `false`, hides or disables the dev pre-buy (bundle) flow in create pool UI.                   |
+| `NEXT_PUBLIC_ENABLE_VANITY`   | Optional (default true)      | Client       | If set to `false`, removes the vanity mint suffix generation UI.                                       |
+| `NEXT_PUBLIC_LOG_LEVEL`       | Optional                     | Client       | `debug`/`info`/`warn` to tune console noise in production previews.                                    |
+| `APP_URL`                     | Optional (deploy check)      | Server/CI    | Used by `vercel:health-check` script; falls back to `VERCEL_URL` if absent.                            |
+| `COV_MIN_BRANCHES` etc.       | CI only                      | CI           | Coverage gates (see `scripts/coverage-threshold-check.mjs`).                                            |
+
+### Minimal Production Set
+
+At minimum set: `RPC_URL`, `ALLOWED_DBC_PROGRAM_IDS`, `ALLOWED_DAMM_V2_PROGRAM_IDS`.
+
+Example values (JSON arrays as strings):
+
+```
+ALLOWED_DBC_PROGRAM_IDS=["dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN"]
+ALLOWED_DAMM_V2_PROGRAM_IDS=["cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG"]
+```
 
 Notes:
 
@@ -185,3 +203,95 @@ Switching from Strategy 1 → 2:
 ---
 
 **End of Guide**
+
+---
+
+## Pool Launch Runbook (End-to-End)
+
+This section details the operational steps for launching a new token pool using the UI.
+
+### 1. Prerequisites
+
+- Wallet with sufficient SOL for:
+  - Creation fee (as enforced by backend logic / fee transfers)
+  - Optional dev pre-buy amount
+  - Network fees & (optional) Jito tip
+- Environment variables set (see matrix above).
+- (Optional) Vanity mint or dev pre-buy features enabled (not disabled by env flags).
+
+### 2. Connect Wallet
+
+Open the site, connect a supported Solana wallet. Verify `/api/health` returns `ok: true` (RPC reachable).
+
+### 3. Prepare Token Metadata
+
+Gather:
+- Token name (>= 3 chars)
+- Symbol
+- 1:1 square logo (PNG recommended) – file is base64 uploaded via `/api/upload`.
+- Optional website & twitter links.
+
+### 4. (Optional) Vanity Mint Suffix
+
+If enabled, enter up to 4 Base58 chars. The client will search for up to 30 seconds. If timeout occurs, a normal mint is generated.
+
+### 5. Submit Create Form
+
+The UI will:
+1. Convert logo to base64.
+2. POST to `/api/upload` (builds initial create transaction & stores metadata).
+3. Decode & partially sign (vanity mint keypair if included).
+4. Wallet signs.
+
+### 6. (Optional) Dev Pre-Buy Bundle
+
+If dev pre-buy enabled and amount > 0, the client:
+1. Calls `/api/build-swap` with the create transaction's blockhash (prelaunch mode).
+2. Receives a placeholder swap transaction (currently a no-op transfer; replace with real route logic as needed).
+3. Optionally appends a Jito tip transfer if `/api/jito-bundle` returns accounts.
+4. Signs & bundles both transactions through `/api/send-transaction` with `waitForLanded=true`.
+
+### 7. Single TX Path
+
+If no dev pre-buy, only the create transaction is sent to `/api/send-transaction`.
+
+### 8. Confirmation & UI State
+
+Success toast shown; UI sets `poolCreated=true`. Add any post-creation navigation (future enhancement: redirect to pool detail page).
+
+### 9. Post-Launch Verification
+
+- Check Solana explorer for the creation signature.
+- Inspect token metadata correctness.
+- (If real swap logic implemented) Validate initial liquidity / price curve via pool explorer.
+
+### 10. Rollback Strategy
+
+If a launch fails mid-bundle:
+- The mint might exist without liquidity; you can relaunch using same UI if state is still consistent or discard and generate a new vanity.
+- If a partial transaction consumed fees, review logs via explorer for root cause (RPC rate limit, priority fee insufficient, etc.).
+
+---
+
+## Hardening Checklist (Pre-Mainnet Launch)
+
+- [ ] Replace placeholder `/api/build-swap` logic with actual route planning (DEX / bonding curve).
+- [ ] Add server-side validation for uploaded logo size & MIME type.
+- [ ] Add rate limiting (e.g., per-IP) to create & upload endpoints.
+- [ ] Introduce feature flags to disable vanity and dev pre-buy in production if not desired.
+- [ ] Expand integration tests for create + bundle path (currently partially covered by unit tests only).
+- [ ] Implement better error surfaces (map common RPC errors to user-friendly messages).
+
+---
+
+## Environment Variable Quick Reference Table
+
+| Category    | Vars                                                                                             |
+| ----------- | ------------------------------------------------------------------------------------------------ |
+| Core RPC    | `RPC_URL`, `NEXT_PUBLIC_RPC_URL`                                                                 |
+| Program IDs | `ALLOWED_DBC_PROGRAM_IDS`, `ALLOWED_DAMM_V2_PROGRAM_IDS`                                         |
+| DBC Fees    | `DBC_CLAIM_FEE_INSTRUCTION_NAME`, `DBC_CLAIM_FEE_DISCRIMINATOR`                                   |
+| Features    | `NEXT_PUBLIC_ENABLE_DEV_PREBUY`, `NEXT_PUBLIC_ENABLE_VANITY`                                     |
+| Assets/R2   | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_PUBLIC_BASE`       |
+| Misc        | `NEXT_PUBLIC_PUBLIC_BASE_URL`, `NEXT_PUBLIC_LOG_LEVEL`, `APP_URL`                                |
+

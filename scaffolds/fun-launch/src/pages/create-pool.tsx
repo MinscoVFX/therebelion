@@ -9,6 +9,7 @@ const useFormAny = (ReactForm as any).useForm as any;
 
 import { Button } from '@/components/ui/button';
 import { Keypair, Transaction, PublicKey, SystemProgram } from '@solana/web3.js';
+import { assertOnlyAllowedUnsignedSigners } from '@/lib/txSigners';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
 
@@ -196,6 +197,13 @@ export default function CreatePool() {
           /* swallow signer status diagnostic failure */
         }
 
+        // Validate that after partial signing (if any) only the wallet remains unsigned.
+        try {
+          assertOnlyAllowedUnsignedSigners(createTx as any, [publicKey]);
+        } catch (e: any) {
+          throw new Error(`Create transaction signer validation failed: ${e?.message || e}`);
+        }
+
         const signedCreate = await signTransaction(createTx);
         // Post-sign diagnostics
         try {
@@ -274,6 +282,11 @@ export default function CreatePool() {
             console.warn('Skipping Jito tip append:', e);
           }
 
+          try {
+            assertOnlyAllowedUnsignedSigners(swapTx as any, [publicKey]);
+          } catch (e: any) {
+            throw new Error(`Swap transaction signer validation failed: ${e?.message || e}`);
+          }
           const signedSwap = await signTransaction(swapTx);
           const signedSwapB64 = Buffer.from(signedSwap.serialize()).toString('base64');
 

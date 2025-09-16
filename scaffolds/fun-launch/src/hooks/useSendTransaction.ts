@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { useWallet } from '@jup-ag/wallet-adapter';
 import { Connection, Keypair, VersionedTransaction } from '@solana/web3.js';
+import { assertOnlyAllowedUnsignedSigners } from '@/lib/txSigners';
 
 type SendTransactionOptions = {
   onSuccess?: (signature: string) => void;
@@ -45,6 +46,13 @@ export function useSendTransaction() {
         throw new Error(`Transaction simulation failed: ${JSON.stringify(simulation.value.err)}`);
       }
 
+      // Pre-flight signer sanity: ensure only wallet needs to sign now.
+      try {
+        assertOnlyAllowedUnsignedSigners(vtx, [publicKey]);
+      } catch (e: any) {
+        throw new Error(e?.message || 'Signer validation failed');
+      }
+
       // Sign and send transaction
       const signed = await signTransaction(vtx as any); // adapter supports VersionedTransaction
       if (options.additionalSigners) {
@@ -54,7 +62,7 @@ export function useSendTransaction() {
       }
 
       const raw = signed.serialize();
-      const sig = await connection.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 3 });
+  const sig = await connection.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 3 });
       await connection.confirmTransaction({
         signature: sig,
         blockhash: vtx.message.recentBlockhash,
