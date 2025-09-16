@@ -23,10 +23,9 @@ vi.mock('../scaffolds/fun-launch/src/hooks/universalExitPlanner', () => ({
 }));
 
 vi.mock('../scaffolds/fun-launch/src/hooks/signingUtils', () => ({
-  signTransactionsAdaptive: vi.fn(async (_wallet: any, txs: any[]) => ({
-    // eslint-disable-line @typescript-eslint/no-explicit-any
+  signTransactionsAdaptive: vi.fn(async (_wallet: { publicKey?: unknown } | null, txs: object[]) => ({
     signed: txs,
-    errors: txs.map(() => null),
+    errors: txs.map(() => null as null | Error),
     usedBatch: true,
   })),
 }));
@@ -37,7 +36,7 @@ const confirmTransaction = vi.fn(async () => ({}));
 vi.mock('@solana/wallet-adapter-react', () => ({
   useWallet: () => ({
     publicKey: { toBase58: () => 'WalletABC', toString: () => 'WalletABC' },
-    signTransaction: vi.fn(async (tx: any) => tx), // eslint-disable-line @typescript-eslint/no-explicit-any
+  signTransaction: vi.fn(async <T extends object>(tx: T) => tx),
   }),
   useConnection: () => ({
     connection: { sendRawTransaction, confirmTransaction },
@@ -49,8 +48,7 @@ import { useUniversalExit } from '../scaffolds/fun-launch/src/hooks/useUniversal
 import * as web3 from '@solana/web3.js';
 
 // Force deserialize to return a stub no matter the input (some nested imports may have pulled real class)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-vi.spyOn(web3 as any, 'VersionedTransaction', 'get').mockReturnValue(
+vi.spyOn(web3 as unknown as { VersionedTransaction: unknown }, 'VersionedTransaction', 'get').mockReturnValue(
   class VT {
     message = { recentBlockhash: 'RBH' };
     static deserialize() {
