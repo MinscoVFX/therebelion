@@ -214,7 +214,36 @@ Imports should be organized in the following order:
 
 ## Testing
 
-(Testing guidelines to be added as testing infrastructure is implemented)
+Some tests intentionally exercise failure paths (e.g. mock RPC slot errors, network failures, or
+missing environment variables) to assert robust handling. As a result, you may see stderr output
+like:
+
+```
+Connection health check failed: ReferenceError: fake is not defined
+bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+RPC missing: set RPC_ENDPOINT or RPC_URL or NEXT_PUBLIC_RPC_URL
+```
+
+This is expected and does not mean the test failed unless Vitest reports a failing assertion.
+
+To locally silence some of that noise while developing, you can temporarily stub console methods:
+
+```ts
+import { beforeAll, afterAll } from 'vitest';
+
+let restore: (() => void) | undefined;
+beforeAll(() => {
+  const orig = console.error;
+  console.error = (...args) => {
+    if (String(args[0]).includes('Failed to load bindings')) return; // suppress
+    orig(...args);
+  };
+  restore = () => (console.error = orig);
+});
+afterAll(() => restore?.());
+```
+
+Avoid committing broad console suppression; keep it targeted or development-only.
 
 ## Commit Guidelines
 
