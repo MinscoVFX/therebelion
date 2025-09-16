@@ -295,3 +295,23 @@ If a launch fails mid-bundle:
 | Assets/R2   | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_PUBLIC_BASE`       |
 | Misc        | `NEXT_PUBLIC_PUBLIC_BASE_URL`, `NEXT_PUBLIC_LOG_LEVEL`, `APP_URL`                                |
 
+---
+
+## Signer Validation Note (2025-09)
+
+To prevent opaque wallet adapter errors like `unknown signer: <pubkey>` a proactive transaction signer validation utility was introduced in `scaffolds/fun-launch/src/lib/txSigners.ts`.
+
+Key points:
+
+- All locally generated Keypairs (e.g. vanity mint) must partially sign the transaction before the wallet adapter prompt.
+- We now assert (via `assertOnlyAllowedUnsignedSigners`) that only the connected wallet public key remains as an unsigned required signer. If another required signer is still present, a descriptive client error is thrown early instead of surfacing the generic wallet error.
+- Integrated today in:
+  - `useSendTransaction` hook (central path for sending single tx)
+  - `pages/create-pool.tsx` (pool creation + optional dev pre-buy flow)
+
+When adding new flows that assemble transactions with ephemeral Keypairs:
+1. Partially sign with those Keypairs immediately after building the transaction.
+2. Either rely on `useSendTransaction` (already guarded) or call `assertOnlyAllowedUnsignedSigners(tx, [wallet.publicKey])` manually before invoking `wallet.signTransaction`.
+
+This keeps user-facing signing UX reliable and eliminates the prior “unknown signer” confusion.
+
