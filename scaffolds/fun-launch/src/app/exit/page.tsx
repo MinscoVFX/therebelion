@@ -37,7 +37,7 @@ export default function ExitPage() {
     computeUnitLimit: 400_000,
     slippageBps: 100, // 1% slippage tolerance like Meteora website
   });
-  
+
   // Debug mode state
   const [debugMode, setDebugMode] = useState(false);
   const [debugPositions, setDebugPositions] = useState<DebugPosition[]>([]);
@@ -62,13 +62,13 @@ export default function ExitPage() {
     if (debugMode && connected && publicKey && !debugLoading) {
       setDebugLoading(true);
       fetch(`/api/dbc-discover?wallet=${publicKey.toBase58()}`)
-        .then(res => res.json())
-        .then(data => {
+        .then((res) => res.json())
+        .then((data) => {
           if (data.positions) {
             setDebugPositions(data.positions);
           }
         })
-        .catch(err => {
+        .catch((err) => {
           console.error('Debug fetch error:', err);
           setDebugPositions([]);
         })
@@ -90,17 +90,24 @@ export default function ExitPage() {
 
     const url = `/api/dbc-discover?wallet=${publicKey.toBase58()}`;
     fetch(url, { signal: ac.signal })
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((j) => {
         const n = Array.isArray(j?.positions) ? j.positions.length : 0;
         setPosCount(n);
       })
-      .catch(() => { /* silent; UI stays clean */ })
+      .catch(() => {
+        /* silent; UI stays clean */
+      })
       .finally(() => {
-        if (abortRef.current === ac) { setPosLoading(false); abortRef.current = null; }
+        if (abortRef.current === ac) {
+          setPosLoading(false);
+          abortRef.current = null;
+        }
       });
 
-    return () => { ac.abort(); };
+    return () => {
+      ac.abort();
+    };
   }, [publicKey]);
 
   // restore prefs
@@ -235,12 +242,31 @@ export default function ExitPage() {
               ) : (
                 <div className="space-y-2">
                   {debugPositions.map((pos, i) => (
-                    <div key={i} className="bg-red-900/20 border border-red-700/30 rounded p-3 text-xs">
-                      <div><strong>Mint:</strong> {pos.mint}</div>
-                      <div><strong>Token Account:</strong> {pos.tokenAccount}</div>
-                      {pos.name && <div><strong>Name:</strong> {pos.name}</div>}
-                      {pos.symbol && <div><strong>Symbol:</strong> {pos.symbol}</div>}
-                      {pos.updateAuthority && <div><strong>Update Authority:</strong> {pos.updateAuthority}</div>}
+                    <div
+                      key={i}
+                      className="bg-red-900/20 border border-red-700/30 rounded p-3 text-xs"
+                    >
+                      <div>
+                        <strong>Mint:</strong> {pos.mint}
+                      </div>
+                      <div>
+                        <strong>Token Account:</strong> {pos.tokenAccount}
+                      </div>
+                      {pos.name && (
+                        <div>
+                          <strong>Name:</strong> {pos.name}
+                        </div>
+                      )}
+                      {pos.symbol && (
+                        <div>
+                          <strong>Symbol:</strong> {pos.symbol}
+                        </div>
+                      )}
+                      {pos.updateAuthority && (
+                        <div>
+                          <strong>Update Authority:</strong> {pos.updateAuthority}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
