@@ -26,7 +26,9 @@
       "@/services/*": ["src/services/*"],
       "@/config/*": ["src/config/*"],
       "@/utils/*": ["src/utils/*"],
-      "@/lib/*": ["src/lib/*"]
+      "@/lib/*": ["src/lib/*"],
+      "@meteora-invent/studio": ["studio/src/index.ts"],
+      "@meteora-invent/studio/*": ["studio/src/*"]
     }
   },
   "include": ["src/**/*", "tests/**/*"],
