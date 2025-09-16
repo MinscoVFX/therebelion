@@ -136,34 +136,40 @@ export default function ExitPage() {
       toast.error('Connect your wallet first');
       return;
     }
-    if (loading) return; // prevent double clicks
-
+    if (loading) return;
     setLoading(true);
     try {
-      // Call the new one-click DBC exit API
-      const res = await fetch('/api/dbc-one-click-exit', {
+      // New unified endpoint with withdraw-first preference; server may fallback to claim.
+      const res = await fetch('/api/dbc-exit', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          ownerPubkey: publicKey.toBase58(),
+          action: 'withdraw_first',
+          owner: publicKey.toBase58(),
+          dbcPoolKeys: { /* server will auto-discover in one-click API variant later; placeholder */ },
           priorityMicros: prefs.priorityMicros,
           computeUnitLimit: prefs.computeUnitLimit,
           slippageBps: prefs.slippageBps,
         }),
       });
-
       const data = await res.json();
-      if (!res.ok || !data?.tx) {
-        throw new Error(data?.error || 'Failed to build transaction');
+      if (!res.ok) {
+        throw new Error(data?.error || `HTTP ${res.status}`);
       }
-
-      // Sign and send the transaction
-      const vtx = VersionedTransaction.deserialize(Buffer.from(data.tx, 'base64'));
+      if (!data?.txBase64 && !data?.tx) {
+        throw new Error('Missing transaction in response');
+      }
+      const b64 = data.txBase64 || data.tx;
+      const vtx = VersionedTransaction.deserialize(Buffer.from(b64, 'base64'));
       const sig = await sendTransaction(vtx, connection);
 
+      const actionLabel = data?.effectiveAction === 'withdraw' ? 'Withdraw + Claim' : 'Claim';
       toast.success(
         <div>
-          <p className="font-medium">Exit transaction submitted!</p>
+          <p className="font-medium">{actionLabel} transaction submitted!</p>
+          {data?.fallback && (
+            <p className="text-xs text-neutral-400 mt-1">Fallback used: {data?.fallback?.reason}</p>
+          )}
           <a
             href={solscanUrl(sig, (connection as any).rpcEndpoint)}
             target="_blank"
