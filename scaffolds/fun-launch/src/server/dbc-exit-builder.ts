@@ -56,6 +56,8 @@ const ALLOWED: string[] = (process.env.ALLOWED_DBC_PROGRAM_IDS || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
+const FALLBACK_BLOCKHASH = process.env.DBC_EXIT_FALLBACK_BLOCKHASH || '11111111111111111111111111111111';
+const FALLBACK_BLOCK_HEIGHT = Number(process.env.DBC_EXIT_FALLBACK_BLOCK_HEIGHT || 0);
 function assertProgramAllowed(pk: PublicKey) {
   if (ALLOWED.length === 0) return; // no allow list configured
   if (!ALLOWED.includes(pk.toBase58())) {
@@ -317,22 +319,49 @@ export async function buildDbcExitTransaction(
     throw new Error(`Unsupported DBC exit action: ${action}`);
   }
 
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+  let blockhashInfo: { blockhash: string; lastValidBlockHeight: number };
+  try {
+    blockhashInfo = await connection.getLatestBlockhash('confirmed');
+  } catch (err) {
+    if (!args.simulateOnly) throw err;
+    const warnMsg =
+      '[dbc-exit-builder] Falling back to mock blockhash for simulateOnly execution due to RPC error';
+    if (err instanceof Error) {
+      console.warn(warnMsg, err.message);
+    } else {
+      console.warn(warnMsg);
+    }
+    blockhashInfo = {
+      blockhash: FALLBACK_BLOCKHASH,
+      lastValidBlockHeight: Number.isFinite(FALLBACK_BLOCK_HEIGHT) ? FALLBACK_BLOCK_HEIGHT : 0,
+    };
+  }
   const msg = new TransactionMessage({
     payerKey: ownerPk,
-    recentBlockhash: blockhash,
+    recentBlockhash: blockhashInfo.blockhash,
     instructions,
   }).compileToV0Message();
   const tx = new VersionedTransaction(msg);
 
   if (args.simulateOnly) {
-    const sim = await connection.simulateTransaction(tx, {
-      commitment: 'confirmed',
-      sigVerify: false,
-    });
+    const sim = await connection
+      .simulateTransaction(tx, {
+        commitment: 'confirmed',
+        sigVerify: false,
+      })
+      .catch((err: unknown) => {
+        const error = err instanceof Error ? err : new Error(String(err));
+        return {
+          value: {
+            logs: [],
+            unitsConsumed: 0,
+            err: error,
+          },
+        };
+      });
     return {
       tx,
-      lastValidBlockHeight,
+      lastValidBlockHeight: blockhashInfo.lastValidBlockHeight,
       simulation: {
         logs: sim.value.logs || [],
         unitsConsumed: sim.value.unitsConsumed || 0,
@@ -341,5 +370,5 @@ export async function buildDbcExitTransaction(
     };
   }
 
-  return { tx, lastValidBlockHeight };
+  return { tx, lastValidBlockHeight: blockhashInfo.lastValidBlockHeight };
 }

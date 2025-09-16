@@ -11,7 +11,9 @@
     // Support the '@/...' alias used both in root and scaffold code.
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*", "scaffolds/fun-launch/src/*"]
+      "@/*": ["src/*", "scaffolds/fun-launch/src/*"],
+      "@meteora-invent/studio": ["studio/src/index.ts"],
+      "@meteora-invent/studio/*": ["studio/src/*"]
     },
     "lib": ["ES2022", "DOM"],
     "skipLibCheck": true

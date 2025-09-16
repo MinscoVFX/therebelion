@@ -1,6 +1,9 @@
 import { defineConfig } from 'vitest/config';
 import { resolve } from 'path';
 
+const rootSrc = resolve(__dirname, './src');
+const studioSrc = resolve(__dirname, './studio/src');
+
 export default defineConfig({
   test: {
     environment: 'node',
@@ -41,8 +44,16 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: {
-      '@': resolve(__dirname, './src'),
-    },
+    alias: [
+      { find: '@', replacement: rootSrc },
+      {
+        find: /^@meteora-invent\/studio$/,
+        replacement: resolve(studioSrc, './index.ts'),
+      },
+      {
+        find: /^@meteora-invent\/studio\/(.*)$/,
+        replacement: `${studioSrc}/$1`,
+      },
+    ],
   },
 });
