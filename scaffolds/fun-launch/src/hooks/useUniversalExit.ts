@@ -41,7 +41,27 @@ export function useUniversalExit() {
       const tasks = await planUniversalExits({ owner, priorityMicros: opts.priorityMicros, computeUnitLimit: opts.computeUnitLimit, include: opts.include });
       const items: UniversalExitItem[] = tasks.map(t => ({ ...t, status: 'pending' }));
       setState(s => ({ ...s, planning: false, running: true, startedAt: Date.now(), items }));
-      const deserialized = items.map(it => VersionedTransaction.deserialize(Buffer.from(it.tx, 'base64')));
+      const deserialized: VersionedTransaction[] = items
+        .map(it => {
+          try {
+            return VersionedTransaction.deserialize(Buffer.from(it.tx, 'base64'));
+          } catch {
+            return undefined;
+          }
+        })
+        .filter((v): v is VersionedTransaction => !!v);
+
+      if (deserialized.length !== items.length) {
+        setState(s => ({
+          ...s,
+          running: false,
+          planning: false,
+          items: s.items.map(it => ({ ...it, status: 'error', error: 'deserialize failed' })),
+          finishedAt: Date.now(),
+        }));
+        return;
+      }
+
       const walletLike: any = { signTransaction, signAllTransactions: (signTransaction as any)?.signAllTransactions };
       const { signed, errors } = await signTransactionsAdaptive(walletLike, deserialized);
 
@@ -53,9 +73,14 @@ export function useUniversalExit() {
         }
         try {
           setState(s => ({ ...s, currentIndex: i, items: s.items.map((it, idx) => idx === i ? { ...it, status: 'signed' } : it) }));
-          const sig = await connection.sendRawTransaction(signed[i].serialize(), { skipPreflight: false, maxRetries: 0 });
+          const txToSend = signed[i];
+          if (!txToSend) throw new Error('missing signed transaction');
+          const sig = await connection.sendRawTransaction(txToSend.serialize(), { skipPreflight: false, maxRetries: 0 });
           setState(s => ({ ...s, items: s.items.map((it, idx) => idx === i ? { ...it, status: 'sent', signature: sig } : it) }));
-          await connection.confirmTransaction({ signature: sig, blockhash: deserialized[i].message.recentBlockhash!, lastValidBlockHeight: items[i].lastValidBlockHeight }, 'confirmed');
+          const confirmedTx = deserialized[i];
+          const meta = items[i];
+          if (!confirmedTx || !meta) throw new Error('confirmation data missing');
+          await connection.confirmTransaction({ signature: sig, blockhash: confirmedTx.message.recentBlockhash!, lastValidBlockHeight: meta.lastValidBlockHeight }, 'confirmed');
           setState(s => ({ ...s, items: s.items.map((it, idx) => idx === i ? { ...it, status: 'confirmed' } : it) }));
         } catch (e: any) {
           setState(s => ({ ...s, items: s.items.map((it, idx) => idx === i ? { ...it, status: 'error', error: e?.message || 'failed' } : it) }));
