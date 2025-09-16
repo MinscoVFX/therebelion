@@ -1,8 +1,20 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { describe, it, expect } from 'vitest'
+
+// Mock metadata interface for testing
+interface MockMetadata {
+  data?: {
+    name?: string;
+    symbol?: string;
+  };
+  updateAuthority?: {
+    toBase58?: () => string;
+  };
+}
 
 describe('DBC discovery (Token-2022)', () => {
   it('accepts a Meteora LP-like position NFT by name hint', async () => {
-    const fakeMeta: any = {
+    const fakeMeta: MockMetadata = {
       data: { name: 'Meteora (STANDING-WSOL) LP Token', symbol: 'MPN' },
       updateAuthority: { toBase58: () => 'DummyUA' }
     }
@@ -11,7 +23,7 @@ describe('DBC discovery (Token-2022)', () => {
     const SYMBOL_HINTS = 'dbc,dbcp0s,mpn'.split(',').map(s => s.trim().toLowerCase())
     const UPDATE_AUTH_ALLOW: string[] = [] // empty for zero-config testing
     
-    const looksLikeDbc = (meta: any) => {
+    const looksLikeDbc = (meta: MockMetadata) => {
       const name = (meta.data?.name || '').toLowerCase()
       const symbol = (meta.data?.symbol || '').toLowerCase()
       const ua = meta.updateAuthority?.toBase58?.() || ''
@@ -27,7 +39,7 @@ describe('DBC discovery (Token-2022)', () => {
   })
 
   it('accepts a DBC position NFT by symbol hint', async () => {
-    const fakeMeta: any = {
+    const fakeMeta: MockMetadata = {
       data: { name: 'Some Position', symbol: 'DBCP0S' },
       updateAuthority: { toBase58: () => 'DummyUA' }
     }
@@ -36,7 +48,7 @@ describe('DBC discovery (Token-2022)', () => {
     const SYMBOL_HINTS = 'dbc,dbcp0s,mpn'.split(',').map(s => s.trim().toLowerCase())
     const UPDATE_AUTH_ALLOW: string[] = []
     
-    const looksLikeDbc = (meta: any) => {
+    const looksLikeDbc = (meta: MockMetadata) => {
       const name = (meta.data?.name || '').toLowerCase()
       const symbol = (meta.data?.symbol || '').toLowerCase()
       const ua = meta.updateAuthority?.toBase58?.() || ''
@@ -51,7 +63,7 @@ describe('DBC discovery (Token-2022)', () => {
   })
 
   it('rejects unrelated NFTs', async () => {
-    const fakeMeta: any = {
+    const fakeMeta: MockMetadata = {
       data: { name: 'Random NFT', symbol: 'RANDOM' },
       updateAuthority: { toBase58: () => 'DummyUA' }
     }
@@ -60,7 +72,7 @@ describe('DBC discovery (Token-2022)', () => {
     const SYMBOL_HINTS = 'dbc,dbcp0s,mpn'.split(',').map(s => s.trim().toLowerCase())
     const UPDATE_AUTH_ALLOW: string[] = []
     
-    const looksLikeDbc = (meta: any) => {
+    const looksLikeDbc = (meta: MockMetadata) => {
       const name = (meta.data?.name || '').toLowerCase()
       const symbol = (meta.data?.symbol || '').toLowerCase()
       const ua = meta.updateAuthority?.toBase58?.() || ''
@@ -76,7 +88,7 @@ describe('DBC discovery (Token-2022)', () => {
 
   it('accepts when update authority is in allow list', async () => {
     const allowedUA = 'SomeKnownDBCUpdateAuthority123'
-    const fakeMeta: any = {
+    const fakeMeta: MockMetadata = {
       data: { name: 'Unknown Name', symbol: 'UNK' },
       updateAuthority: { toBase58: () => allowedUA }
     }
@@ -85,7 +97,7 @@ describe('DBC discovery (Token-2022)', () => {
     const SYMBOL_HINTS = 'dbc,dbcp0s,mpn'.split(',').map(s => s.trim().toLowerCase())
     const UPDATE_AUTH_ALLOW = [allowedUA] // explicit allow-list
     
-    const looksLikeDbc = (meta: any) => {
+    const looksLikeDbc = (meta: MockMetadata) => {
       const name = (meta.data?.name || '').toLowerCase()
       const symbol = (meta.data?.symbol || '').toLowerCase()
       const ua = meta.updateAuthority?.toBase58?.() || ''

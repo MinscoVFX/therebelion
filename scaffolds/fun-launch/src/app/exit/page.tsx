@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
@@ -43,6 +43,11 @@ export default function ExitPage() {
   const [debugPositions, setDebugPositions] = useState<DebugPosition[]>([]);
   const [debugLoading, setDebugLoading] = useState(false);
 
+  // Positions pill state
+  const [posCount, setPosCount] = useState<number | null>(null);
+  const [posLoading, setPosLoading] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
   // Check for debug mode on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -70,6 +75,33 @@ export default function ExitPage() {
         .finally(() => setDebugLoading(false));
     }
   }, [debugMode, connected, publicKey, debugLoading]);
+
+  // Fetch positions count for pill
+  useEffect(() => {
+    setPosCount(null);
+    if (!publicKey) {
+      setPosLoading(false);
+      return () => {}; // return cleanup function
+    }
+    setPosLoading(true);
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    const url = `/api/dbc-discover?wallet=${publicKey.toBase58()}`;
+    fetch(url, { signal: ac.signal })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      .then((j) => {
+        const n = Array.isArray(j?.positions) ? j.positions.length : 0;
+        setPosCount(n);
+      })
+      .catch(() => { /* silent; UI stays clean */ })
+      .finally(() => {
+        if (abortRef.current === ac) { setPosLoading(false); abortRef.current = null; }
+      });
+
+    return () => { ac.abort(); };
+  }, [publicKey]);
 
   // restore prefs
   useEffect(() => {
@@ -165,7 +197,15 @@ export default function ExitPage() {
 
   return (
     <div className="max-w-3xl mx-auto p-8 text-neutral-100 bg-neutral-900 min-h-screen" role="main">
-      <h1 className="text-3xl font-bold mb-4 text-neutral-50">One‑Click DBC Exit</h1>
+      <div className="flex items-center mb-4">
+        <h1 className="text-3xl font-bold text-neutral-50">One‑Click DBC Exit</h1>
+        {/* Positions pill (visible only if we have a number) */}
+        {publicKey && posCount !== null && !posLoading && (
+          <div className="inline-flex items-center rounded-full bg-zinc-800/70 text-zinc-100 text-xs px-3 py-1 ml-2 select-none">
+            Positions found: <span className="ml-1 font-semibold">{posCount}</span>
+          </div>
+        )}
+      </div>
       <div className="mb-4 rounded-md border border-amber-600/40 bg-amber-950/30 p-3 text-amber-300 text-xs">
         <strong>Enhanced:</strong> Now uses the new one-click API that automatically finds your
         biggest DBC pool and creates a combined transaction to claim all fees and withdraw 100%
