@@ -22,15 +22,14 @@ describe('services: connection + meteora', () => {
   });
 
   it('connectionService health returns false on slot error', async () => {
-    const fake = { getSlot: vi.fn().mockRejectedValue(new Error('slot fail')) };
     vi.mock('@solana/web3.js', async (orig) => {
       const base: any = await orig();
       class FakeConnection extends base.Connection {
         constructor() {
           super('http://localhost:1234');
         }
-        getSlot(): Promise<number> {
-          return fake.getSlot();
+        override getSlot(): Promise<number> {
+          return Promise.reject(new Error('slot fail'));
         }
       }
       return { ...base, Connection: FakeConnection };
