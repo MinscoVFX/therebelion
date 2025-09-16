@@ -14,10 +14,19 @@ export function getRequiredSignerPubkeys(vtx: VersionedTransaction): PublicKey[]
  * Inspect a legacy Transaction and return the set of required signer pubkeys (in order).
  */
 export function getRequiredSignerPubkeysLegacy(tx: Transaction): PublicKey[] {
-  const n = tx.instructions.reduce((maxIndex, ix) => {
-    return Math.max(maxIndex, Math.max(...ix.keys.filter(k => k.isSigner).map(k => k.pubkey.toString()).map(k => tx.signatures.findIndex(s => s.publicKey?.toString() === k))));
-  }, 0) + 1;
-  return tx.signatures.slice(0, n).map(s => s.publicKey!);
+  const n =
+    tx.instructions.reduce((maxIndex, ix) => {
+      return Math.max(
+        maxIndex,
+        Math.max(
+          ...ix.keys
+            .filter((k) => k.isSigner)
+            .map((k) => k.pubkey.toString())
+            .map((k) => tx.signatures.findIndex((s) => s.publicKey?.toString() === k))
+        )
+      );
+    }, 0) + 1;
+  return tx.signatures.slice(0, n).map((s) => s.publicKey!);
 }
 
 /**
@@ -33,7 +42,7 @@ export function getUnsignedRequiredSigners(vtx: VersionedTransaction): PublicKey
  * Determine which required signers still lack a signature (legacy Transaction).
  */
 export function getUnsignedRequiredSignersLegacy(tx: Transaction): PublicKey[] {
-  return tx.signatures.filter(s => !s.signature).map(s => s.publicKey!);
+  return tx.signatures.filter((s) => !s.signature).map((s) => s.publicKey!);
 }
 
 /**
