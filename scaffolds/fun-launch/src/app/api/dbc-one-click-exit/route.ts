@@ -27,14 +27,17 @@ export async function POST(req: Request) {
 
     // Auto-discover DBC positions
     const positions = await scanDbcPositionsUltraSafe({ connection, wallet: owner });
-    
+
     if (!positions || positions.length === 0) {
-      return NextResponse.json({ error: 'No DBC positions found for this wallet' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'No DBC positions found for this wallet' },
+        { status: 404 }
+      );
     }
 
     // Find the position with the largest LP amount (biggest pool)
-    const selectedPosition = positions.reduce((acc, p) => 
-      (!acc || p.lpAmount > acc.lpAmount ? p : acc)
+    const selectedPosition = positions.reduce((acc, p) =>
+      !acc || p.lpAmount > acc.lpAmount ? p : acc
     );
 
     const dbcPoolKeys = {
