@@ -85,48 +85,14 @@ jobs:
           key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-build
           restore-keys: |
             turbo-${{ runner.os }}-
-
-      - name: Setup pnpm (pre-cache guard)
-        uses: pnpm/action-setup@v4
-        continue-on-error: true
-        with:
-          version: 10.14.0
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Setup pnpm (post PATH restore)
-        uses: pnpm/action-setup@v4
-        continue-on-error: true
-        with:
-          version: 10.14.0
-
-      - name: Ensure pnpm present (Corepack fallback)
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! command -v pnpm >/dev/null 2>&1; then
-            echo "pnpm not found from action, enabling via Corepack fallback..."
-            corepack enable
-            corepack prepare pnpm@10.14.0 --activate
-          fi
-          pnpm -v
-
-      - name: Sanitize npm registries for CI
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "registry=https://registry.npmjs.org/" > ~/.npmrc
-          pnpm config set registry https://registry.npmjs.org/
-          npm config set registry https://registry.npmjs.org/
-          pnpm config delete @jsr:registry || true
-          npm config delete @jsr:registry || true
-          echo "@jsr:registry=https://registry.npmjs.org/" >> ~/.npmrc
-          pnpm config set fetch-retries 4
-          pnpm config set network-timeout 600000
+      - name: Ensure pnpm (composite)
+        uses: ./.github/actions/ensure-pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -147,48 +113,14 @@ jobs:
           key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-typecheck
           restore-keys: |
             turbo-${{ runner.os }}-
-
-      - name: Setup pnpm (pre-cache guard)
-        uses: pnpm/action-setup@v4
-        continue-on-error: true
-        with:
-          version: 10.14.0
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Setup pnpm (post PATH restore)
-        uses: pnpm/action-setup@v4
-        continue-on-error: true
-        with:
-          version: 10.14.0
-
-      - name: Ensure pnpm present (Corepack fallback)
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! command -v pnpm >/dev/null 2>&1; then
-            echo "pnpm not found from action, enabling via Corepack fallback..."
-            corepack enable
-            corepack prepare pnpm@10.14.0 --activate
-          fi
-          pnpm -v
-
-      - name: Sanitize npm registries for CI
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "registry=https://registry.npmjs.org/" > ~/.npmrc
-          pnpm config set registry https://registry.npmjs.org/
-          npm config set registry https://registry.npmjs.org/
-          pnpm config delete @jsr:registry || true
-          npm config delete @jsr:registry || true
-          echo "@jsr:registry=https://registry.npmjs.org/" >> ~/.npmrc
-          pnpm config set fetch-retries 4
-          pnpm config set network-timeout 600000
+      - name: Ensure pnpm (composite)
+        uses: ./.github/actions/ensure-pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -209,48 +141,14 @@ jobs:
           key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-test
           restore-keys: |
             turbo-${{ runner.os }}-
-
-      - name: Setup pnpm (pre-cache guard)
-        uses: pnpm/action-setup@v4
-        continue-on-error: true
-        with:
-          version: 10.14.0
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Setup pnpm (post PATH restore)
-        uses: pnpm/action-setup@v4
-        continue-on-error: true
-        with:
-          version: 10.14.0
-
-      - name: Ensure pnpm present (Corepack fallback)
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! command -v pnpm >/dev/null 2>&1; then
-            echo "pnpm not found from action, enabling via Corepack fallback..."
-            corepack enable
-            corepack prepare pnpm@10.14.0 --activate
-          fi
-          pnpm -v
-
-      - name: Sanitize npm registries for CI
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "registry=https://registry.npmjs.org/" > ~/.npmrc
-          pnpm config set registry https://registry.npmjs.org/
-          npm config set registry https://registry.npmjs.org/
-          pnpm config delete @jsr:registry || true
-          npm config delete @jsr:registry || true
-          echo "@jsr:registry=https://registry.npmjs.org/" >> ~/.npmrc
-          pnpm config set fetch-retries 4
-          pnpm config set network-timeout 600000
+      - name: Ensure pnpm (composite)
+        uses: ./.github/actions/ensure-pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
