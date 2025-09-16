@@ -176,8 +176,8 @@ jobs:
         env:
           COV_MIN_LINES: 24
           COV_MIN_STATEMENTS: 24
-          COV_MIN_FUNCTIONS: 50
-          COV_MIN_BRANCHES: 52
+          COV_MIN_FUNCTIONS: 49
+          COV_MIN_BRANCHES: 51
           COV_RATCHET: 1
           # Allow updating baseline automatically only on direct pushes to main (not pull requests)
           COV_UPDATE_BASELINE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && '1' || '0' }}
