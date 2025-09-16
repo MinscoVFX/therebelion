@@ -43,6 +43,10 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
+      '@meteora-invent/studio': resolve(
+        __dirname,
+        './tests/__mocks__/@meteora-invent/studio.ts'
+      ),
     },
   },
 });

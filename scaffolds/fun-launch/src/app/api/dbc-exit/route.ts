@@ -35,14 +35,18 @@ export async function POST(req: Request) {
       ((action === 'claim' || action === 'claim_and_withdraw') && !body.dbcPoolKeys?.feeVault)
     ) {
       if (simulateOnly) {
-        return NextResponse.json({
-          simulated: true,
-          stub: true,
-          logs: [],
-          unitsConsumed: 0,
-          txBase64: '',
-          warning: 'simulateOnly stub returned due to missing required fields',
-        }, { headers: { 'Cache-Control': 'no-store' } });
+        return NextResponse.json(
+          {
+            simulated: true,
+            stub: true,
+            logs: [],
+            unitsConsumed: 0,
+            tx: '',
+            txBase64: '',
+            warning: 'simulateOnly stub returned due to missing required fields',
+          },
+          { headers: { 'Cache-Control': 'no-store' } }
+        );
       }
       return NextResponse.json(
         {
@@ -113,6 +117,7 @@ export async function POST(req: Request) {
     }
 
     const base64 = Buffer.from(built.tx.serialize()).toString('base64');
+    const txFields = { tx: base64, txBase64: base64 };
     const metas = [] as any[];
     if (action === 'claim') {
       const m = getClaimDiscriminatorMeta();
@@ -154,20 +159,26 @@ export async function POST(req: Request) {
       fallback: fallbackTriggered,
     };
     if (built.simulation) {
-      return NextResponse.json({
-        simulated: true,
-        logs: built.simulation.logs,
-        unitsConsumed: built.simulation.unitsConsumed,
-        error: built.simulation.error,
-        txBase64: base64,
-        ...common,
-      }, { headers: { 'Cache-Control': 'no-store' } });
+      return NextResponse.json(
+        {
+          simulated: true,
+          logs: built.simulation.logs,
+          unitsConsumed: built.simulation.unitsConsumed,
+          error: built.simulation.error,
+          ...txFields,
+          ...common,
+        },
+        { headers: { 'Cache-Control': 'no-store' } }
+      );
     }
-    return NextResponse.json({
-      simulated: false,
-      txBase64: base64,
-      ...common,
-    }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json(
+      {
+        simulated: false,
+        ...txFields,
+        ...common,
+      },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (error) {
     console.error('DBC exit API error:', error);
     return NextResponse.json(
