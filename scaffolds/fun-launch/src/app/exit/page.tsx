@@ -96,6 +96,10 @@ export default function ExitPage() {
   return (
     <div className="max-w-3xl mx-auto p-8 text-neutral-100 bg-neutral-900 min-h-screen" role="main">
       <h1 className="text-3xl font-bold mb-4 text-neutral-50">One‑Click Exit</h1>
+      <div className="mb-4 rounded-md border border-amber-600/40 bg-amber-950/30 p-3 text-amber-300 text-xs">
+        <strong>Notice:</strong> Withdraws are temporarily disabled. Claim-only flow is active while
+        withdraw logic is audited and finalized.
+      </div>
       <p className="text-neutral-400 mb-6 text-sm">
         Automatically claims all fees and withdraws 100% liquidity from your most significant
         detected DBC position in a single transaction.
