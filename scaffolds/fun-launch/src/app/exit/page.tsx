@@ -20,6 +20,268 @@ interface DebugPosition {
   updateAuthority?: string;
 }
 
+interface DbcPoolKeysPayload {
+  pool: string;
+  feeVault: string;
+  tokenA?: string;
+  tokenB?: string;
+  lpMint?: string;
+  userLpToken?: string;
+  userTokenA?: string;
+  userTokenB?: string;
+  [key: string]: string | undefined;
+}
+
+type SerializedDbcPoolKeys = Partial<Record<keyof DbcPoolKeysPayload, unknown>> & {
+  [key: string]: unknown;
+};
+
+interface ExitToolsPosition {
+  poolKeysSerialized?: SerializedDbcPoolKeys | null;
+  poolKeys?: SerializedDbcPoolKeys | null;
+  estimatedValueUsd?: unknown;
+  lpAmount?: unknown;
+  [key: string]: unknown;
+}
+
+interface ExitToolsResponse {
+  positions?: ExitToolsPosition[];
+  items?: ExitToolsPosition[];
+  position?: ExitToolsPosition;
+  error?: unknown;
+  message?: unknown;
+  [key: string]: unknown;
+}
+
+function buildWalletUrl(path: string, wallet: string) {
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}wallet=${encodeURIComponent(wallet)}`;
+}
+
+async function fetchJsonWithWallet<T>(path: string, wallet: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(buildWalletUrl(path, wallet), init);
+  const text = await res.text();
+  let parsed: any = null;
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
+  }
+  if (!res.ok) {
+    const message =
+      (parsed && typeof parsed === 'object' && typeof parsed.error === 'string' && parsed.error) ||
+      (parsed && typeof parsed === 'object' && typeof parsed.message === 'string' && parsed.message) ||
+      text ||
+      `Request failed with status ${res.status}`;
+    throw new Error(message);
+  }
+  return (parsed ?? ({} as any)) as T;
+}
+
+function toNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+  return null;
+}
+
+function toBigIntish(value: unknown): bigint | null {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return BigInt(Math.trunc(value));
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      return BigInt(trimmed);
+    } catch {
+      const fallback = Number(trimmed);
+      if (Number.isFinite(fallback)) return BigInt(Math.trunc(fallback));
+    }
+  }
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    if (typeof obj.toBase58 === 'function') {
+      try {
+        const str = obj.toBase58();
+        if (typeof str === 'string' && str) return toBigIntish(str);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (typeof obj.toNumber === 'function') {
+      try {
+        const num = obj.toNumber();
+        if (Number.isFinite(num)) return BigInt(Math.trunc(num));
+      } catch {
+        /* ignore */
+      }
+    }
+    if (typeof obj.toString === 'function') {
+      try {
+        const str = obj.toString();
+        if (typeof str === 'string' && str && str !== '[object Object]') {
+          const parsed = toBigIntish(str);
+          if (parsed !== null) return parsed;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    for (const key of ['amount', 'value', 'lpAmount', 'lamports', 'bn']) {
+      if (key in obj) {
+        const parsed = toBigIntish(obj[key]);
+        if (parsed !== null) return parsed;
+      }
+    }
+  }
+  return null;
+}
+
+function toBase58String(value: unknown): string | undefined {
+  if (typeof value === 'string' && value) return value;
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    if (typeof obj.base58 === 'string' && obj.base58) return obj.base58;
+    if (typeof obj.toBase58 === 'function') {
+      try {
+        const str = obj.toBase58();
+        if (typeof str === 'string' && str) return str;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (typeof obj.toString === 'function') {
+      try {
+        const str = obj.toString();
+        if (typeof str === 'string' && str && str !== '[object Object]') return str;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return undefined;
+}
+
+function coerceSerializedPoolKeys(input: SerializedDbcPoolKeys | null | undefined): DbcPoolKeysPayload | null {
+  if (!input || typeof input !== 'object') return null;
+  const raw = input as Record<string, unknown>;
+  const pool = toBase58String(raw.pool);
+  const feeVault = toBase58String(raw.feeVault);
+  if (!pool || !feeVault) return null;
+  const normalized: DbcPoolKeysPayload = { pool, feeVault };
+  const optionalKeys = [
+    'tokenA',
+    'tokenB',
+    'lpMint',
+    'userLpToken',
+    'userTokenA',
+    'userTokenB',
+  ];
+  for (const key of optionalKeys) {
+    const val = toBase58String(raw[key]);
+    if (val) normalized[key] = val;
+  }
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === 'string' && !(key in normalized)) {
+      normalized[key] = value;
+    }
+  }
+  return normalized;
+}
+
+function extractExitToolPositions(payload: ExitToolsResponse | null | undefined): ExitToolsPosition[] {
+  if (!payload) return [];
+  const collected: ExitToolsPosition[] = [];
+  const candidates = [
+    payload.positions,
+    payload.items,
+    (payload.data as any)?.positions,
+    (payload.data as any)?.items,
+  ];
+  for (const arr of candidates) {
+    if (Array.isArray(arr)) {
+      for (const item of arr) {
+        if (item && typeof item === 'object') collected.push(item);
+      }
+    }
+  }
+  const single = payload.position;
+  if (single && typeof single === 'object') collected.push(single);
+  return collected;
+}
+
+function extractEstimatedUsd(position: ExitToolsPosition): number | null {
+  const keys = ['estimatedValueUsd', 'valueUsd', 'totalValueUsd', 'totalUsd', 'value'] as const;
+  for (const key of keys) {
+    if (key in position) {
+      const parsed = toNumber(position[key]);
+      if (parsed !== null) return parsed;
+    }
+  }
+  return null;
+}
+
+function extractLpAmount(position: ExitToolsPosition): bigint | null {
+  const keys = [
+    'lpAmount',
+    'lpAmountTokens',
+    'lpTokenAmount',
+    'lpAmountLamports',
+    'liquidity',
+    'balance',
+  ] as const;
+  for (const key of keys) {
+    if (key in position) {
+      const parsed = toBigIntish(position[key]);
+      if (parsed !== null) return parsed;
+    }
+  }
+  return null;
+}
+
+function pickBestExitToolsPosition(
+  positions: ExitToolsPosition[]
+): (ExitToolsPosition & { poolKeysSerialized: DbcPoolKeysPayload }) | null {
+  let best:
+    | {
+        pos: ExitToolsPosition & { poolKeysSerialized: DbcPoolKeysPayload };
+        usd: number | null;
+        lp: bigint | null;
+      }
+    | null = null;
+  for (const position of positions) {
+    const normalizedKeys =
+      coerceSerializedPoolKeys(position.poolKeysSerialized) ||
+      coerceSerializedPoolKeys(position.poolKeys);
+    if (!normalizedKeys) continue;
+    const normalized = { ...position, poolKeysSerialized: normalizedKeys };
+    const usd = extractEstimatedUsd(position);
+    const lp = extractLpAmount(position);
+    if (!best) {
+      best = { pos: normalized, usd, lp };
+      continue;
+    }
+    const bestUsd = best.usd;
+    if (usd !== null || bestUsd !== null) {
+      const currentScore = usd ?? Number.NEGATIVE_INFINITY;
+      const bestScore = bestUsd ?? Number.NEGATIVE_INFINITY;
+      if (currentScore > bestScore) {
+        best = { pos: normalized, usd, lp };
+      }
+      continue;
+    }
+    const bestLp = best.lp;
+    if (lp !== null && (bestLp === null || lp > bestLp)) {
+      best = { pos: normalized, usd, lp };
+    }
+  }
+  return best?.pos ?? null;
+}
+
 function solscanUrl(sig: string, endpoint: string) {
   const lower = endpoint?.toLowerCase?.() ?? '';
   if (lower.includes('devnet')) return `https://solscan.io/tx/${sig}?cluster=devnet`;
@@ -59,22 +321,32 @@ export default function ExitPage() {
 
   // Fetch debug positions when debug mode is enabled and wallet connected
   useEffect(() => {
-    if (debugMode && connected && publicKey && !debugLoading) {
-      setDebugLoading(true);
-      fetch(`/api/dbc-discover?wallet=${publicKey.toBase58()}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.positions) {
-            setDebugPositions(data.positions);
-          }
-        })
-        .catch((err) => {
-          console.error('Debug fetch error:', err);
+    if (!debugMode || !connected || !publicKey) return;
+    let cancelled = false;
+    const wallet = publicKey.toBase58();
+    setDebugLoading(true);
+    fetchJsonWithWallet<{ positions?: DebugPosition[] }>(`/api/dbc-discover`, wallet)
+      .then((data) => {
+        if (cancelled) return;
+        if (Array.isArray(data?.positions)) {
+          setDebugPositions(data.positions);
+        } else {
           setDebugPositions([]);
-        })
-        .finally(() => setDebugLoading(false));
-    }
-  }, [debugMode, connected, publicKey, debugLoading]);
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('Debug fetch error:', err);
+        setDebugPositions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setDebugLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      setDebugLoading(false);
+    };
+  }, [debugMode, connected, publicKey]);
 
   // Fetch positions count for pill
   useEffect(() => {
@@ -88,14 +360,15 @@ export default function ExitPage() {
     const ac = new AbortController();
     abortRef.current = ac;
 
-    const url = `/api/dbc-discover?wallet=${publicKey.toBase58()}`;
-    fetch(url, { signal: ac.signal })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((j) => {
-        const n = Array.isArray(j?.positions) ? j.positions.length : 0;
+    const wallet = publicKey.toBase58();
+    fetchJsonWithWallet<{ positions?: unknown[] }>(`/api/dbc-discover`, wallet, { signal: ac.signal })
+      .then((data) => {
+        if (abortRef.current !== ac) return;
+        const n = Array.isArray(data?.positions) ? data.positions.length : 0;
         setPosCount(n);
       })
-      .catch(() => {
+      .catch((err: any) => {
+        if (err?.name === 'AbortError') return;
         /* silent; UI stays clean */
       })
       .finally(() => {
@@ -139,14 +412,41 @@ export default function ExitPage() {
     if (loading) return;
     setLoading(true);
     try {
+      const owner = publicKey.toBase58();
+      const exitTools = await fetchJsonWithWallet<ExitToolsResponse>(`/api/exit-tools`, owner);
+      if (typeof exitTools?.error === 'string' && exitTools.error) {
+        toast.error(exitTools.error);
+        return;
+      }
+      const positions = extractExitToolPositions(exitTools);
+      const best = pickBestExitToolsPosition(positions);
+      if (!best || !best.poolKeysSerialized) {
+        toast.info('No eligible DBC liquidity position found for exit.');
+        return;
+      }
+      const poolKeys = best.poolKeysSerialized;
+      if (!poolKeys.pool || !poolKeys.feeVault) {
+        toast.error('Exit discovery returned incomplete pool information.');
+        return;
+      }
+      const dbcPoolKeys: DbcPoolKeysPayload = {
+        pool: poolKeys.pool,
+        feeVault: poolKeys.feeVault,
+      };
+      for (const [key, value] of Object.entries(poolKeys)) {
+        if (key === 'pool' || key === 'feeVault') continue;
+        if (typeof value === 'string' && value) {
+          dbcPoolKeys[key] = value;
+        }
+      }
       // New unified endpoint with withdraw-first preference; server may fallback to claim.
       const res = await fetch('/api/dbc-exit', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           action: 'withdraw_first',
-          owner: publicKey.toBase58(),
-          dbcPoolKeys: { /* server will auto-discover in one-click API variant later; placeholder */ },
+          owner,
+          dbcPoolKeys,
           priorityMicros: prefs.priorityMicros,
           computeUnitLimit: prefs.computeUnitLimit,
           slippageBps: prefs.slippageBps,
