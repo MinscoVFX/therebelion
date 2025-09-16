@@ -62,6 +62,39 @@ quick verification gate before commits or deployments. `pnpm env:check` performs
 validation (placeholder discriminator, required variables, allow‑list formatting).
 `pnpm health:full` runs both in sequence.
 
+### Smoke Tests
+
+Production-oriented smoke checks live in `scripts/prod-smoke.mjs` and are runnable locally.
+
+Run locally against default APP_URL:
+
+```bash
+pnpm smoke
+```
+
+Override target URL (e.g. a preview deployment):
+
+```bash
+APP_URL=https://preview-your-app.vercel.app pnpm smoke
+```
+
+CI wrapper (injects APP_URL via workflow env):
+
+```bash
+pnpm ci:smoke
+```
+
+What it validates currently:
+
+- /api/health 200 + `{ ok: true }`
+- /api/dbc-exit?action=claim&simulateOnly=true (GET + POST) both 200
+- /api/dbc-exit?action=withdraw&simulateOnly=true returns 501 (explicitly disabled)
+- /exit page contains claim-only banner text including: `Withdraws are temporarily disabled`
+
+Report: JSON written to `scripts/prod-smoke-report.json` with step statuses and `allPassed` field.
+If any step fails the script exits non-zero (except in workflow where exit is delayed until after
+copy of the report). Artifacts are uploaded by the `prod-smoke` workflow.
+
 Environment template: see `.env.example` for all supported variables (including
 `DBC_SUPPRESS_PLACEHOLDER_WARNING` for local development log noise suppression).
 

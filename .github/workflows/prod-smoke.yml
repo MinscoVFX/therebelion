@@ -37,17 +37,16 @@ jobs:
           fi
           pnpm -v
       - run: node -v && npm -v && pnpm -v
+      - name: Install dependencies (shallow)
+        run: pnpm install --frozen-lockfile --filter .
       - name: Ensure script exists
-        run: |
-          test -f scripts/prod-smoke.mjs || { echo "missing scripts/prod-smoke.mjs"; exit 1; }
-      - name: Run smoke tests
+        run: test -f scripts/prod-smoke.mjs || { echo "missing scripts/prod-smoke.mjs"; exit 1; }
+      - name: Run smoke tests (pnpm script)
         run: |
           set -euo pipefail
-          node scripts/prod-smoke.mjs || true
-          # Script writes scripts/prod-smoke-report.json
+          pnpm ci:smoke || true
           if [ ! -f scripts/prod-smoke-report.json ]; then echo 'Missing prod-smoke-report.json'; exit 1; fi
           cp scripts/prod-smoke-report.json smoke-report.json
-          # Determine pass/fail from JSON
           pass=$(jq -r '.allPassed' smoke-report.json || echo 'false')
           sed -n '1,160p' smoke-report.json
           if [ "$pass" != "true" ]; then echo 'Smoke tests reported failure'; exit 1; fi
