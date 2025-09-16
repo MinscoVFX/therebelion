@@ -37,3 +37,28 @@ export function assertOnlyAllowedUnsignedSigners(
     );
   }
 }
+
+/**
+ * Validate an array of VersionedTransactions. Stops at first failure unless `continueOnError` is true.
+ * Returns an array of error messages (null where validation passed) if continueOnError specified.
+ */
+export function validateBatchSignerSets(
+  txs: VersionedTransaction[],
+  allowed: PublicKey[],
+  opts?: { continueOnError?: boolean }
+): (string | null)[] | void {
+  const errors: (string | null)[] = [];
+  for (const tx of txs) {
+    try {
+      assertOnlyAllowedUnsignedSigners(tx, allowed);
+      errors.push(null);
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      if (!opts?.continueOnError) {
+        throw new Error(msg);
+      }
+      errors.push(msg);
+    }
+  }
+  if (opts?.continueOnError) return errors;
+}

@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { VersionedTransaction } from '@solana/web3.js';
+import { VersionedTransaction, PublicKey } from '@solana/web3.js';
 import { signTransactionsAdaptive } from './signingUtils';
 import { safeJson } from '../lib/http';
+import { assertOnlyAllowedUnsignedSigners } from '../lib/txSigners';
 
 export interface AutoBatchStatusItem {
   pool: string;
@@ -118,6 +119,14 @@ export function useDbcAutoBatchExit() {
         const deserialized = built.map((b) =>
           VersionedTransaction.deserialize(Buffer.from(b.tx, 'base64'))
         );
+        // Validate each tx has only wallet as remaining unsigned signer.
+        try {
+          for (const tx of deserialized) {
+            assertOnlyAllowedUnsignedSigners(tx, [publicKey as PublicKey]);
+          }
+        } catch (e: any) {
+          throw new Error('Signer validation failed: ' + (e?.message || e));
+        }
         let signedTxs: VersionedTransaction[] = [];
         if ((signTransaction as any).signAllTransactions) {
           // Some adapters attach signAllTransactions to the same object; adapt that shape.

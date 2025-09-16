@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
+import { assertOnlyAllowedUnsignedSigners } from '../lib/txSigners';
 
 export interface DbcPoolKeys {
   pool: string;
@@ -207,6 +208,12 @@ export function useDbcInstantExit() {
           setState((prev) => ({ ...prev, status: 'signing' }));
 
           const tx = VersionedTransaction.deserialize(Buffer.from(result.tx, 'base64'));
+          // Proactive signer validation (wallet should be the only remaining required unsigned signer)
+          try {
+            assertOnlyAllowedUnsignedSigners(tx, [publicKey]);
+          } catch (e: any) {
+            throw new Error('Signer validation failed: ' + (e?.message || e));
+          }
           const signedTx = await signTransaction(tx);
 
           timings.signed = Date.now();

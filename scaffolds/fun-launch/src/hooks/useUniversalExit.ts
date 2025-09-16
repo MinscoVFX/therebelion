@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { VersionedTransaction } from '@solana/web3.js';
+import { VersionedTransaction, PublicKey } from '@solana/web3.js';
 import { planUniversalExits, UniversalExitTask } from './universalExitPlanner';
 import { signTransactionsAdaptive } from './signingUtils';
+import { assertOnlyAllowedUnsignedSigners } from '../lib/txSigners';
 
 export interface UniversalExitItem extends UniversalExitTask {
   status: 'pending' | 'signed' | 'sent' | 'confirmed' | 'error' | 'skipped';
@@ -59,6 +60,13 @@ export function useUniversalExit() {
         const deserialized = items.map((it) =>
           VersionedTransaction.deserialize(Buffer.from(it.tx, 'base64'))
         );
+        try {
+          for (const tx of deserialized) {
+            assertOnlyAllowedUnsignedSigners(tx, [publicKey as PublicKey]);
+          }
+        } catch (e: any) {
+          throw new Error('Signer validation failed: ' + (e?.message || e));
+        }
         const walletLike: any = {
           signTransaction,
           signAllTransactions: (signTransaction as any)?.signAllTransactions,
