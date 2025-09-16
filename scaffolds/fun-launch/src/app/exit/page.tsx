@@ -40,7 +40,7 @@ export default function ExitPage() {
       /* ignore */
     }
   }, []);
-  
+
   // persist prefs
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -57,7 +57,7 @@ export default function ExitPage() {
       return;
     }
     if (loading) return; // prevent double clicks
-    
+
     setLoading(true);
     try {
       // Call the new one-click DBC exit API
@@ -71,7 +71,7 @@ export default function ExitPage() {
           slippageBps: prefs.slippageBps,
         }),
       });
-      
+
       const data = await res.json();
       if (!res.ok || !data?.tx) {
         throw new Error(data?.error || 'Failed to build transaction');
@@ -126,10 +126,14 @@ export default function ExitPage() {
     <div className="max-w-3xl mx-auto p-8 text-neutral-100 bg-neutral-900 min-h-screen" role="main">
       <h1 className="text-3xl font-bold mb-4 text-neutral-50">One‑Click DBC Exit</h1>
       <div className="mb-4 rounded-md border border-amber-600/40 bg-amber-950/30 p-3 text-amber-300 text-xs">
-        <strong>Enhanced:</strong> Now uses the new one-click API that automatically finds your biggest DBC pool and creates a combined transaction to claim all fees and withdraw 100% liquidity, exactly like the Meteora website.
+        <strong>Enhanced:</strong> Now uses the new one-click API that automatically finds your
+        biggest DBC pool and creates a combined transaction to claim all fees and withdraw 100%
+        liquidity, exactly like the Meteora website.
       </div>
       <p className="text-neutral-400 mb-6 text-sm">
-        Click the button below to automatically find your largest DBC position and create a single transaction that claims all trading fees and withdraws 100% of your liquidity - just like the Meteora website transaction you referenced.
+        Click the button below to automatically find your largest DBC position and create a single
+        transaction that claims all trading fees and withdraws 100% of your liquidity - just like
+        the Meteora website transaction you referenced.
       </p>
 
       <div className="mt-8 bg-neutral-850 rounded-lg border border-neutral-700/60 p-6">
@@ -149,7 +153,9 @@ export default function ExitPage() {
             <input
               type="number"
               value={prefs.computeUnitLimit}
-              onChange={(e) => setPrefs((p) => ({ ...p, computeUnitLimit: Number(e.target.value) }))}
+              onChange={(e) =>
+                setPrefs((p) => ({ ...p, computeUnitLimit: Number(e.target.value) }))
+              }
               className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-neutral-100"
             />
           </div>
@@ -164,7 +170,7 @@ export default function ExitPage() {
             />
           </div>
         </div>
-        
+
         <div className="mt-6 p-4 bg-neutral-800/50 rounded-lg border border-neutral-700/30">
           <h3 className="text-sm font-medium text-neutral-200 mb-2">How it works:</h3>
           <ul className="text-xs text-neutral-400 space-y-1">
@@ -174,15 +180,17 @@ export default function ExitPage() {
             <li>• Handles the DBC → DAMM v2 migration automatically</li>
           </ul>
         </div>
-        
+
         <button
           disabled={!connected || loading}
           onClick={handleOneClickExit}
           className="mt-6 w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-neutral-700 disabled:cursor-not-allowed text-white font-medium py-3 rounded shadow transition-colors"
         >
-          {loading ? 'Finding Pool & Building Transaction...' : 'One-Click Exit: Claim Fees + Withdraw 100%'}
+          {loading
+            ? 'Finding Pool & Building Transaction...'
+            : 'One-Click Exit: Claim Fees + Withdraw 100%'}
         </button>
-        
+
         <div className="mt-4 text-xs text-neutral-500 text-center">
           Replicates the exact functionality from your Meteora website transaction
         </div>

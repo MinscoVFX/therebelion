@@ -61,7 +61,11 @@ function pickRemoveBuilder(mod: any): ((args: any) => Promise<any>) | null {
 }
 
 /** Read base-units LP balance from owner's ATA (0n if missing). */
-async function getUserLpAmount(conn: Connection, owner: PublicKey, lpMint: PublicKey): Promise<bigint> {
+async function getUserLpAmount(
+  conn: Connection,
+  owner: PublicKey,
+  lpMint: PublicKey
+): Promise<bigint> {
   const ata = getAssociatedTokenAddressSync(lpMint, owner, false);
   try {
     const bal = await conn.getTokenAccountBalance(ata);
@@ -134,19 +138,25 @@ export async function POST(req: Request) {
 
     // 1) Find largest DAMM v2 LP this wallet owns
     const best = await findBestDammLpAndPool(connection, owner);
-    if (!best) return NextResponse.json({ error: 'No DAMM v2 LP found for this wallet.' }, { status: 404 });
+    if (!best)
+      return NextResponse.json({ error: 'No DAMM v2 LP found for this wallet.' }, { status: 404 });
 
     // 2) Load Studio remove-liquidity builder
     const damm = await importDammRuntime();
     if (!damm) throw new Error('Studio DAMM v2 runtime not found (studio dist missing).');
     const removeBuilder = pickRemoveBuilder(damm);
     if (!removeBuilder) {
-      return NextResponse.json({ error: 'Remove-liquidity builder missing in Studio runtime.' }, { status: 500 });
+      return NextResponse.json(
+        { error: 'Remove-liquidity builder missing in Studio runtime.' },
+        { status: 500 }
+      );
     }
 
     // 3) Build tx: priority fee, ensure ATAs, remove 100% LP
     const ixs: TransactionInstruction[] = [];
-    ixs.push(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Number(priorityMicros) || 0 }));
+    ixs.push(
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: Number(priorityMicros) || 0 })
+    );
 
     ixs.push(
       createAssociatedTokenAccountIdempotentInstruction(

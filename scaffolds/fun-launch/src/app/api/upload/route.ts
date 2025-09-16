@@ -169,8 +169,7 @@ export async function POST(req: Request) {
 
     // 1) Upload image
     const imageUrl = await uploadImage(tokenLogo, mint);
-    if (!imageUrl)
-      return NextResponse.json({ error: 'Failed to upload image' }, { status: 400 });
+    if (!imageUrl) return NextResponse.json({ error: 'Failed to upload image' }, { status: 400 });
 
     // 2) Upload metadata JSON
     const metadataUrl = await uploadMetadata({
@@ -204,10 +203,7 @@ export async function POST(req: Request) {
     });
   } catch (err: any) {
     console.error('Upload error:', err);
-    return NextResponse.json(
-      { error: err?.message || 'Unknown error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: err?.message || 'Unknown error' }, { status: 500 });
   }
 }
 
@@ -244,8 +240,8 @@ async function uploadMetadata(params: MetadataUploadParams): Promise<string | fa
   const fileType = params.image.toLowerCase().endsWith('.png')
     ? 'image/png'
     : params.image.toLowerCase().endsWith('.svg')
-    ? 'image/svg+xml'
-    : 'image/jpeg';
+      ? 'image/svg+xml'
+      : 'image/jpeg';
 
   const metadata: Metadata = {
     name: params.tokenName,
@@ -259,11 +255,7 @@ async function uploadMetadata(params: MetadataUploadParams): Promise<string | fa
   const fileName = `metadata/${params.mint}.json`;
 
   try {
-    await uploadToR2(
-      Buffer.from(JSON.stringify(metadata, null, 2)),
-      'application/json',
-      fileName
-    );
+    await uploadToR2(Buffer.from(JSON.stringify(metadata, null, 2)), 'application/json', fileName);
     return `${PUBLIC_R2_URL}/${fileName}`;
   } catch (e) {
     console.error('Error uploading metadata:', e);
