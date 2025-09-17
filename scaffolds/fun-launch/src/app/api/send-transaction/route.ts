@@ -6,13 +6,15 @@ const _resolveRpc = resolveRpc;
 
 function decodeTx(b64: string): VersionedTransaction | Transaction {
   const buf = Buffer.from(b64, 'base64');
-  // Heuristic: try versioned first
+  // Heuristic: try versioned first, fall back to legacy Transaction
   try {
     return VersionedTransaction.deserialize(buf);
-  } catch {}
+  } catch {
+    // Not a VersionedTransaction; fall through to legacy decode
+  }
   try {
     return Transaction.from(buf);
-  } catch (e) {
+  } catch {
     throw new Error('invalid transaction encoding');
   }
 }

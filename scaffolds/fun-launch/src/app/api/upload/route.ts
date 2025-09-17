@@ -1,6 +1,6 @@
 // scaffolds/fun-launch/src/app/api/upload/route.ts
 import { NextResponse } from 'next/server';
-import AWS from 'aws-sdk';
+import { S3Client, PutObjectCommand, PutObjectCommandOutput } from '@aws-sdk/client-s3';
 import {
   Connection,
   PublicKey,
@@ -117,14 +117,15 @@ type MetadataUploadParams = {
   twitter?: string;
 };
 
-// ---------- R2 client ----------
-const r2 = new AWS.S3({
+// ---------- R2 client (AWS SDK v3) ----------
+const s3 = new S3Client({
   endpoint: PRIVATE_R2_URL,
-  accessKeyId: R2_ACCESS_KEY_ID,
-  secretAccessKey: R2_SECRET_ACCESS_KEY,
   region: 'auto',
-  signatureVersion: 'v4',
-  s3ForcePathStyle: true,
+  forcePathStyle: true,
+  credentials: {
+    accessKeyId: R2_ACCESS_KEY_ID as string,
+    secretAccessKey: R2_SECRET_ACCESS_KEY as string,
+  },
 });
 
 // Infer the virtual pool PDA from the create tx (best effort, no reads)
@@ -267,18 +268,14 @@ async function uploadToR2(
   fileBuffer: Buffer,
   contentType: string,
   fileName: string
-): Promise<AWS.S3.PutObjectOutput> {
-  return new Promise((resolve, reject) => {
-    r2.putObject(
-      {
-        Bucket: R2_BUCKET as string,
-        Key: fileName,
-        Body: fileBuffer,
-        ContentType: contentType,
-      },
-      (err, data) => (err ? reject(err) : resolve(data))
-    );
+): Promise<PutObjectCommandOutput> {
+  const cmd = new PutObjectCommand({
+    Bucket: R2_BUCKET as string,
+    Key: fileName,
+    Body: fileBuffer,
+    ContentType: contentType,
   });
+  return s3.send(cmd);
 }
 
 // ---------- tx builder (no pre-reads) ----------

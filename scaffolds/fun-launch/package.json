@@ -22,7 +22,7 @@
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.13.8",
     "@tanstack/zod-form-adapter": "^0.42.1",
-    "aws-sdk": "^2.1692.0",
+  "@aws-sdk/client-s3": "^3.676.0",
     "bn.js": "^5.2.2",
     "bs58": "^6.0.0",
     "class-variance-authority": "^0.7.1",
