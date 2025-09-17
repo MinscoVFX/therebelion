@@ -8,18 +8,18 @@ import { claimTradingFee } from '../../lib/dbc';
 
 async function tryLoadSdk() {
   try {
-    const sdk = await import('@meteora-ag/dynamic-bonding-curve-sdk');
+    const sdk = await import('@meteora-ag/dynamic-bonding-curve-sdk') as Record<string, unknown>;
     const idl: Idl | undefined =
-      (sdk as any).IDL ||
-      (sdk as any).DBC_IDL ||
-      (sdk as any).DbcIDL ||
-      (sdk as any).idl ||
+      (sdk.IDL as Idl) ||
+      (sdk.DBC_IDL as Idl) ||
+      (sdk.DbcIDL as Idl) ||
+      (sdk.idl as Idl) ||
       undefined;
     const pidLike =
-      (sdk as any).PROGRAM_ID ||
-      (sdk as any).DBC_PROGRAM_ID ||
-      (sdk as any).DYNAMIC_BONDING_CURVE_PROGRAM_ID ||
-      (sdk as any).programId ||
+      (sdk.PROGRAM_ID as string | PublicKey) ||
+      (sdk.DBC_PROGRAM_ID as string | PublicKey) ||
+      (sdk.DYNAMIC_BONDING_CURVE_PROGRAM_ID as string | PublicKey) ||
+      (sdk.programId as string | PublicKey) ||
       undefined;
     const programId = pidLike ? new PublicKey(pidLike.toString()) : undefined;
     return { idl, programId };
@@ -40,7 +40,7 @@ function requireProgramId(sdkProgramId?: PublicKey): PublicKey {
 }
 
 function idlLooksUsable(idl: Idl | null | undefined): idl is Idl {
-  return !!idl && Array.isArray((idl as any).accounts) && (idl as any).accounts.length > 0;
+  return !!idl && Array.isArray((idl as { accounts?: unknown[] }).accounts) && ((idl as { accounts?: unknown[] }).accounts?.length ?? 0) > 0;
 }
 
 async function loadProgram(connection: Connection, wallet: AnchorWallet): Promise<Program> {
@@ -52,7 +52,9 @@ async function loadProgram(connection: Connection, wallet: AnchorWallet): Promis
   let idl: Idl | null = (sdkIdl as Idl) || null;
 
   if (!idlLooksUsable(idl)) {
-    const P: any = Program as any;
+    const P = Program as unknown as { 
+      fetchIdl: (arg1: AnchorProvider | PublicKey, arg2?: PublicKey | AnchorProvider) => Promise<Idl | null> 
+    };
     try {
       idl = (await P.fetchIdl(provider, programId)) as Idl | null;
     } catch {
@@ -76,22 +78,23 @@ function looksLikePoolAccount(a: unknown) {
   const baseMint = x['baseMint'] as unknown;
   const creator = x['creator'] as unknown;
   const partner = x['partner'] as unknown;
+  type MaybeToBase58 = { toBase58?: () => string };
   const hasBaseMint =
-    baseMint instanceof PublicKey || typeof (baseMint as any)?.toBase58 === 'function';
+    baseMint instanceof PublicKey || typeof (baseMint as MaybeToBase58)?.toBase58 === 'function';
   const hasCreator =
-    creator instanceof PublicKey || typeof (creator as any)?.toBase58 === 'function';
+    creator instanceof PublicKey || typeof (creator as MaybeToBase58)?.toBase58 === 'function';
   const hasPartner =
-    partner instanceof PublicKey || typeof (partner as any)?.toBase58 === 'function';
+    partner instanceof PublicKey || typeof (partner as MaybeToBase58)?.toBase58 === 'function';
   return hasBaseMint && hasCreator && hasPartner;
 }
 
 async function findPoolAccountNamespace(program: Program): Promise<string> {
-  const accountsNs: Record<string, any> = ((program as any).account || {}) as Record<string, any>;
+  const accountsNs = ((program as unknown as { account?: Record<string, unknown> })?.account || {}) as Record<string, { all?: () => Promise<Array<{ account: unknown }>> }>;
   const namespaces = Object.keys(accountsNs);
   for (const ns of namespaces) {
     try {
       if (!accountsNs[ns]?.all) continue;
-      const sample = await accountsNs[ns].all();
+      const sample = await accountsNs[ns].all?.();
       if (!Array.isArray(sample) || sample.length === 0) continue;
       if (looksLikePoolAccount(sample[0]?.account)) return ns;
     } catch {
@@ -110,7 +113,7 @@ function parseBaseMintsFromEnv(): string[] {
     new Set(
       raw
         .split(',')
-        .map((s) => s.trim())
+        .map((s: string) => s.trim())
         .filter(Boolean)
     )
   );
@@ -163,14 +166,15 @@ async function main() {
     const program = await loadProgram(connection, wallet);
     const poolNs = await findPoolAccountNamespace(program);
 
-    const accountsNs: Record<string, any> = ((program as any).account || {}) as Record<string, any>;
-    const allPools: Array<{ publicKey: PublicKey; account: any }> = await accountsNs[poolNs].all();
+    const accountsNs = ((program as unknown as { account?: Record<string, unknown> })?.account || {}) as Record<string, { all?: () => Promise<Array<{ publicKey: PublicKey; account: unknown }>> }>;
+    const allPools: Array<{ publicKey: PublicKey; account: unknown }> = await accountsNs[poolNs].all?.() || [];
 
     const me = keypair.publicKey;
     const claimables = allPools.filter(({ account }) => {
-      const feeClaimer = account.feeClaimer as PublicKey | undefined;
-      const partner = account.partner as PublicKey | undefined;
-      const creator = account.creator as PublicKey | undefined;
+      const poolAccount = account as { feeClaimer?: PublicKey; partner?: PublicKey; creator?: PublicKey };
+      const feeClaimer = poolAccount.feeClaimer;
+      const partner = poolAccount.partner;
+      const creator = poolAccount.creator;
       return feeClaimer?.equals?.(me) || partner?.equals?.(me) || creator?.equals?.(me);
     });
 
@@ -184,7 +188,8 @@ async function main() {
     let fail = 0;
 
     for (const { account } of claimables) {
-      const baseMint: PublicKey = account.baseMint as PublicKey;
+      const poolAccount = account as { baseMint: PublicKey };
+      const baseMint: PublicKey = poolAccount.baseMint;
       const mintStr = baseMint.toBase58();
       console.log(`\n=== Claiming trading fee for baseMint ${mintStr} ===`);
       try {
@@ -192,8 +197,8 @@ async function main() {
         await claimTradingFee(runCfg, connection, wallet);
         console.log(`✔ Success for ${mintStr}`);
         ok++;
-      } catch (e: any) {
-        console.error(`✖ Failed for ${mintStr}: ${e?.message || String(e)}`);
+      } catch (e: unknown) {
+        console.error(`✖ Failed for ${mintStr}: ${(e as Error)?.message || String(e)}`);
         fail++;
       }
     }

@@ -46,7 +46,7 @@ async function main() {
       const connection = new Connection(networkConfig.rpcUrl, 'confirmed');
 
       try {
-        const signature = await airdropSol(connection, keypair, networkConfig.airdropAmount);
+        await airdropSol(connection, keypair, networkConfig.airdropAmount);
         console.log(
           `Successfully airdropped ${networkConfig.airdropAmount} SOL on ${network.toUpperCase()}!`
         );

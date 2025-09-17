@@ -35,4 +35,15 @@ module.exports = {
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-non-null-assertion': 'warn',
   },
+  overrides: [
+    {
+      files: ['studio/**/*.ts', 'studio/**/*.tsx'],
+      rules: {
+        // The studio contains CLI-like scripts and integration helpers
+        // where "any" is acceptable and duplicate type imports are common.
+        '@typescript-eslint/no-explicit-any': 'off',
+        'import/no-duplicates': 'off',
+      },
+    },
+  ],
 };
