@@ -86,6 +86,10 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    env:
+      # Reduce memory pressure and disable telemetry to mitigate flaky worker exits
+      NODE_OPTIONS: --max-old-space-size=4096
+      NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
