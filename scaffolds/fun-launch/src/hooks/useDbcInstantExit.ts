@@ -131,6 +131,9 @@ export function useDbcInstantExit() {
               signal: abortController.signal,
             });
 
+            if (!simResponse || typeof (simResponse as any).ok !== 'boolean') {
+              throw new Error('Simulation failed: No response');
+            }
             if (!simResponse.ok) {
               throw new Error(`Simulation failed: ${simResponse.statusText}`);
             }
@@ -180,6 +183,9 @@ export function useDbcInstantExit() {
             signal: abortController.signal,
           });
 
+          if (!response || typeof (response as any).ok !== 'boolean') {
+            throw new Error('API error: No response');
+          }
           if (!response.ok) {
             throw new Error(`API error: ${response.statusText}`);
           }

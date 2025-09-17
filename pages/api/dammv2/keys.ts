@@ -31,7 +31,10 @@ function resolveRpcFromEnv(): string {
   );
 }
 
-type PoolResolver = (args: { connection: Connection; lpMint: PublicKey }) => Promise<ResolvedLike | null>;
+type PoolResolver = (args: {
+  connection: Connection;
+  lpMint: PublicKey;
+}) => Promise<ResolvedLike | null>;
 
 type ResolvedLike = {
   programId: PublicKey | string;
@@ -55,14 +58,20 @@ function pickPoolResolver(mod: unknown): PoolResolver | null {
   if (!m) return null;
   const direct = m.getPoolByLpMint ?? m.resolvePoolByLpMint ?? m.poolFromLpMint;
   if (isFunction(direct)) {
-    const fn = direct as (args: { connection: Connection; lpMint: PublicKey }) => Promise<ResolvedLike>;
+    const fn = direct as (args: {
+      connection: Connection;
+      lpMint: PublicKey;
+    }) => Promise<ResolvedLike>;
     return async (args) => (await fn(args)) as ResolvedLike;
   }
   const helpers = m.helpers as Record<string, unknown> | undefined;
   if (helpers) {
     const h = helpers.getPoolByLpMint ?? helpers.resolvePoolByLpMint;
     if (isFunction(h)) {
-      const fn = h as (args: { connection: Connection; lpMint: PublicKey }) => Promise<ResolvedLike>;
+      const fn = h as (args: {
+        connection: Connection;
+        lpMint: PublicKey;
+      }) => Promise<ResolvedLike>;
       return async (args) => (await fn(args)) as ResolvedLike;
     }
   }
@@ -102,7 +111,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // 1) Get all DAMM v2 positions for this wallet via SDK helper
     const cp = new CpAmm(connection);
     type OwnerArg = { owner: PublicKey };
-    type PositionLike = { account?: { pool?: PublicKey; lpMint?: PublicKey; lp_token_mint?: PublicKey } };
+    type PositionLike = {
+      account?: { pool?: PublicKey; lpMint?: PublicKey; lp_token_mint?: PublicKey };
+    };
     type PositionHelper = (args: OwnerArg) => Promise<PositionLike[] | ReadonlyArray<PositionLike>>;
     const helperA = (cp as unknown as { getAllPositionNftAccountByOwner?: PositionHelper })
       .getAllPositionNftAccountByOwner;
@@ -156,9 +167,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         if (!resolved) {
           // Fallback: fetch pool state via SDK and derive keys
-          const state: unknown = await (cp as CpAmm & { fetchPoolState: (pool: PublicKey) => Promise<unknown> }).fetchPoolState(
-            entry.pool
-          );
+          const state: unknown = await (
+            cp as CpAmm & { fetchPoolState: (pool: PublicKey) => Promise<unknown> }
+          ).fetchPoolState(entry.pool);
           // Program ID = owner of pool account
           const info = await connection.getAccountInfo(entry.pool);
           const programId = info?.owner;
@@ -249,7 +260,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                   : '',
         };
 
-        if (!keys.lpMint || !keys.tokenAMint || !keys.tokenBMint || !keys.tokenAVault || !keys.tokenBVault) {
+        if (
+          !keys.lpMint ||
+          !keys.tokenAMint ||
+          !keys.tokenBMint ||
+          !keys.tokenAVault ||
+          !keys.tokenBVault
+        ) {
           // still incomplete
           continue;
         }

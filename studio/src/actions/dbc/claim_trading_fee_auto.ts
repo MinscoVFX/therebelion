@@ -8,7 +8,7 @@ import { claimTradingFee } from '../../lib/dbc';
 
 async function tryLoadSdk() {
   try {
-    const sdk = await import('@meteora-ag/dynamic-bonding-curve-sdk') as Record<string, unknown>;
+    const sdk = (await import('@meteora-ag/dynamic-bonding-curve-sdk')) as Record<string, unknown>;
     const idl: Idl | undefined =
       (sdk.IDL as Idl) ||
       (sdk.DBC_IDL as Idl) ||
@@ -40,7 +40,11 @@ function requireProgramId(sdkProgramId?: PublicKey): PublicKey {
 }
 
 function idlLooksUsable(idl: Idl | null | undefined): idl is Idl {
-  return !!idl && Array.isArray((idl as { accounts?: unknown[] }).accounts) && ((idl as { accounts?: unknown[] }).accounts?.length ?? 0) > 0;
+  return (
+    !!idl &&
+    Array.isArray((idl as { accounts?: unknown[] }).accounts) &&
+    ((idl as { accounts?: unknown[] }).accounts?.length ?? 0) > 0
+  );
 }
 
 async function loadProgram(connection: Connection, wallet: AnchorWallet): Promise<Program> {
@@ -52,8 +56,11 @@ async function loadProgram(connection: Connection, wallet: AnchorWallet): Promis
   let idl: Idl | null = (sdkIdl as Idl) || null;
 
   if (!idlLooksUsable(idl)) {
-    const P = Program as unknown as { 
-      fetchIdl: (arg1: AnchorProvider | PublicKey, arg2?: PublicKey | AnchorProvider) => Promise<Idl | null> 
+    const P = Program as unknown as {
+      fetchIdl: (
+        arg1: AnchorProvider | PublicKey,
+        arg2?: PublicKey | AnchorProvider
+      ) => Promise<Idl | null>;
     };
     try {
       idl = (await P.fetchIdl(provider, programId)) as Idl | null;
@@ -89,7 +96,8 @@ function looksLikePoolAccount(a: unknown) {
 }
 
 async function findPoolAccountNamespace(program: Program): Promise<string> {
-  const accountsNs = ((program as unknown as { account?: Record<string, unknown> })?.account || {}) as Record<string, { all?: () => Promise<Array<{ account: unknown }>> }>;
+  const accountsNs = ((program as unknown as { account?: Record<string, unknown> })?.account ||
+    {}) as Record<string, { all?: () => Promise<Array<{ account: unknown }>> }>;
   const namespaces = Object.keys(accountsNs);
   for (const ns of namespaces) {
     try {
@@ -166,12 +174,21 @@ async function main() {
     const program = await loadProgram(connection, wallet);
     const poolNs = await findPoolAccountNamespace(program);
 
-    const accountsNs = ((program as unknown as { account?: Record<string, unknown> })?.account || {}) as Record<string, { all?: () => Promise<Array<{ publicKey: PublicKey; account: unknown }>> }>;
-    const allPools: Array<{ publicKey: PublicKey; account: unknown }> = await accountsNs[poolNs].all?.() || [];
+    const accountsNs = ((program as unknown as { account?: Record<string, unknown> })?.account ||
+      {}) as Record<
+      string,
+      { all?: () => Promise<Array<{ publicKey: PublicKey; account: unknown }>> }
+    >;
+    const allPools: Array<{ publicKey: PublicKey; account: unknown }> =
+      (await accountsNs[poolNs].all?.()) || [];
 
     const me = keypair.publicKey;
     const claimables = allPools.filter(({ account }) => {
-      const poolAccount = account as { feeClaimer?: PublicKey; partner?: PublicKey; creator?: PublicKey };
+      const poolAccount = account as {
+        feeClaimer?: PublicKey;
+        partner?: PublicKey;
+        creator?: PublicKey;
+      };
       const feeClaimer = poolAccount.feeClaimer;
       const partner = poolAccount.partner;
       const creator = poolAccount.creator;

@@ -61,7 +61,10 @@ function getAllowedList(): string[] {
 }
 function assertProgramAllowed(pk: PublicKey) {
   // In tests, skip enforcement unless explicitly configured
-  if ((process.env.NODE_ENV === 'test' || process.env.VITEST) && !process.env.ALLOWED_DBC_PROGRAM_IDS) {
+  if (
+    (process.env.NODE_ENV === 'test' || process.env.VITEST) &&
+    !process.env.ALLOWED_DBC_PROGRAM_IDS
+  ) {
     return;
   }
   const allowed = getAllowedList();
@@ -215,7 +218,9 @@ async function importDbcRuntime(): Promise<any | null> {
   }
 }
 
-function pickClaimBuilder(mod: any):
+function pickClaimBuilder(
+  mod: any
+):
   | ((args: Record<string, unknown>) => Promise<TransactionInstruction | TransactionInstruction[]>)
   | null {
   return (
@@ -223,7 +228,9 @@ function pickClaimBuilder(mod: any):
     mod?.claimTradingFeeIx ||
     mod?.claim_fee_ix ||
     (mod?.builders &&
-      (mod.builders.buildClaimTradingFeeIx || mod.builders.claimTradingFeeIx || mod.builders.claim_fee)) ||
+      (mod.builders.buildClaimTradingFeeIx ||
+        mod.builders.claimTradingFeeIx ||
+        mod.builders.claim_fee)) ||
     null
   );
 }

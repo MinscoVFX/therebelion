@@ -90,8 +90,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let exitTxBase64: string | undefined;
     let simulation: { logs: string[]; unitsConsumed: number; error?: unknown } | undefined;
 
-    
-
     const rpc =
       process.env.TEST_MOCK_RPC === 'mock'
         ? 'mock'
@@ -147,9 +145,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Prepend compute budget limit if provided
         const ixs = [...computeBudgetIxs, ...dammIxs];
 
-        const { blockhash } = await connection.getLatestBlockhash(
-          'confirmed'
-        );
+        const { blockhash } = await connection.getLatestBlockhash('confirmed');
         const msg = new TransactionMessage({
           payerKey: owner,
           recentBlockhash: blockhash,
@@ -177,7 +173,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           // (e.g., DBC_CLAIM_FEE_DISCRIMINATOR set by other tests) and matches integration
           // test expectations that missing discriminator yields a 400 error.
           const inTestMode =
-            process.env.TEST_MOCK_RPC === 'mock' || process.env.VITEST || process.env.NODE_ENV === 'test';
+            process.env.TEST_MOCK_RPC === 'mock' ||
+            process.env.VITEST ||
+            process.env.NODE_ENV === 'test';
           const hasIxName = !!process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME;
           const useIdl =
             process.env.DBC_USE_IDL === 'true' || process.env.DBC_CLAIM_USE_IDL_AUTO === 'true';
@@ -230,7 +228,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Additionally, in test/mock mode enforce 400 when instruction-name/IDL are missing regardless of builder fallbacks
     if (
       protocol === 'dbc' &&
-      (process.env.TEST_MOCK_RPC === 'mock' || process.env.NODE_ENV === 'test' || process.env.VITEST) &&
+      (process.env.TEST_MOCK_RPC === 'mock' ||
+        process.env.NODE_ENV === 'test' ||
+        process.env.VITEST) &&
       parsed.owner &&
       parsed.dbcPoolKeys?.pool &&
       parsed.dbcPoolKeys?.feeVault &&
@@ -245,7 +245,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    res.status(200).json({ ok: true, computeBudgetIxs, cuLimit, microLamports, exitTxBase64, simulation });
+    res
+      .status(200)
+      .json({ ok: true, computeBudgetIxs, cuLimit, microLamports, exitTxBase64, simulation });
   } catch (e) {
     const err = e instanceof Error ? e.message : String(e);
     res.status(500).json({ error: err });
