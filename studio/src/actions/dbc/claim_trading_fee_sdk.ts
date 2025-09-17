@@ -16,13 +16,13 @@ import { claimTradingFee as claimFromLib } from '../../lib/dbc';
 function parseMints(): PublicKey[] {
   const list = (process.env.BASE_MINTS || '')
     .split(',')
-    .map((s) => s.trim())
+    .map((s: string) => s.trim())
     .filter(Boolean);
   if (!list.length)
     throw new Error(
       'BASE_MINTS is empty. Set a comma-separated list of base mints in Actions secrets.'
     );
-  return list.map((m) => {
+  return list.map((m: string) => {
     try {
       return new PublicKey(m);
     } catch {
@@ -42,7 +42,7 @@ function resolveSdkClaim(client: unknown) {
   for (const path of candidates) {
     const fn = path
       .split('.')
-      .reduce<any>(
+      .reduce<unknown>(
         (o, k) =>
           o && (o as Record<string, unknown>)[k] !== undefined
             ? (o as Record<string, unknown>)[k]
@@ -56,7 +56,8 @@ function resolveSdkClaim(client: unknown) {
         feeClaimer: PublicKey;
         computeUnitPriceMicroLamports?: number;
       }): Promise<{ tx?: Transaction; sig?: string }> => {
-        const res = await fn.call((client as any).partner ?? client, {
+        const clientWithPartner = client as { partner?: unknown };
+        const res = await fn.call(clientWithPartner.partner ?? client, {
           baseMint: args.baseMint,
           payer: args.payer,
           feeClaimer: args.feeClaimer,
@@ -74,7 +75,7 @@ function resolveSdkClaim(client: unknown) {
 }
 
 async function getPartnerFeesSafe(
-  client: any,
+  client: DynamicBondingCurveClient,
   baseMint: PublicKey,
   partner: PublicKey
 ): Promise<number | null> {

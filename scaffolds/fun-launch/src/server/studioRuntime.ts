@@ -4,9 +4,16 @@ let dammCache: any | undefined;
 let dbcCache: any | undefined;
 
 export async function getDammV2Runtime() {
+  // In unit tests, avoid resolving the Studio package altogether
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
+    return null;
+  }
   if (dammCache !== undefined) return dammCache;
   try {
-    const studio = await import('@meteora-invent/studio');
+    // Hint bundlers not to pre-resolve this specifier during tests/builds
+    const spec = '@meteora-invent/studio';
+    // @vite-ignore
+    const studio = await import(/* @vite-ignore */ spec);
     dammCache = studio.damm_v2;
   } catch {
     dammCache = null;
@@ -14,9 +21,14 @@ export async function getDammV2Runtime() {
   return dammCache;
 }
 export async function getDbcRuntime() {
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
+    return null;
+  }
   if (dbcCache !== undefined) return dbcCache;
   try {
-    const studio = await import('@meteora-invent/studio');
+    const spec = '@meteora-invent/studio';
+    // @vite-ignore
+    const studio = await import(/* @vite-ignore */ spec);
     dbcCache = studio.dbc;
   } catch {
     dbcCache = null;
