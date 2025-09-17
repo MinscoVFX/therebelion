@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
+import { useUnifiedWalletContext } from '@jup-ag/wallet-adapter';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { useUniversalExit } from '../../hooks/useUniversalExit';
-import OneClickExitAutoButton from '../../components/OneClickExitAutoButton';
 import { useDerivedDammV2Pools } from '../../hooks/useDerivedDammV2Pools';
 
 interface ExitPreferences {
@@ -148,22 +148,19 @@ export default function ExitPage() {
         </div>
 
         <div className="mt-10 flex flex-col gap-3">
-          <div className="flex items-center gap-4">
-            <OneClickExitAutoButton />
-            <button
-              onClick={() =>
-                runUniversalExit({
-                  slippageBps: prefs.slippageBps,
-                  priorityMicros: prefs.priorityMicros,
-                  include: { dbc: true, dammv2: true },
-                })
-              }
-              disabled={universalState.running}
-              className="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50"
-            >
-              {universalState.running ? 'Exiting…' : 'Universal Exit (DBC fees + DAMM v2 withdraw)'}
-            </button>
-          </div>
+          <button
+            onClick={() =>
+              runUniversalExit({
+                slippageBps: prefs.slippageBps,
+                priorityMicros: prefs.priorityMicros,
+                include: { dbc: true, dammv2: true },
+              })
+            }
+            disabled={universalState.running}
+            className="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50"
+          >
+            {universalState.running ? 'Exiting…' : 'Universal Exit (DBC fees + DAMM v2 withdraw)'}
+          </button>
         </div>
       </div>
     </div>
