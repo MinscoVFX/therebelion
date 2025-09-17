@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { ComputeBudgetProgram, PublicKey } from '@solana/web3.js';
 
 // Capture args passed to builders for assertions
