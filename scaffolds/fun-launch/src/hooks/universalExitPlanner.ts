@@ -65,8 +65,12 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
 
   // Discover DBC and DAMM positions in parallel (best-effort)
   const [dbcDiscovery, dammDiscovery] = await Promise.allSettled([
-    includeDbc ? postJson<{ positions?: any[]; nftPools?: string[] }>('/api/dbc-discover', { owner }) : Promise.resolve({ positions: [] } as any),
-    includeDamm ? postJson<{ positions?: any[] }>('/api/dammv2-discover', { owner }) : Promise.resolve({ positions: [] } as any),
+    includeDbc
+      ? postJson<{ positions?: any[]; nftPools?: string[] }>('/api/dbc-discover', { owner })
+      : Promise.resolve({ positions: [] } as any),
+    includeDamm
+      ? postJson<{ positions?: any[] }>('/api/dammv2-discover', { owner })
+      : Promise.resolve({ positions: [] } as any),
   ]);
 
   const dbcPositions: any[] =
@@ -124,14 +128,20 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
   if (includeDamm) {
     // If discovery returned nothing, keep going — SDK wallet scan may still find positions.
     // Optional: restrict to migrated pools if env set
-    const migratedList = (process.env.NEXT_PUBLIC_MIGRATED_DBC_POOLS || process.env.MIGRATED_DBC_POOLS || '')
+    const migratedList = (
+      process.env.NEXT_PUBLIC_MIGRATED_DBC_POOLS ||
+      process.env.MIGRATED_DBC_POOLS ||
+      ''
+    )
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
     if (!migratedList.length) {
       // No env fence; proceed with wallet-derived discovery only.
       // eslint-disable-next-line no-console
-      console.warn('[universal-exit] MIGRATED_DBC_POOLS not set; relying on wallet-derived positions only');
+      console.warn(
+        '[universal-exit] MIGRATED_DBC_POOLS not set; relying on wallet-derived positions only'
+      );
     }
     {
       const lower = new Set(migratedList.map((s) => s.toLowerCase()));
@@ -163,22 +173,31 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
           if ((!dammPositions || dammPositions.length === 0) && Array.isArray(ownerPositions)) {
             dammPositions = ownerPositions
               .map((op: any) => ({
-                pool: (op.account?.pool || op.pool || op.account?.data?.pool)?.toBase58?.() || undefined,
+                pool:
+                  (op.account?.pool || op.pool || op.account?.data?.pool)?.toBase58?.() ||
+                  undefined,
                 position: (op.publicKey || op.account?.publicKey)?.toBase58?.(),
                 liquidity: op.account?.liquidity,
-                hasNft: Boolean(op.publicKey || op.account?.publicKey || op.account?.positionNftAccount),
+                hasNft: Boolean(
+                  op.publicKey || op.account?.publicKey || op.account?.positionNftAccount
+                ),
               }))
               .filter((p: any) => {
                 if (!p.pool || !p.position) return false;
                 const liq = p.liquidity;
-                const positive = liq?.isZero?.() === false || (typeof liq?.toString === 'function' && liq.toString() !== '0');
+                const positive =
+                  liq?.isZero?.() === false ||
+                  (typeof liq?.toString === 'function' && liq.toString() !== '0');
                 return p.hasNft && positive;
               })
               .map((p: any) => ({ pool: p.pool, position: p.position }));
           }
         } catch (e) {
           // eslint-disable-next-line no-console
-          console.warn('[universal-exit] SDK init failed, will use server fallback', (e as any)?.message);
+          console.warn(
+            '[universal-exit] SDK init failed, will use server fallback',
+            (e as any)?.message
+          );
           connection = null;
           cp = null;
         }
@@ -198,11 +217,16 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
           const acct = byPos.get(String(p.position));
           if (!acct) return false;
           const liq = acct?.liquidity;
-          const positive = liq?.isZero?.() === false || (typeof liq?.toString === 'function' && liq.toString() !== '0');
+          const positive =
+            liq?.isZero?.() === false ||
+            (typeof liq?.toString === 'function' && liq.toString() !== '0');
           const hasNft = Boolean(acct?.positionNftAccount || acct?.publicKey);
           if (!hasNft || !positive) {
             // eslint-disable-next-line no-console
-            console.warn('[universal-exit] skipping position without NFT or liquidity > 0', p.position);
+            console.warn(
+              '[universal-exit] skipping position without NFT or liquidity > 0',
+              p.position
+            );
           }
           return hasNft && positive;
         });
@@ -218,7 +242,9 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
                 const poolPk = new PublicKey(p.pool);
                 const positionPk = p.position ? new PublicKey(p.position) : null;
                 const acct = ownerPositions.find(
-                  (op) => (op.publicKey || op.account?.publicKey)?.toBase58?.() === positionPk?.toBase58?.()
+                  (op) =>
+                    (op.publicKey || op.account?.publicKey)?.toBase58?.() ===
+                    positionPk?.toBase58?.()
                 )?.account;
                 if (!acct) throw new Error('position account not found in owner scan');
 
@@ -255,7 +281,8 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
                       owner: ownerPk,
                       position: positionPk || (acct.publicKey as PublicKey),
                       pool: poolPk,
-                      positionNftAccount: acct.positionNftAccount || positionPk || (acct.publicKey as PublicKey),
+                      positionNftAccount:
+                        acct.positionNftAccount || positionPk || (acct.publicKey as PublicKey),
                       tokenAMint: acct.tokenAMint || acct.tokenA,
                       tokenBMint: acct.tokenBMint || acct.tokenB,
                       tokenAVault: acct.tokenAVault || acct.tokenAReserve || acct.vaultA,
@@ -264,8 +291,10 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
                       tokenBProgram: acct.tokenBProgram,
                       vestings: [],
                       currentPoint: acct.currentPoint || 0,
-                      tokenAAmountThreshold: tokenAAmountThreshold || acct.tokenAAmountThreshold || 0,
-                      tokenBAmountThreshold: tokenBAmountThreshold || acct.tokenBAmountThreshold || 0,
+                      tokenAAmountThreshold:
+                        tokenAAmountThreshold || acct.tokenAAmountThreshold || 0,
+                      tokenBAmountThreshold:
+                        tokenBAmountThreshold || acct.tokenBAmountThreshold || 0,
                     });
                     if (Array.isArray(b.ixs)) txIxs = b.ixs;
                     else if (b.build) {
@@ -279,7 +308,8 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
                       owner: ownerPk,
                       position: positionPk || (acct.publicKey as PublicKey),
                       pool: poolPk,
-                      positionNftAccount: acct.positionNftAccount || positionPk || (acct.publicKey as PublicKey),
+                      positionNftAccount:
+                        acct.positionNftAccount || positionPk || (acct.publicKey as PublicKey),
                       liquidityDelta: acct.liquidity,
                       tokenAAmountThreshold,
                       tokenBAmountThreshold,
@@ -339,7 +369,10 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
               } catch (e) {
                 // SDK failed; fall through to server build
                 // eslint-disable-next-line no-console
-                console.warn('[universal-exit] SDK build failed, falling back to server', (e as any)?.message);
+                console.warn(
+                  '[universal-exit] SDK build failed, falling back to server',
+                  (e as any)?.message
+                );
               }
             }
 
@@ -351,7 +384,11 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
               Math.min(base * 1.35, 3_000_000),
               Math.min(roundDownTo(base * 1.35 * 1.35, 1_000), 3_000_000),
             ];
-            const variants = [] as Array<{ tx: string; lastValidBlockHeight: number; priorityMicros: number }>;
+            const variants = [] as Array<{
+              tx: string;
+              lastValidBlockHeight: number;
+              priorityMicros: number;
+            }>;
             for (const micros of steps) {
               const built = await postJson<{ tx: string; lastValidBlockHeight: number }>(
                 '/api/dammv2-exit',
@@ -364,7 +401,11 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
                   slippageBps,
                 }
               );
-              variants.push({ tx: built.tx, lastValidBlockHeight: built.lastValidBlockHeight, priorityMicros: micros });
+              variants.push({
+                tx: built.tx,
+                lastValidBlockHeight: built.lastValidBlockHeight,
+                priorityMicros: micros,
+              });
             }
             return { p, built: variants[0], variants };
           })

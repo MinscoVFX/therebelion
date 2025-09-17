@@ -41,19 +41,19 @@ Optional:
 
 ### Quick Deploy Playbook
 
-1) Sync envs locally from Vercel (recommended):
+1. Sync envs locally from Vercel (recommended):
 
 ```bash
 vercel env pull .env
 ```
 
-2) Verify env health locally:
+2. Verify env health locally:
 
 ```bash
 pnpm env:check
 ```
 
-3) Push to main and trigger deploy. After Vercel finishes, validate:
+3. Push to main and trigger deploy. After Vercel finishes, validate:
 
 - Open `/api/health` → `{ ok: true }` and shows which RPC var is present
 - Open `/exit` → connect wallet → Universal Exit shows detected positions
@@ -256,8 +256,8 @@ Production Guard: Builders REQUIRE a real discriminator for claim. Withdraw is d
 pre‑migration regardless of configuration. Provide either an explicit hex or instruction name (or
 enable IDL). If none are found the server throws on startup/import.
 
-Action Parameter: `claim` only. `withdraw` and `claim_and_withdraw` are explicitly rejected
-(HTTP 501 in the API route; builder throws `DBC withdrawals are not supported pre-migration`).
+Action Parameter: `claim` only. `withdraw` and `claim_and_withdraw` are explicitly rejected (HTTP
+501 in the API route; builder throws `DBC withdrawals are not supported pre-migration`).
 
 IDL Auto Mode: When `DBC_USE_IDL=true` and a `dbc_idl.json` file exists:
 
@@ -265,8 +265,8 @@ IDL Auto Mode: When `DBC_USE_IDL=true` and a `dbc_idl.json` file exists:
    `sha256("global::<name>").slice(0,8)`.
 2. For the generic `claim` action it prefers `claim_partner_trading_fee` then
    `claim_creator_trading_fee`.
-3. The withdraw path is intentionally disabled; even with IDL present the builder will throw a
-  clear error indicating claim‑only mode.
+3. The withdraw path is intentionally disabled; even with IDL present the builder will throw a clear
+   error indicating claim‑only mode.
 4. If IDL load fails it silently falls back to env / placeholder behavior.
 
 How to obtain the real discriminator (Anchor-style): `sha256("global::<instruction_name>")` → take
@@ -421,10 +421,10 @@ completes (cannot cancel already sent tx on Solana).
 
 ### Current Limitations / Notes
 
-| Area                    | Limitation                                 | Planned Improvement                                  |
-| ----------------------- | ------------------------------------------ | ---------------------------------------------------- |
-| DBC withdraw            | Still placeholder; only fee claim executed | Replace when official withdraw instruction confirmed |
-| DAMM v2 partial exit    | Always 100% removal (percent=100)          | Add per‑position %, quoting + slippage thresholds    |
+| Area                 | Limitation                                 | Planned Improvement                                  |
+| -------------------- | ------------------------------------------ | ---------------------------------------------------- |
+| DBC withdraw         | Still placeholder; only fee claim executed | Replace when official withdraw instruction confirmed |
+| DAMM v2 partial exit | Always 100% removal (percent=100)          | Add per‑position %, quoting + slippage thresholds    |
 
 ### Adaptive Priority Fee Escalation
 
@@ -437,27 +437,27 @@ Budget setComputeUnitPrice, capped at 3,000,000 µ-lamports per CU. The steps ar
 
 Example with the default base 250,000 → 250,000, 337,500, ~455,000 µ-lamports/CU (cap 3,000,000).
 
-If a send/confirm fails (e.g., congestion), the executor automatically retries with the next
-variant until success or variants are exhausted.
+If a send/confirm fails (e.g., congestion), the executor automatically retries with the next variant
+until success or variants are exhausted.
 
 ### Environment & Discovery Notes
 
 - Wallet‑based detection is preferred: DAMM v2 positions are discovered by scanning the connected
   wallet’s position NFTs via the cp‑amm SDK. Server discovery is a fallback.
-- `MIGRATED_DBC_POOLS` (comma‑separated, optional) can be set to restrict exits to a curated list
-  of pools; if unset, wallet‑derived results are used without filtering.
+- `MIGRATED_DBC_POOLS` (comma‑separated, optional) can be set to restrict exits to a curated list of
+  pools; if unset, wallet‑derived results are used without filtering.
 - `POOL_CONFIG_KEY` now supports comma‑separated multiple keys. The env checker validates entries
   (base58, typical 32–44 chars) and warns if missing/invalid. Sync envs with `vercel env pull`.
 
 ### Smoke Contract Update
 
-The DAMM v2 exit build endpoint (`POST /api/dammv2-exit`) now returns both `tx` and
-`exitTxBase64` keys for simulate and non‑simulate responses. Smoke tests require `exitTxBase64` to
-be present when `simulateOnly=true`.
-| Migrated pool detection | Env list only (`MIGRATED_DBC_POOLS`)       | On-chain metadata (migration PDA) auto-detection     |
-| Parallelism             | Serial execution (one at a time)           | Optional small (N=2–3) concurrency                   |
-| Slippage protection     | Quote thresholds best‑effort (via SDK)     | Defaults to 50 bps; falls back to 0 thresholds       |
-| Priority adaptation     | Implemented: prebuilt variants used per tx | Steps: 250k → 337.5k → ~455k µ‑lamports, cap 3M      |
+The DAMM v2 exit build endpoint (`POST /api/dammv2-exit`) now returns both `tx` and `exitTxBase64`
+keys for simulate and non‑simulate responses. Smoke tests require `exitTxBase64` to be present when
+`simulateOnly=true`. | Migrated pool detection | Env list only (`MIGRATED_DBC_POOLS`) | On-chain
+metadata (migration PDA) auto-detection | | Parallelism | Serial execution (one at a time) |
+Optional small (N=2–3) concurrency | | Slippage protection | Quote thresholds best‑effort (via SDK)
+| Defaults to 50 bps; falls back to 0 thresholds | | Priority adaptation | Implemented: prebuilt
+variants used per tx | Steps: 250k → 337.5k → ~455k µ‑lamports, cap 3M |
 
 ### Safety Guards
 

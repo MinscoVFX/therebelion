@@ -27,7 +27,11 @@ export async function POST(req: Request) {
     }
 
     // Validate minimal fields; claim & combined require feeVault; withdraw only needs pool.
-    if (!body.owner || !body.dbcPoolKeys?.pool || (action === 'claim' && !body.dbcPoolKeys?.feeVault)) {
+    if (
+      !body.owner ||
+      !body.dbcPoolKeys?.pool ||
+      (action === 'claim' && !body.dbcPoolKeys?.feeVault)
+    ) {
       if (simulateOnly) {
         return NextResponse.json({
           simulated: true,
@@ -40,7 +44,9 @@ export async function POST(req: Request) {
       }
       return NextResponse.json(
         {
-          error: 'Missing required fields: owner, dbcPoolKeys.pool' + (action === 'claim' ? ', dbcPoolKeys.feeVault' : ''),
+          error:
+            'Missing required fields: owner, dbcPoolKeys.pool' +
+            (action === 'claim' ? ', dbcPoolKeys.feeVault' : ''),
         },
         { status: 400 }
       );

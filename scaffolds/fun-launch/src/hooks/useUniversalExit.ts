@@ -74,7 +74,7 @@ export function useUniversalExit() {
           signTransaction,
           signAllTransactions: (signTransaction as any)?.signAllTransactions,
         };
-  const { errors } = await signTransactionsAdaptive(walletLike, deserialized);
+        const { errors } = await signTransactionsAdaptive(walletLike, deserialized);
 
         for (let i = 0; i < items.length; i++) {
           if (controller.signal.aborted) break;
@@ -93,7 +93,16 @@ export function useUniversalExit() {
             | undefined;
           let confirmed = false;
           let lastError: string | undefined;
-          const attempts = variants && variants.length ? variants : [{ tx: items[i].tx, lastValidBlockHeight: items[i].lastValidBlockHeight, priorityMicros: (undefined as unknown as number) }];
+          const attempts =
+            variants && variants.length
+              ? variants
+              : [
+                  {
+                    tx: items[i].tx,
+                    lastValidBlockHeight: items[i].lastValidBlockHeight,
+                    priorityMicros: undefined as unknown as number,
+                  },
+                ];
 
           for (let a = 0; a < attempts.length; a++) {
             try {
@@ -104,7 +113,8 @@ export function useUniversalExit() {
               if (typeof walletLike.signAllTransactions === 'function') {
                 try {
                   const arr = await walletLike.signAllTransactions([tryTx]);
-                  signedOne = Array.isArray(arr) && arr[0] instanceof VersionedTransaction ? arr[0] : tryTx;
+                  signedOne =
+                    Array.isArray(arr) && arr[0] instanceof VersionedTransaction ? arr[0] : tryTx;
                 } catch {
                   // fallback to signTransaction
                   signedOne = await (walletLike.signTransaction as any)(tryTx);

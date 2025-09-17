@@ -50,7 +50,8 @@ export async function POST(req: NextRequest) {
     if (!helper) {
       if (body.simulateOnly) {
         // Fallback: return an empty serialized transaction so smoke can assert exitTxBase64 presence
-        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+        const { blockhash, lastValidBlockHeight } =
+          await connection.getLatestBlockhash('confirmed');
         const msg = new TransactionMessage({
           payerKey: owner,
           recentBlockhash: blockhash,
@@ -95,7 +96,8 @@ export async function POST(req: NextRequest) {
     if (!poolPositions.length) {
       // For simulateOnly smoke tests: return a benign serialized tx even if no positions are found
       if (body.simulateOnly) {
-        const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+        const { blockhash, lastValidBlockHeight } =
+          await connection.getLatestBlockhash('confirmed');
         const msg = new TransactionMessage({
           payerKey: owner,
           recentBlockhash: blockhash,

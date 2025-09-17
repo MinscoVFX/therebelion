@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useEffect, useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
@@ -29,9 +29,12 @@ export function useDerivedDammV2Pools() {
       setLoading(true);
       setError(null);
       try {
-        const conn = injectedConn || new (await import('@solana/web3.js')).Connection(resolveRpc(), 'confirmed');
+        const conn =
+          injectedConn ||
+          new (await import('@solana/web3.js')).Connection(resolveRpc(), 'confirmed');
         const cp = new CpAmm(conn as any);
-        const helper: any = (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
+        const helper: any =
+          (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
         if (!helper) {
           setPositions([]);
           return;

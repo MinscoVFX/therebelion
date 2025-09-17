@@ -72,7 +72,8 @@ export default function ExitPage() {
       <h1 className="text-3xl font-bold mb-4 text-neutral-50">One-Click DBC Exit</h1>
       <div className="mb-4 rounded-md border border-amber-600/40 bg-amber-950/30 p-3 text-amber-300 text-xs">
         <strong>Disabled pre‑migration:</strong> One‑click DBC exit is unavailable. Use
-        <span className="font-semibold"> Universal Exit</span> below (claims DBC fees and removes DAMM v2 liquidity).
+        <span className="font-semibold"> Universal Exit</span> below (claims DBC fees and removes
+        DAMM v2 liquidity).
       </div>
       <p className="text-neutral-400 mb-6 text-sm">
         The dedicated one‑click endpoint returns 501 to steer users to the Universal Exit flow
@@ -87,7 +88,9 @@ export default function ExitPage() {
             <>Scanning your DAMM v2 NFT positions…</>
           ) : (
             <>
-              Detected <span className="text-neutral-200 font-medium">{derivedPositions.length}</span> DAMM v2 position{derivedPositions.length === 1 ? '' : 's'} from your wallet.
+              Detected{' '}
+              <span className="text-neutral-200 font-medium">{derivedPositions.length}</span> DAMM
+              v2 position{derivedPositions.length === 1 ? '' : 's'} from your wallet.
             </>
           )}
         </div>

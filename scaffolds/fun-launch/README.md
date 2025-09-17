@@ -152,7 +152,6 @@ Try it locally:
 1. `pnpm dev`
 2. Open `/exit`, connect wallet, and click “Universal Exit (DBC fees + DAMM v2 withdraw)”
 
-
 ## Contributing
 
 1. Fork the repository

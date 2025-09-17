@@ -51,7 +51,12 @@ if (process.env.ALLOWED_DBC_PROGRAM_IDS) {
   } else {
     const list = val
       .split(',')
-      .map((s) => s.trim().replace(/^\[|\]$/g, '').replace(/^\"|\"$/g, ''))
+      .map((s) =>
+        s
+          .trim()
+          .replace(/^\[|\]$/g, '')
+          .replace(/^\"|\"$/g, '')
+      )
       .filter(Boolean);
     if (!list.length) warnings.push('POOL_CONFIG_KEY provided but empty after parsing');
     for (const k of list) {
