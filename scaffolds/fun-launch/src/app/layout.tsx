@@ -5,7 +5,8 @@ import React, { useMemo } from 'react';
 
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { UnifiedWalletProvider } from '@jup-ag/wallet-adapter';
-import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
+import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
+import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
