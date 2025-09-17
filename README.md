@@ -90,6 +90,7 @@ What it validates currently:
 - /api/dbc-exit?action=claim&simulateOnly=true (GET + POST) both 200
 - /api/dbc-exit?action=withdraw&simulateOnly=true returns 501 (explicitly disabled)
 - /exit page contains claim-only banner text including: `Withdraws are temporarily disabled`
+- /api/dammv2-exit simulateOnly returns 200 with `{ tx, lastValidBlockHeight }`
 
 Report: JSON written to `scripts/prod-smoke-report.json` with step statuses and `allPassed` field.
 If any step fails the script exits non-zero (except in workflow where exit is delayed until after
@@ -166,8 +167,8 @@ After setting variables trigger a redeploy. Verify with `GET /api/health` that a
 Reference docs: Meteora DBC – https://docs.meteora.ag/overview/products/dbc/what-is-dbc
 
 The `scaffolds/fun-launch` app exposes a production build `/exit` route implementing a one‑click
-claim of accumulated DBC trading fees and withdrawal flow (current prototype focuses on fee claim
-transaction structure; full withdraw legs may be extended later). Key pieces:
+claim of accumulated DBC trading fees. Liquidity withdrawals are intentionally disabled
+pre‑migration (claim‑only mode). Key pieces:
 
 - UI: `scaffolds/fun-launch/src/app/exit/page.tsx` (stand‑alone page) and a reusable button
   component `DbcOneClickExitButton` for embedding elsewhere.
@@ -218,19 +219,18 @@ Copy `.env.example` to `.env.local` and fill in the real values:
 | `DBC_CLAIM_FEE_DISCRIMINATOR`    | 8-byte hex (16 hex chars) discriminator for claim fee ix (explicit override – highest precedence)                                                                                            | REQUIRED unless using NAME or IDL          |
 | `DBC_CLAIM_FEE_INSTRUCTION_NAME` | Anchor instruction name (e.g. `claim_partner_trading_fee`, `claim_creator_trading_fee`, or short form `claim_fee`) to derive discriminator (sha256("global::<instruction_name>").slice(0,8)) | Optional (used if explicit hex unset)      |
 | `ALLOWED_DBC_PROGRAM_IDS`        | Comma-separated allow list of permitted DBC program IDs (safety gate)                                                                                                                        | (unset = allow any)                        |
-| `DBC_WITHDRAW_DISCRIMINATOR`     | 8-byte hex for withdraw instruction                                                                                                                                                          | REQUIRED unless using NAME or IDL          |
-| `DBC_WITHDRAW_INSTRUCTION_NAME`  | Anchor instruction name to derive withdraw discriminator                                                                                                                                     | Optional (used if explicit hex unset)      |
+| `DBC_WITHDRAW_DISCRIMINATOR`     | 8-byte hex for withdraw instruction                                                                                                                                                          | Disabled pre‑migration (unused)            |
+| `DBC_WITHDRAW_INSTRUCTION_NAME`  | Anchor instruction name to derive withdraw discriminator                                                                                                                                     | Disabled pre‑migration (unused)            |
 | `DBC_USE_IDL`                    | If `true`, attempt to load `dbc_idl.json` and auto-derive both discriminators                                                                                                                | false                                      |
 | `dbc_idl.json`                   | Anchor-style IDL file at repo root (enables IDL derivation)                                                                                                                                  | Optional                                   |
 | `ALLOW_PLACEHOLDER_DBC`          | (Deprecated) Was used to allow placeholder discriminators; now discouraged and not needed                                                                                                    | Avoid using                                |
 
-Production Guard: Builders now REQUIRE a real discriminator for both claim and withdraw. Provide
-either an explicit hex or instruction name (or enable IDL). If none are found the server throws on
-startup/import.
+Production Guard: Builders REQUIRE a real discriminator for claim. Withdraw is disabled
+pre‑migration regardless of configuration. Provide either an explicit hex or instruction name (or
+enable IDL). If none are found the server throws on startup/import.
 
-Action Parameter (`claim` | `withdraw`): Both actions require valid discriminators. Withdraw account
-layout may still be provisional—ensure you test on devnet/mainnet with real pools before production
-rollout.
+Action Parameter: `claim` only. `withdraw` and `claim_and_withdraw` are explicitly rejected
+(HTTP 501 in the API route; builder throws `DBC withdrawals are not supported pre-migration`).
 
 IDL Auto Mode: When `DBC_USE_IDL=true` and a `dbc_idl.json` file exists:
 
@@ -238,8 +238,8 @@ IDL Auto Mode: When `DBC_USE_IDL=true` and a `dbc_idl.json` file exists:
    `sha256("global::<name>").slice(0,8)`.
 2. For the generic `claim` action it prefers `claim_partner_trading_fee` then
    `claim_creator_trading_fee`.
-3. The withdraw stub error includes any withdraw-like instruction name & listed accounts to guide
-   integration.
+3. The withdraw path is intentionally disabled; even with IDL present the builder will throw a
+  clear error indicating claim‑only mode.
 4. If IDL load fails it silently falls back to env / placeholder behavior.
 
 How to obtain the real discriminator (Anchor-style): `sha256("global::<instruction_name>")` → take
@@ -252,8 +252,8 @@ first 16 hex chars (8 bytes). This is automated if you set `DBC_CLAIM_FEE_INSTRU
 - Validates pool + fee vault and extracts SPL token mint.
 - Creates (idempotent) destination ATA for claimer.
 - Applies optional compute budget (price + limit) instructions.
-- Inserts DBC claim fee instruction (placeholder discriminator until real one configured). A
-  withdraw path stub exists but is intentionally guarded.
+- Inserts DBC claim fee instruction (placeholder discriminator until real one configured). The
+  withdraw path is intentionally disabled and will throw pre‑migration.
 - Supports simulation mode; returns logs + CU usage.
 
 The API route now delegates to this builder, ensuring consistent logic for both simulation and
@@ -277,7 +277,7 @@ Request Body (JSON):
     "pool": "<poolPubkey>",
     "feeVault": "<feeVaultTokenAccountPubkey>"
   },
-  "action": "claim",               // 'claim' | 'withdraw' | 'claim_and_withdraw' (withdraw pending)
+  "action": "claim",               // only 'claim' supported; withdraw endpoints disabled pre-migration
   "simulateOnly": true              // default true for safety if DBC params supplied
 }
 ```
@@ -313,10 +313,10 @@ Mock Mode: Set `TEST_MOCK_RPC=mock` (never in production) to force an in-memory 
 deterministic blockhash, account info (fake SPL account data), and simulation result (5,000 CU).
 Used by integration tests (`tests/exitBuildDbcIntegration.test.ts`).
 
-Discriminator Precedence (claim & withdraw):
+Discriminator Precedence (claim):
 
-1. Explicit hex env (`DBC_CLAIM_FEE_DISCRIMINATOR` / `DBC_WITHDRAW_DISCRIMINATOR`)
-2. Instruction name env (`DBC_CLAIM_FEE_INSTRUCTION_NAME` / `DBC_WITHDRAW_INSTRUCTION_NAME`)
+1. Explicit hex env (`DBC_CLAIM_FEE_DISCRIMINATOR`)
+2. Instruction name env (`DBC_CLAIM_FEE_INSTRUCTION_NAME`)
 3. IDL auto mode when `DBC_USE_IDL=true` and `dbc_idl.json` present
 4. (Error) – request fails with 400 (runtime) or throws early (import path) if missing
 
@@ -370,7 +370,8 @@ The beta Universal Exit flow extends the original DBC one‑click claim to also:
    SDK.
 
 It plans both sets of transactions first, then signs & submits them sequentially, tracking per‑tx
-status.
+status. DAMM v2 withdrawals use the cp‑amm SDK client‑side when available and fall back to the
+server route; automatic pool detection uses your connected wallet.
 
 ### Components
 
@@ -391,7 +392,7 @@ If one position build or send fails, it is marked `error` and the flow continues
 tasks (best‑effort philosophy). Abort stops further processing after the in‑flight transaction
 completes (cannot cancel already sent tx on Solana).
 
-### Current Limitations
+### Current Limitations / Notes
 
 | Area                    | Limitation                                 | Planned Improvement                                  |
 | ----------------------- | ------------------------------------------ | ---------------------------------------------------- |
@@ -399,8 +400,8 @@ completes (cannot cancel already sent tx on Solana).
 | DAMM v2 partial exit    | Always 100% removal (percent=100)          | Add per‑position %, quoting + slippage thresholds    |
 | Migrated pool detection | Env list only (`MIGRATED_DBC_POOLS`)       | On-chain metadata (migration PDA) auto-detection     |
 | Parallelism             | Serial execution (one at a time)           | Optional small (N=2–3) concurrency                   |
-| Slippage protection     | None for DAMM v2 withdraw builder          | Integrate withdraw quote thresholds robustly         |
-| Priority adaptation     | Fixed base priorityMicros                  | Integrate adaptive escalation like single exit hook  |
+| Slippage protection     | Quote thresholds best‑effort (via SDK)     | Defaults to 50 bps; falls back to 0 thresholds       |
+| Priority adaptation     | Implemented: prebuilt variants used per tx | Steps: 250k → 337.5k → ~455k µ‑lamports, cap 3M      |
 
 ### Safety Guards
 

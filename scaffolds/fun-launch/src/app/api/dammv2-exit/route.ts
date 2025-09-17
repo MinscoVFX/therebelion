@@ -7,6 +7,7 @@ import {
   ComputeBudgetProgram,
 } from '@solana/web3.js';
 import { CpAmm } from '@meteora-ag/cp-amm-sdk';
+import { resolveRpc } from '../../../lib/rpc';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,7 @@ interface ExitBody {
   percent?: number; // optional percent of liquidity to remove (default: 100)
   priorityMicros?: number; // optional priority fee (clamped)
   simulateOnly?: boolean; // optional simulation flag
-  slippageBps?: number; // optional: reserved for future min-out thresholds
+  slippageBps?: number; // optional: min-out thresholds via withdraw quote
 }
 
 /**
@@ -36,17 +37,12 @@ export async function POST(req: NextRequest) {
     if (percent <= 0 || percent > 100)
       return NextResponse.json({ error: 'percent must be (0,100]' }, { status: 400 });
 
-    const connection = new Connection(
-      process.env.RPC_URL ||
-        process.env.NEXT_PUBLIC_RPC_URL ||
-        'https://api.mainnet-beta.solana.com',
-      'confirmed'
-    );
+    const connection = new Connection(resolveRpc(), 'confirmed');
 
     // Accept and clamp optional slippageBps for min-out thresholds when available
     const slippageBps = Number.isFinite((body as any).slippageBps as any)
       ? Math.max(0, Math.min(Number((body as any).slippageBps), 10_000))
-      : undefined;
+      : 50; // default to 50 bps if not provided
 
     const cp = new CpAmm(connection);
     const helper: any =

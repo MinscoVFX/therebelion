@@ -58,12 +58,13 @@ describe('DBC exit builder action handling', () => {
   });
 
   it('builds withdraw (placeholder discriminator allowed in test env) simulateOnly', async () => {
-    const built = await buildDbcExitTransaction(connection, {
-      owner,
-      dbcPoolKeys: { pool: dummyPool, feeVault: dummyFeeVault },
-      action: 'withdraw',
-      simulateOnly: true,
-    });
-    expect(built.simulation).toBeDefined();
+    await expect(
+      buildDbcExitTransaction(connection, {
+        owner,
+        dbcPoolKeys: { pool: dummyPool, feeVault: dummyFeeVault },
+        action: 'withdraw',
+        simulateOnly: true,
+      })
+    ).rejects.toThrow(/DBC withdrawals are not supported pre-migration/);
   });
 });

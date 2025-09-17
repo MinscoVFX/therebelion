@@ -8,14 +8,6 @@
     {
       "name": "claim_fee",
       "accounts": [{ "name": "user" }, { "name": "fee_vault" }]
-    },
-    {
-      "name": "withdraw_liquidity",
-      "accounts": [
-        { "name": "user" },
-        { "name": "liquidity_pool" },
-        { "name": "user_token_account" }
-      ]
     }
   ]
 }

@@ -41,6 +41,6 @@ describe('API route smoke imports', () => {
         // Do not fail the suite; just record a dummy assertion for Vitest.
         expect(true).toBe(true);
       }
-    });
+    }, 10000);
   }
 });

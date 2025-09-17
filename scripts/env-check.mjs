@@ -31,11 +31,12 @@ if (
 }
 
 if (process.env.ALLOWED_DBC_PROGRAM_IDS) {
+  const base58Re = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/; // Solana base58 (no 0,O,I,l) typical 32–44 length
   const entries = process.env.ALLOWED_DBC_PROGRAM_IDS.split(',')
-    .map((s) => s.trim())
+    .map((s) => s.trim().replace(/^\[|\]$/g, ''))
     .filter(Boolean);
   for (const id of entries) {
-    if (!/^\w{32,44}$/.test(id)) warnings.push(`Suspicious program id format: ${id}`);
+    if (!base58Re.test(id)) warnings.push(`Suspicious program id format: "${id}"`);
   }
 }
 

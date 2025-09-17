@@ -59,6 +59,7 @@ export function useUniversalExit() {
         });
         const items: UniversalExitItem[] = tasks.map((t) => ({ ...t, status: 'pending' }));
         setState((s) => ({ ...s, planning: false, running: true, startedAt: Date.now(), items }));
+        // Build initial tx set (1 per item, using the first/lowest priority variant)
         const deserialized = items.map((it) =>
           VersionedTransaction.deserialize(Buffer.from(it.tx, 'base64'))
         );
@@ -73,7 +74,7 @@ export function useUniversalExit() {
           signTransaction,
           signAllTransactions: (signTransaction as any)?.signAllTransactions,
         };
-        const { signed, errors } = await signTransactionsAdaptive(walletLike, deserialized);
+  const { errors } = await signTransactionsAdaptive(walletLike, deserialized);
 
         for (let i = 0; i < items.length; i++) {
           if (controller.signal.aborted) break;
@@ -86,39 +87,70 @@ export function useUniversalExit() {
             }));
             continue;
           }
-          try {
-            setState((s) => ({
-              ...s,
-              currentIndex: i,
-              items: s.items.map((it, idx) => (idx === i ? { ...it, status: 'signed' } : it)),
-            }));
-            const sig = await connection.sendRawTransaction(signed[i].serialize(), {
-              skipPreflight: false,
-              maxRetries: 0,
-            });
+          // Adaptive priority: attempt send/confirm across prebuilt variants if present
+          const variants = (items[i] as any).priorityTxs as
+            | Array<{ tx: string; lastValidBlockHeight: number; priorityMicros: number }>
+            | undefined;
+          let confirmed = false;
+          let lastError: string | undefined;
+          const attempts = variants && variants.length ? variants : [{ tx: items[i].tx, lastValidBlockHeight: items[i].lastValidBlockHeight, priorityMicros: (undefined as unknown as number) }];
+
+          for (let a = 0; a < attempts.length; a++) {
+            try {
+              // Deserialize this attempt’s tx
+              const tryTx = VersionedTransaction.deserialize(Buffer.from(attempts[a].tx, 'base64'));
+              // Sign single tx with fallback: prefer signAllTransactions when available for isolation benefits
+              let signedOne: VersionedTransaction;
+              if (typeof walletLike.signAllTransactions === 'function') {
+                try {
+                  const arr = await walletLike.signAllTransactions([tryTx]);
+                  signedOne = Array.isArray(arr) && arr[0] instanceof VersionedTransaction ? arr[0] : tryTx;
+                } catch {
+                  // fallback to signTransaction
+                  signedOne = await (walletLike.signTransaction as any)(tryTx);
+                }
+              } else {
+                signedOne = await (walletLike.signTransaction as any)(tryTx);
+              }
+              setState((s) => ({
+                ...s,
+                currentIndex: i,
+                items: s.items.map((it, idx) => (idx === i ? { ...it, status: 'signed' } : it)),
+              }));
+              const sig = await connection.sendRawTransaction(signedOne.serialize(), {
+                skipPreflight: false,
+                maxRetries: 0,
+              });
+              setState((s) => ({
+                ...s,
+                items: s.items.map((it, idx) =>
+                  idx === i ? { ...it, status: 'sent', signature: sig } : it
+                ),
+              }));
+              await connection.confirmTransaction(
+                {
+                  signature: sig,
+                  blockhash: tryTx.message.recentBlockhash!,
+                  lastValidBlockHeight: attempts[a].lastValidBlockHeight,
+                },
+                'confirmed'
+              );
+              setState((s) => ({
+                ...s,
+                items: s.items.map((it, idx) => (idx === i ? { ...it, status: 'confirmed' } : it)),
+              }));
+              confirmed = true;
+              break;
+            } catch (e: any) {
+              lastError = e?.message || 'failed';
+              // Try next variant
+            }
+          }
+          if (!confirmed) {
             setState((s) => ({
               ...s,
               items: s.items.map((it, idx) =>
-                idx === i ? { ...it, status: 'sent', signature: sig } : it
-              ),
-            }));
-            await connection.confirmTransaction(
-              {
-                signature: sig,
-                blockhash: deserialized[i].message.recentBlockhash!,
-                lastValidBlockHeight: items[i].lastValidBlockHeight,
-              },
-              'confirmed'
-            );
-            setState((s) => ({
-              ...s,
-              items: s.items.map((it, idx) => (idx === i ? { ...it, status: 'confirmed' } : it)),
-            }));
-          } catch (e: any) {
-            setState((s) => ({
-              ...s,
-              items: s.items.map((it, idx) =>
-                idx === i ? { ...it, status: 'error', error: e?.message || 'failed' } : it
+                idx === i ? { ...it, status: 'error', error: lastError || 'failed' } : it
               ),
             }));
           }

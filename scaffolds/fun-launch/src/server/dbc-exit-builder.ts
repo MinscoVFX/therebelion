@@ -235,24 +235,7 @@ function pickClaimBuilder(
   );
 }
 
-function pickWithdrawBuilder(
-  mod: any
-):
-  | ((args: Record<string, unknown>) => Promise<TransactionInstruction | TransactionInstruction[]>)
-  | null {
-  return (
-    mod?.buildRemoveLiquidityIx ||
-    mod?.removeLiquidityIx ||
-    mod?.buildExitPositionIx ||
-    mod?.exitPositionIx ||
-    (mod?.builders &&
-      (mod.builders.buildRemoveLiquidityIx ||
-        mod.builders.removeLiquidity ||
-        mod.builders.buildExitPositionIx ||
-        mod.builders.exitPosition)) ||
-    null
-  );
-}
+// withdraw builder intentionally removed (pre-migration withdraw unsupported)
 
 function buildClaimInstruction(
   pool: PublicKey,
@@ -286,26 +269,7 @@ function buildClaimInstruction(
  * Without official IDL / SDK we cannot craft a correct instruction.
  * We surface an explicit error so callers know this path is not yet wired.
  */
-function buildWithdrawInstruction(
-  pool: PublicKey,
-  owner: PublicKey,
-  userTokenAccount: PublicKey
-): TransactionInstruction {
-  const data = Buffer.alloc(8);
-  withdrawDisc().copy(data);
-  // Account ordering: attempt to follow IDL pattern (user, pool, user_token_account, token_program)
-  // Without official SDK this may fail on-chain; guarded by placeholder + prod env check below.
-  return new TransactionInstruction({
-    programId: PROGRAM_ID,
-    keys: [
-      { pubkey: owner, isSigner: true, isWritable: false },
-      { pubkey: pool, isSigner: false, isWritable: true },
-      { pubkey: userTokenAccount, isSigner: false, isWritable: true },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-    ],
-    data,
-  });
-}
+// withdraw instruction helper intentionally removed (pre-migration withdraw unsupported)
 
 export async function buildDbcExitTransaction(
   connection: Connection,
@@ -398,93 +362,8 @@ export async function buildDbcExitTransaction(
     if (!usedRuntime) {
       instructions.push(buildClaimInstruction(pool, feeVault, ownerPk, userTokenAccount));
     }
-  } else if (action === 'withdraw') {
-    // Try Studio runtime withdraw builder first; fallback to discriminator-based placeholder
-    let usedRuntime = false;
-    if (!(process.env.NODE_ENV === 'test' || process.env.VITEST)) {
-      const dbc = await importDbcRuntime();
-      const wBuilder = dbc && pickWithdrawBuilder(dbc);
-      if (wBuilder) {
-        try {
-          const built = await wBuilder({
-            programId: PROGRAM_ID,
-            pool,
-            user: ownerPk,
-            userTokenAccount,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            slippageBps: args.slippageBps,
-          });
-          if (built) {
-            const list = Array.isArray(built) ? built : [built];
-            for (const ix of list) instructions.push(ix);
-            usedRuntime = true;
-          }
-        } catch {
-          // fallback below
-        }
-      }
-    }
-    if (!usedRuntime) {
-      instructions.push(buildWithdrawInstruction(pool, ownerPk, userTokenAccount));
-    }
-  } else if (action === 'claim_and_withdraw') {
-    // Sequential: claim fees then withdraw liquidity in one atomic transaction
-    // Try claim via runtime, then fallback
-    let claimDone = false;
-    if (!(process.env.NODE_ENV === 'test' || process.env.VITEST)) {
-      const dbc = await importDbcRuntime();
-      const builder = dbc && pickClaimBuilder(dbc);
-      if (builder) {
-        try {
-          const built = await builder({
-            programId: PROGRAM_ID,
-            pool,
-            feeVault,
-            user: ownerPk,
-            userTokenAccount,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          });
-          if (built) {
-            const list = Array.isArray(built) ? built : [built];
-            for (const ix of list) instructions.push(ix);
-            claimDone = true;
-          }
-        } catch {
-          // fallback
-        }
-      }
-    }
-    if (!claimDone) {
-      instructions.push(buildClaimInstruction(pool, feeVault, ownerPk, userTokenAccount));
-    }
-    // Try Studio runtime withdraw builder first; fallback to discriminator-based placeholder
-    let usedRuntime = false;
-    if (!(process.env.NODE_ENV === 'test' || process.env.VITEST)) {
-      const dbc = await importDbcRuntime();
-      const wBuilder = dbc && pickWithdrawBuilder(dbc);
-      if (wBuilder) {
-        try {
-          const built = await wBuilder({
-            programId: PROGRAM_ID,
-            pool,
-            user: ownerPk,
-            userTokenAccount,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            slippageBps: args.slippageBps,
-          });
-          if (built) {
-            const list = Array.isArray(built) ? built : [built];
-            for (const ix of list) instructions.push(ix);
-            usedRuntime = true;
-          }
-        } catch {
-          // fallback below
-        }
-      }
-    }
-    if (!usedRuntime) {
-      instructions.push(buildWithdrawInstruction(pool, ownerPk, userTokenAccount));
-    }
+  } else if (action === 'withdraw' || action === 'claim_and_withdraw') {
+    throw new Error('DBC withdrawals are not supported pre-migration');
   } else {
     throw new Error(`Unsupported DBC exit action: ${action}`);
   }

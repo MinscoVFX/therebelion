@@ -133,9 +133,32 @@ async function run() {
         results.push({ ep, error: e.message || String(e) });
       }
     }
-    // Do not assert strict 200; only ensure endpoints respond without throwing at fetch layer.
+    // Do not assert strict 200 here; only ensure endpoints respond without throwing at fetch layer.
     step.ok = true;
     step.results = results;
+  });
+
+  // Dedicated DAMM v2 simulate step (expect 200 and presence of exitTxBase64)
+  await stepWrap('dammv2-exit simulateOnly 200', async (step) => {
+    const { res, json } = await fetchJson(`${APP_URL}/api/dammv2-exit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        owner: '11111111111111111111111111111111',
+        pool: '11111111111111111111111111111111',
+        simulateOnly: true,
+        slippageBps: 50,
+      }),
+    });
+    // Assert 200 OK and presence of exitTxBase64; tolerate alias 'tx' but prefer explicit key
+    assertStatus(res, 200, 'dammv2-exit simulateOnly');
+    if (!json || !json.exitTxBase64) {
+      throw new Error('dammv2-exit missing exitTxBase64');
+    }
+    step.hasExitTxBase64 = true;
+    step.ok = true;
+    step.status = res.status;
+    step.json = json;
   });
 
   await stepWrap('dbc one-click exit import', async (step) => {

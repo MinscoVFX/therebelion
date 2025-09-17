@@ -5,8 +5,6 @@ import {
   buildDbcExitTransaction,
   getClaimDiscriminatorMeta,
   getActiveClaimDiscriminatorHex,
-  getWithdrawDiscriminatorMeta,
-  getActiveWithdrawDiscriminatorHex,
 } from '../../../server/dbc-exit-builder';
 
 export async function POST(req: Request) {
@@ -20,12 +18,16 @@ export async function POST(req: Request) {
       url.searchParams.get('simulateOnly') === '1' ||
       url.searchParams.get('simulateOnly') === 'true';
 
+    // Explicitly disable withdraw and claim_and_withdraw in POST as well (claim-only mode)
+    if (action === 'withdraw' || action === 'claim_and_withdraw') {
+      return NextResponse.json(
+        { error: 'DBC withdrawals not supported pre-migration' },
+        { status: 501 }
+      );
+    }
+
     // Validate minimal fields; claim & combined require feeVault; withdraw only needs pool.
-    if (
-      !body.owner ||
-      !body.dbcPoolKeys?.pool ||
-      ((action === 'claim' || action === 'claim_and_withdraw') && !body.dbcPoolKeys?.feeVault)
-    ) {
+    if (!body.owner || !body.dbcPoolKeys?.pool || (action === 'claim' && !body.dbcPoolKeys?.feeVault)) {
       if (simulateOnly) {
         return NextResponse.json({
           simulated: true,
@@ -38,9 +40,7 @@ export async function POST(req: Request) {
       }
       return NextResponse.json(
         {
-          error:
-            'Missing required fields: owner, dbcPoolKeys.pool' +
-            (action === 'claim' || action === 'claim_and_withdraw' ? ', dbcPoolKeys.feeVault' : ''),
+          error: 'Missing required fields: owner, dbcPoolKeys.pool' + (action === 'claim' ? ', dbcPoolKeys.feeVault' : ''),
         },
         { status: 400 }
       );
@@ -67,29 +67,6 @@ export async function POST(req: Request) {
         discriminator: getActiveClaimDiscriminatorHex(),
         source: m?.source,
         instructionName: m?.instructionName,
-      });
-    } else if (action === 'withdraw') {
-      const m = getWithdrawDiscriminatorMeta();
-      metas.push({
-        type: 'withdraw',
-        discriminator: getActiveWithdrawDiscriminatorHex(),
-        source: m?.source,
-        instructionName: m?.instructionName,
-      });
-    } else if (action === 'claim_and_withdraw') {
-      const mc = getClaimDiscriminatorMeta();
-      const mw = getWithdrawDiscriminatorMeta();
-      metas.push({
-        type: 'claim',
-        discriminator: getActiveClaimDiscriminatorHex(),
-        source: mc?.source,
-        instructionName: mc?.instructionName,
-      });
-      metas.push({
-        type: 'withdraw',
-        discriminator: getActiveWithdrawDiscriminatorHex(),
-        source: mw?.source,
-        instructionName: mw?.instructionName,
       });
     }
     const common = {

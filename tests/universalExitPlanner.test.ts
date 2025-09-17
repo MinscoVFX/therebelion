@@ -37,19 +37,25 @@ function mockFetchFactory() {
 
 describe('universal exit planner', () => {
   it('plans dbc and dammv2 tasks', async () => {
+    const prev = process.env.NEXT_PUBLIC_MIGRATED_DBC_POOLS;
+    process.env.NEXT_PUBLIC_MIGRATED_DBC_POOLS = 'DammPool';
     // @ts-ignore override global fetch
     global.fetch = mockFetchFactory();
     const tasks = await planUniversalExits({ owner: 'WalletABC' });
     expect(tasks.length).toBe(2);
     const kinds = tasks.map((t) => t.protocol).sort();
     expect(kinds).toEqual(['dammv2', 'dbc']);
+    process.env.NEXT_PUBLIC_MIGRATED_DBC_POOLS = prev;
   });
 
   it('respects include flags', async () => {
+    const prev = process.env.NEXT_PUBLIC_MIGRATED_DBC_POOLS;
+    process.env.NEXT_PUBLIC_MIGRATED_DBC_POOLS = 'DammPool';
     // @ts-ignore override global fetch
     global.fetch = mockFetchFactory();
     const tasks = await planUniversalExits({ owner: 'WalletABC', include: { dbc: false } });
     expect(tasks.length).toBe(1);
     expect(tasks[0].protocol).toBe('dammv2');
+    process.env.NEXT_PUBLIC_MIGRATED_DBC_POOLS = prev;
   });
 });
