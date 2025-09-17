@@ -46,7 +46,7 @@ describe('DAMM v2 min-out thresholds with slippageBps', () => {
 
   it('single exit uses withdraw quote to set thresholds when slippageBps provided', async () => {
     const owner = '11111111111111111111111111111111';
-  const pool = '11111111111111111111111111111111';
+    const pool = '11111111111111111111111111111111';
     const unpatch = patchCpAmm({
       positions: () => [
         {

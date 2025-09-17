@@ -22,6 +22,7 @@ describe('services: connection + meteora', () => {
   });
 
   it('connectionService health returns false on slot error', async () => {
+    // Define the fake object before mocking Connection to avoid ReferenceError in getSlot()
     const fake = { getSlot: vi.fn().mockRejectedValue(new Error('slot fail')) };
     vi.mock('@solana/web3.js', async (orig) => {
       const base: any = await orig();

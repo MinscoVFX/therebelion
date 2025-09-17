@@ -105,11 +105,7 @@ async function run() {
 
   // Optional lightweight probes for new endpoints; they are tolerant to missing params and should not fail hard.
   await stepWrap('dammv2 routes import + simulate sanity', async (step) => {
-    const endpoints = [
-      '/api/dammv2-discover',
-      '/api/dammv2-exit',
-      '/api/dammv2-exit-all',
-    ];
+    const endpoints = ['/api/dammv2-discover', '/api/dammv2-exit', '/api/dammv2-exit-all'];
     const results = [];
     for (const ep of endpoints) {
       try {
@@ -120,8 +116,17 @@ async function run() {
           body: ep.endsWith('discover')
             ? JSON.stringify({ owner: '11111111111111111111111111111111' })
             : ep.endsWith('exit')
-            ? JSON.stringify({ owner: '11111111111111111111111111111111', pool: '11111111111111111111111111111111', simulateOnly: true, slippageBps: 50 })
-            : JSON.stringify({ owner: '11111111111111111111111111111111', simulateOnly: true, slippageBps: 50 }),
+              ? JSON.stringify({
+                  owner: '11111111111111111111111111111111',
+                  pool: '11111111111111111111111111111111',
+                  simulateOnly: true,
+                  slippageBps: 50,
+                })
+              : JSON.stringify({
+                  owner: '11111111111111111111111111111111',
+                  simulateOnly: true,
+                  slippageBps: 50,
+                }),
         });
         results.push({ ep, status: res.status });
       } catch (e) {
