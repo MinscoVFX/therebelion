@@ -31,6 +31,13 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
+      - name: Install pnpm (escape hatch)
+        run: |
+          set -euo pipefail
+          corepack enable || true
+          corepack prepare pnpm@10.14.0 --activate || true
+          pnpm --version || npm install -g pnpm@10.14.0
+          pnpm --version
       - name: Turbo cache
         uses: actions/cache@v4
         with:
@@ -86,6 +93,13 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
+      - name: Install pnpm (escape hatch)
+        run: |
+          set -euo pipefail
+          corepack enable || true
+          corepack prepare pnpm@10.14.0 --activate || true
+          pnpm --version || npm install -g pnpm@10.14.0
+          pnpm --version
       - name: Turbo cache
         uses: actions/cache@v4
         with:
@@ -118,6 +132,13 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
+      - name: Install pnpm (escape hatch)
+        run: |
+          set -euo pipefail
+          corepack enable || true
+          corepack prepare pnpm@10.14.0 --activate || true
+          pnpm --version || npm install -g pnpm@10.14.0
+          pnpm --version
       - name: Turbo cache
         uses: actions/cache@v4
         with:
@@ -150,6 +171,13 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
+      - name: Install pnpm (escape hatch)
+        run: |
+          set -euo pipefail
+          corepack enable || true
+          corepack prepare pnpm@10.14.0 --activate || true
+          pnpm --version || npm install -g pnpm@10.14.0
+          pnpm --version
       - name: Turbo cache
         uses: actions/cache@v4
         with:

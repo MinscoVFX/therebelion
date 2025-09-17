@@ -22,12 +22,7 @@ describe('utils: amounts + validation', () => {
   it('calculatePriceImpact handles zero reserves and computes impact', () => {
     expect(calculatePriceImpact(new BN(10), new BN(10), new BN(0), new BN(100))).toBe(0);
 
-    const impact = calculatePriceImpact(
-      new BN(1000),
-      new BN(900),
-      new BN(10_000),
-      new BN(9_000)
-    );
+    const impact = calculatePriceImpact(new BN(1000), new BN(900), new BN(10_000), new BN(9_000));
     expect(typeof impact).toBe('number');
     expect(impact).toBeGreaterThanOrEqual(0);
   });
