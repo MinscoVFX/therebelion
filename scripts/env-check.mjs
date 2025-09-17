@@ -57,6 +57,8 @@ if (process.env.ALLOWED_DBC_PROGRAM_IDS) {
     for (const k of list) {
       if (!base58Re.test(k)) warnings.push(`POOL_CONFIG_KEY entry invalid base58: "${k}"`);
     }
+    // Non-blocking reminder to keep local env aligned with Vercel for mainnet behavior
+    log('log', 'Reminder: ensure POOL_CONFIG_KEY is synced from Vercel for mainnet alignment');
   }
 }
 

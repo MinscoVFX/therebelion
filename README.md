@@ -39,6 +39,33 @@ Optional:
 - DBC_CLAIM_FEE_INSTRUCTION_NAME=claim_fee (short-form) if you prefer name over explicit hex
 - MIGRATED_DBC_POOLS (comma list) for migrated filter in DAMM v2 exit-all
 
+### Quick Deploy Playbook
+
+1) Sync envs locally from Vercel (recommended):
+
+```bash
+vercel env pull .env
+```
+
+2) Verify env health locally:
+
+```bash
+pnpm env:check
+```
+
+3) Push to main and trigger deploy. After Vercel finishes, validate:
+
+- Open `/api/health` → `{ ok: true }` and shows which RPC var is present
+- Open `/exit` → connect wallet → Universal Exit shows detected positions
+- Optionally run smoke locally against the deployment:
+
+```bash
+APP_URL=https://your-app.vercel.app pnpm smoke
+```
+
+Multi-key POOL_CONFIG_KEY: you can supply comma-separated base58 keys if your setup spans multiple
+configs. The env checker validates each entry. Keep Vercel and local values synchronized.
+
 Do NOT deploy with placeholder discriminators (ffffffffffffffff, eeeeeeeeeeeeeeee,
 0000000000000000); the server will throw in production.
 

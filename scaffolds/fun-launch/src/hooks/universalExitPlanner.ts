@@ -165,8 +165,16 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
               .map((op: any) => ({
                 pool: (op.account?.pool || op.pool || op.account?.data?.pool)?.toBase58?.() || undefined,
                 position: (op.publicKey || op.account?.publicKey)?.toBase58?.(),
+                liquidity: op.account?.liquidity,
+                hasNft: Boolean(op.publicKey || op.account?.publicKey || op.account?.positionNftAccount),
               }))
-              .filter((p: any) => p.pool && p.position);
+              .filter((p: any) => {
+                if (!p.pool || !p.position) return false;
+                const liq = p.liquidity;
+                const positive = liq?.isZero?.() === false || (typeof liq?.toString === 'function' && liq.toString() !== '0');
+                return p.hasNft && positive;
+              })
+              .map((p: any) => ({ pool: p.pool, position: p.position }));
           }
         } catch (e) {
           // eslint-disable-next-line no-console
@@ -176,8 +184,32 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
         }
       }
 
+      // When we have ownerPositions (SDK discovery), further validate positions: require NFT and positive liquidity
+      const filteredValidated = (() => {
+        if (!Array.isArray(ownerPositions) || ownerPositions.length === 0) return filtered;
+        const byPos = new Map<string, any>();
+        for (const op of ownerPositions) {
+          const pk = (op.publicKey || op.account?.publicKey)?.toBase58?.();
+          if (!pk) continue;
+          byPos.set(pk, op.account || op);
+        }
+        return filtered.filter((p: any) => {
+          if (!p?.position) return false;
+          const acct = byPos.get(String(p.position));
+          if (!acct) return false;
+          const liq = acct?.liquidity;
+          const positive = liq?.isZero?.() === false || (typeof liq?.toString === 'function' && liq.toString() !== '0');
+          const hasNft = Boolean(acct?.positionNftAccount || acct?.publicKey);
+          if (!hasNft || !positive) {
+            // eslint-disable-next-line no-console
+            console.warn('[universal-exit] skipping position without NFT or liquidity > 0', p.position);
+          }
+          return hasNft && positive;
+        });
+      })();
+
       const builds = await Promise.allSettled(
-        filtered
+        filteredValidated
           .filter((p) => p.pool)
           .map(async (p) => {
             // SDK path (browser only, when initialized successfully)
