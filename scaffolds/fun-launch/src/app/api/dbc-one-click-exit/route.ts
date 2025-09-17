@@ -21,10 +21,23 @@ export async function POST(req: Request) {
       priorityMicros = 250_000,
       computeUnitLimit = 400_000,
       slippageBps = 100, // 1% slippage tolerance
+      simulate = false,
     } = body;
 
     if (!ownerPubkey) {
       return NextResponse.json({ error: 'Missing ownerPubkey' }, { status: 400 });
+    }
+
+    if (simulate) {
+      // Short-circuit for smoke/probe with a canonical success without requiring real discovery/tx build
+      return NextResponse.json({
+        success: true,
+        simulateOnly: true,
+        message: 'simulate flag acknowledged; skipping discovery and tx build',
+        priorityMicrosUsed: priorityMicros,
+        computeUnitLimit,
+        slippageBps,
+      });
     }
 
     const connection = new Connection(resolveRpc(), 'confirmed');

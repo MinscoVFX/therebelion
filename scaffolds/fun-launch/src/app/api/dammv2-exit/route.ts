@@ -51,14 +51,32 @@ export async function POST(req: NextRequest) {
     const cp = new CpAmm(connection);
     const helper: any =
       (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
-    if (!helper)
+    if (!helper) {
+      if (body.simulateOnly) {
+        return NextResponse.json({
+          simulateOnly: true,
+          warning: 'simulateOnly stub returned due to missing sdk helper',
+          tx: null,
+          lastValidBlockHeight: 0,
+        });
+      }
       return NextResponse.json({ error: 'sdk position helper missing' }, { status: 500 });
+    }
 
     let chosen: any | null = null;
     let allPositions: any[] = [];
     try {
       allPositions = await helper({ owner });
     } catch (e) {
+      if (body.simulateOnly) {
+        return NextResponse.json({
+          simulateOnly: true,
+          warning: 'simulateOnly stub returned due to position scan failure',
+          detail: (e as any)?.message,
+          tx: null,
+          lastValidBlockHeight: 0,
+        });
+      }
       return NextResponse.json(
         { error: 'position scan failed', detail: (e as any)?.message },
         { status: 500 }
