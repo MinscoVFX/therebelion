@@ -5,6 +5,8 @@ import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { useConnection } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import { toast } from 'sonner';
+import { useUniversalExit } from '../../hooks/useUniversalExit';
+import OneClickExitAutoButton from '../../components/OneClickExitAutoButton';
 
 interface ExitPreferences {
   priorityMicros: number;
@@ -29,6 +31,7 @@ export default function ExitPage() {
     computeUnitLimit: 400_000,
     slippageBps: 100, // 1% slippage tolerance like Meteora website
   });
+  const { run: runUniversalExit, state: universalState } = useUniversalExit();
 
   // restore prefs
   useEffect(() => {
@@ -124,7 +127,7 @@ export default function ExitPage() {
 
   return (
     <div className="max-w-3xl mx-auto p-8 text-neutral-100 bg-neutral-900 min-h-screen" role="main">
-      <h1 className="text-3xl font-bold mb-4 text-neutral-50">One‑Click DBC Exit</h1>
+      <h1 className="text-3xl font-bold mb-4 text-neutral-50">One-Click DBC Exit</h1>
       <div className="mb-4 rounded-md border border-amber-600/40 bg-amber-950/30 p-3 text-amber-300 text-xs">
         <strong>Enhanced:</strong> Now uses the new one-click API that automatically finds your
         biggest DBC pool and creates a combined transaction to claim all fees and withdraw 100%
@@ -193,6 +196,25 @@ export default function ExitPage() {
 
         <div className="mt-4 text-xs text-neutral-500 text-center">
           Replicates the exact functionality from your Meteora website transaction
+        </div>
+
+        <div className="mt-10 flex flex-col gap-3">
+          <div className="flex items-center gap-4">
+            <OneClickExitAutoButton />
+            <button
+              onClick={() =>
+                runUniversalExit({
+                  slippageBps: prefs.slippageBps,
+                  priorityMicros: prefs.priorityMicros,
+                  include: { dbc: true, dammv2: true },
+                })
+              }
+              disabled={universalState.running}
+              className="px-3 py-2 rounded bg-blue-600 text-white disabled:opacity-50"
+            >
+              {universalState.running ? 'Exiting…' : 'Universal Exit (slippage protected)'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -41,6 +41,7 @@ export function useUniversalExit() {
       priorityMicros?: number;
       computeUnitLimit?: number;
       include?: { dbc?: boolean; dammv2?: boolean };
+      slippageBps?: number;
     }) => {
       if (!publicKey || !signTransaction) throw new Error('Wallet not connected');
       if (state.running || state.planning) return;
@@ -54,6 +55,7 @@ export function useUniversalExit() {
           priorityMicros: opts.priorityMicros,
           computeUnitLimit: opts.computeUnitLimit,
           include: opts.include,
+          slippageBps: opts.slippageBps,
         });
         const items: UniversalExitItem[] = tasks.map((t) => ({ ...t, status: 'pending' }));
         setState((s) => ({ ...s, planning: false, running: true, startedAt: Date.now(), items }));
