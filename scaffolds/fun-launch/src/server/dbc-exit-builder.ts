@@ -412,6 +412,7 @@ export async function buildDbcExitTransaction(
             user: ownerPk,
             userTokenAccount,
             tokenProgram: TOKEN_PROGRAM_ID,
+            slippageBps: args.slippageBps,
           });
           if (built) {
             const list = Array.isArray(built) ? built : [built];
@@ -469,6 +470,7 @@ export async function buildDbcExitTransaction(
             user: ownerPk,
             userTokenAccount,
             tokenProgram: TOKEN_PROGRAM_ID,
+            slippageBps: args.slippageBps,
           });
           if (built) {
             const list = Array.isArray(built) ? built : [built];
