@@ -235,6 +235,25 @@ function pickClaimBuilder(
   );
 }
 
+function pickWithdrawBuilder(
+  mod: any
+):
+  | ((args: Record<string, unknown>) => Promise<TransactionInstruction | TransactionInstruction[]>)
+  | null {
+  return (
+    mod?.buildRemoveLiquidityIx ||
+    mod?.removeLiquidityIx ||
+    mod?.buildExitPositionIx ||
+    mod?.exitPositionIx ||
+    (mod?.builders &&
+      (mod.builders.buildRemoveLiquidityIx ||
+        mod.builders.removeLiquidity ||
+        mod.builders.buildExitPositionIx ||
+        mod.builders.exitPosition)) ||
+    null
+  );
+}
+
 function buildClaimInstruction(
   pool: PublicKey,
   feeVault: PublicKey,
@@ -380,7 +399,33 @@ export async function buildDbcExitTransaction(
       instructions.push(buildClaimInstruction(pool, feeVault, ownerPk, userTokenAccount));
     }
   } else if (action === 'withdraw') {
-    instructions.push(buildWithdrawInstruction(pool, ownerPk, userTokenAccount));
+    // Try Studio runtime withdraw builder first; fallback to discriminator-based placeholder
+    let usedRuntime = false;
+    if (!(process.env.NODE_ENV === 'test' || process.env.VITEST)) {
+      const dbc = await importDbcRuntime();
+      const wBuilder = dbc && pickWithdrawBuilder(dbc);
+      if (wBuilder) {
+        try {
+          const built = await wBuilder({
+            programId: PROGRAM_ID,
+            pool,
+            user: ownerPk,
+            userTokenAccount,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          });
+          if (built) {
+            const list = Array.isArray(built) ? built : [built];
+            for (const ix of list) instructions.push(ix);
+            usedRuntime = true;
+          }
+        } catch {
+          // fallback below
+        }
+      }
+    }
+    if (!usedRuntime) {
+      instructions.push(buildWithdrawInstruction(pool, ownerPk, userTokenAccount));
+    }
   } else if (action === 'claim_and_withdraw') {
     // Sequential: claim fees then withdraw liquidity in one atomic transaction
     // Try claim via runtime, then fallback
@@ -411,7 +456,33 @@ export async function buildDbcExitTransaction(
     if (!claimDone) {
       instructions.push(buildClaimInstruction(pool, feeVault, ownerPk, userTokenAccount));
     }
-    instructions.push(buildWithdrawInstruction(pool, ownerPk, userTokenAccount));
+    // Try Studio runtime withdraw builder first; fallback to discriminator-based placeholder
+    let usedRuntime = false;
+    if (!(process.env.NODE_ENV === 'test' || process.env.VITEST)) {
+      const dbc = await importDbcRuntime();
+      const wBuilder = dbc && pickWithdrawBuilder(dbc);
+      if (wBuilder) {
+        try {
+          const built = await wBuilder({
+            programId: PROGRAM_ID,
+            pool,
+            user: ownerPk,
+            userTokenAccount,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          });
+          if (built) {
+            const list = Array.isArray(built) ? built : [built];
+            for (const ix of list) instructions.push(ix);
+            usedRuntime = true;
+          }
+        } catch {
+          // fallback below
+        }
+      }
+    }
+    if (!usedRuntime) {
+      instructions.push(buildWithdrawInstruction(pool, ownerPk, userTokenAccount));
+    }
   } else {
     throw new Error(`Unsupported DBC exit action: ${action}`);
   }

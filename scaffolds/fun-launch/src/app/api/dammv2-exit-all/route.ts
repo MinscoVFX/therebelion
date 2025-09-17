@@ -16,6 +16,7 @@ interface ExitAllBody {
   priorityMicros?: number; // optional priority fee per tx (micro lamports)
   simulateOnly?: boolean; // if true, simulate instead of returning executable txs
   maxPerTx?: number; // optional future packing (currently one position per tx)
+  slippageBps?: number; // optional future: may influence builder thresholds when SDK supports
 }
 
 /**
@@ -82,6 +83,11 @@ export async function POST(req: NextRequest) {
     if (!filtered.length) return NextResponse.json({ positions: [], txs: [] });
 
     const priorityMicros = Math.max(0, Math.min(body.priorityMicros ?? 250_000, 3_000_000));
+    const slippageBps = Number.isFinite(body.slippageBps as any)
+      ? Math.max(0, Math.min(Number(body.slippageBps), 10_000))
+      : undefined;
+    // Reserved: future pass-through to SDK builder thresholds. Keep a reference to satisfy lint.
+    void slippageBps;
 
     const results: { position: string; pool: string; status: string; reason?: string }[] = [];
     const txs: string[] = [];
