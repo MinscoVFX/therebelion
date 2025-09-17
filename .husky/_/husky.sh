@@ -1,18 +1,9 @@
+echo "husky - DEPRECATED
+
+Please remove the following two lines from $0:
+
 #!/usr/bin/env sh
-if [ -z "$husky_skip_init" ]; then
-  debug () {
-    [ "$HUSKY_DEBUG" = "1" ] && echo "husky (debug) - $1"
-  }
+. \"\$(dirname -- \"\$0\")/_/husky.sh\"
 
-  readonly husky_skip_init=1
-  export husky_skip_init
-
-  debug "starting..."
-  if [ -f ~/.huskyrc ]; then
-    debug "~/.huskyrc found, sourcing..."
-    . ~/.huskyrc
-  fi
-
-  export PATH="$PATH:.git/hooks/node_modules/.bin"
-  debug "PATH=$PATH"
-fi
+They WILL FAIL in v10.0.0
+"
