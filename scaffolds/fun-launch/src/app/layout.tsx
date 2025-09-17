@@ -5,6 +5,7 @@ import React, { useMemo } from 'react';
 
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { UnifiedWalletProvider } from '@jup-ag/wallet-adapter';
+import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
@@ -25,8 +26,17 @@ try {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // Initialize empty wallets array to avoid dependency issues
-  const wallets: any[] = useMemo<any[]>(() => [], []); // TODO: populate adapters as needed
+  // Initialize wallets once (Phantom + Solflare)
+  const wallets: any[] = useMemo<any[]>(() => {
+    try {
+      const list: any[] = [new PhantomWalletAdapter(), new SolflareWalletAdapter()].filter(
+        (w: any) => w && w.name && w.icon
+      );
+      return list;
+    } catch {
+      return [];
+    }
+  }, []);
 
   // React Query client
   const queryClient = useMemo(() => new QueryClient(), []);

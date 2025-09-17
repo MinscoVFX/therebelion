@@ -63,3 +63,4 @@ studio/keypair.json
 # Smoke test artifacts
 scripts/prod-smoke-report.json
 .smoke/
+.env*.local
