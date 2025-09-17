@@ -132,6 +132,27 @@ You can manage your environment variables in Vercel:
 - Dynamic Bonding Curve SDK
 - Cloudflare R2 for storage
 
+## Universal Exit (DBC fees + DAMM v2)
+
+The `/exit` page provides a Universal Exit flow that:
+
+- Claims DBC trading fees (claim‑only; withdraw disabled pre‑migration)
+- Removes 100% liquidity from detected DAMM v2 positions using `@meteora-ag/cp-amm-sdk`
+- Uses wallet‑based position discovery; falls back to server build when needed
+- Applies adaptive priority escalation: 250k → 337.5k → ~455k µ‑lamports/CU (cap 3M)
+
+Environment notes:
+
+- RPC: set one of `RPC_ENDPOINT`, `RPC_URL`, or `NEXT_PUBLIC_RPC_URL`
+- `POOL_CONFIG_KEY`: supports comma‑separated keys; validated by `pnpm env:check`
+- Optional `MIGRATED_DBC_POOLS`: comma‑separated list to restrict DAMM v2 exits
+
+Try it locally:
+
+1. `pnpm dev`
+2. Open `/exit`, connect wallet, and click “Universal Exit (DBC fees + DAMM v2 withdraw)”
+
+
 ## Contributing
 
 1. Fork the repository

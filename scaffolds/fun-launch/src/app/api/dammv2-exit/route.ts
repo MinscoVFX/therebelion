@@ -244,17 +244,23 @@ export async function POST(req: NextRequest) {
         commitment: 'confirmed',
         sigVerify: false,
       });
+      const b64 = Buffer.from(tx.serialize()).toString('base64');
       return NextResponse.json({
-        tx: Buffer.from(tx.serialize()).toString('base64'),
+        tx: b64,
+        exitTxBase64: b64,
         lastValidBlockHeight,
         simulation: { logs: sim.value.logs, units: sim.value.unitsConsumed, err: sim.value.err },
       });
     }
 
-    return NextResponse.json({
-      tx: Buffer.from(tx.serialize()).toString('base64'),
-      lastValidBlockHeight,
-    });
+    {
+      const b64 = Buffer.from(tx.serialize()).toString('base64');
+      return NextResponse.json({
+        tx: b64,
+        exitTxBase64: b64,
+        lastValidBlockHeight,
+      });
+    }
   } catch (error) {
     console.error('[dammv2-exit] error', error);
     return NextResponse.json(

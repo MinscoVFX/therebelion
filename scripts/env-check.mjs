@@ -32,11 +32,31 @@ if (
 
 if (process.env.ALLOWED_DBC_PROGRAM_IDS) {
   const base58Re = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/; // Solana base58 (no 0,O,I,l) typical 32–44 length
-  const entries = process.env.ALLOWED_DBC_PROGRAM_IDS.split(',')
-    .map((s) => s.trim().replace(/^\[|\]$/g, ''))
+  const cleaned = process.env.ALLOWED_DBC_PROGRAM_IDS.trim().replace(/^\[|\]$/g, '');
+  const entries = cleaned
+    .split(',')
+    .map((s) => s.trim().replace(/^\"|\"$/g, ''))
     .filter(Boolean);
   for (const id of entries) {
     if (!base58Re.test(id)) warnings.push(`Suspicious program id format: "${id}"`);
+  }
+}
+
+// POOL_CONFIG_KEY validation (supports comma-separated multiple keys)
+{
+  const val = process.env.POOL_CONFIG_KEY || process.env.NEXT_PUBLIC_POOL_CONFIG_KEY;
+  const base58Re = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+  if (!val) {
+    warnings.push('POOL_CONFIG_KEY missing; sync from Vercel (vercel env pull)');
+  } else {
+    const list = val
+      .split(',')
+      .map((s) => s.trim().replace(/^\[|\]$/g, '').replace(/^\"|\"$/g, ''))
+      .filter(Boolean);
+    if (!list.length) warnings.push('POOL_CONFIG_KEY provided but empty after parsing');
+    for (const k of list) {
+      if (!base58Re.test(k)) warnings.push(`POOL_CONFIG_KEY entry invalid base58: "${k}"`);
+    }
   }
 }
 

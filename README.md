@@ -398,6 +398,35 @@ completes (cannot cancel already sent tx on Solana).
 | ----------------------- | ------------------------------------------ | ---------------------------------------------------- |
 | DBC withdraw            | Still placeholder; only fee claim executed | Replace when official withdraw instruction confirmed |
 | DAMM v2 partial exit    | Always 100% removal (percent=100)          | Add per‑position %, quoting + slippage thresholds    |
+
+### Adaptive Priority Fee Escalation
+
+Universal Exit builds up to three transaction variants with increasing priority fee using Compute
+Budget setComputeUnitPrice, capped at 3,000,000 µ-lamports per CU. The steps are:
+
+- Step 1: base priority rounded down to nearest 1,000 (default base = 250,000)
+- Step 2: exact +35% over the base (no rounding) to preserve 337,500 from 250,000
+- Step 3: another +35% over step 2, rounded down to nearest 1,000
+
+Example with the default base 250,000 → 250,000, 337,500, ~455,000 µ-lamports/CU (cap 3,000,000).
+
+If a send/confirm fails (e.g., congestion), the executor automatically retries with the next
+variant until success or variants are exhausted.
+
+### Environment & Discovery Notes
+
+- Wallet‑based detection is preferred: DAMM v2 positions are discovered by scanning the connected
+  wallet’s position NFTs via the cp‑amm SDK. Server discovery is a fallback.
+- `MIGRATED_DBC_POOLS` (comma‑separated, optional) can be set to restrict exits to a curated list
+  of pools; if unset, wallet‑derived results are used without filtering.
+- `POOL_CONFIG_KEY` now supports comma‑separated multiple keys. The env checker validates entries
+  (base58, typical 32–44 chars) and warns if missing/invalid. Sync envs with `vercel env pull`.
+
+### Smoke Contract Update
+
+The DAMM v2 exit build endpoint (`POST /api/dammv2-exit`) now returns both `tx` and
+`exitTxBase64` keys for simulate and non‑simulate responses. Smoke tests require `exitTxBase64` to
+be present when `simulateOnly=true`.
 | Migrated pool detection | Env list only (`MIGRATED_DBC_POOLS`)       | On-chain metadata (migration PDA) auto-detection     |
 | Parallelism             | Serial execution (one at a time)           | Optional small (N=2–3) concurrency                   |
 | Slippage protection     | Quote thresholds best‑effort (via SDK)     | Defaults to 50 bps; falls back to 0 thresholds       |

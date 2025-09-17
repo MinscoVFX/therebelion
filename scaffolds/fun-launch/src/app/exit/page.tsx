@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { useUniversalExit } from '../../hooks/useUniversalExit';
 import OneClickExitAutoButton from '../../components/OneClickExitAutoButton';
+import { useDerivedDammV2Pools } from '../../hooks/useDerivedDammV2Pools';
 
 interface ExitPreferences {
   priorityMicros: number;
@@ -23,6 +24,7 @@ export default function ExitPage() {
     slippageBps: 100, // 1% slippage tolerance like Meteora website
   });
   const { run: runUniversalExit, state: universalState } = useUniversalExit();
+  const { positions: derivedPositions, loading: derivedLoading } = useDerivedDammV2Pools();
 
   // restore prefs
   useEffect(() => {
@@ -80,6 +82,15 @@ export default function ExitPage() {
 
       <div className="mt-8 bg-neutral-850 rounded-lg border border-neutral-700/60 p-6">
         <h2 className="text-lg font-semibold mb-4 text-neutral-50">Exit Parameters</h2>
+        <div className="mb-3 text-xs text-neutral-400">
+          {derivedLoading ? (
+            <>Scanning your DAMM v2 NFT positions…</>
+          ) : (
+            <>
+              Detected <span className="text-neutral-200 font-medium">{derivedPositions.length}</span> DAMM v2 position{derivedPositions.length === 1 ? '' : 's'} from your wallet.
+            </>
+          )}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div>
             <label className="block text-neutral-400 mb-1">Priority Fee (μ-lamports/cu)</label>
