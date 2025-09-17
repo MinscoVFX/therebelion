@@ -75,7 +75,7 @@ function resolveSdkClaim(client: unknown) {
 }
 
 async function getPartnerFeesSafe(
-  client: DynamicBondingCurveClient,
+  client: any,
   baseMint: PublicKey,
   partner: PublicKey
 ): Promise<number | null> {
