@@ -30,7 +30,7 @@
     "ci:lint": "node scripts/load-env-ci.mjs pnpm lint",
     "ci:typecheck": "node scripts/load-env-ci.mjs pnpm typecheck",
     "ci:test": "node scripts/load-env-ci.mjs pnpm test:run",
-  "ci:build": "node scripts/retry-build.mjs",
+    "ci:build": "node scripts/retry-build.mjs",
     "ci:all": "pnpm ci:lint && pnpm ci:typecheck && pnpm ci:test && pnpm ci:build",
     "coverage:badge": "pnpm coverage && node scripts/update-coverage-badge.mjs",
     "ci:coverage:badge": "pnpm ci:coverage && node scripts/update-coverage-badge.mjs",
