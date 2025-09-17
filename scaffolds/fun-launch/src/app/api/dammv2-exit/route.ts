@@ -43,11 +43,10 @@ export async function POST(req: NextRequest) {
       'confirmed'
     );
 
-    // Accept and clamp optional slippageBps for forward-compatibility (currently unused/no-op)
+    // Accept and clamp optional slippageBps for min-out thresholds when available
     const slippageBps = Number.isFinite((body as any).slippageBps as any)
       ? Math.max(0, Math.min(Number((body as any).slippageBps), 10_000))
       : undefined;
-    void slippageBps;
 
     const cp = new CpAmm(connection);
     const helper: any =
@@ -112,6 +111,28 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Optional min-out thresholds via withdraw quote (best-effort; ignored on failure)
+    let tokenAAmountThreshold: any = 0;
+    let tokenBAmountThreshold: any = 0;
+    if (typeof slippageBps === 'number') {
+      try {
+        const quoteFn: any = (cp as any).getWithdrawQuote;
+        if (quoteFn && liquidityDelta) {
+          const q = await quoteFn({
+            pool,
+            position: positionPk,
+            liquidityDelta,
+            slippageBps,
+            owner,
+          });
+          tokenAAmountThreshold = q?.tokenAOut ?? q?.outAmountA ?? q?.amountA ?? 0;
+          tokenBAmountThreshold = q?.tokenBOut ?? q?.outAmountB ?? q?.amountB ?? 0;
+        }
+      } catch {
+        // ignore quote failures
+      }
+    }
+
     // Attempt to build removeLiquidity route; fallback to removeAllLiquidity if easier.
     let txBuilder: any = null;
     try {
@@ -131,8 +152,10 @@ export async function POST(req: NextRequest) {
           tokenBProgram: chosen.account?.tokenBProgram,
           vestings: [],
           currentPoint: chosen.account?.currentPoint || 0,
-          tokenAAmountThreshold: chosen.account?.tokenAAmountThreshold || 0,
-          tokenBAmountThreshold: chosen.account?.tokenBAmountThreshold || 0,
+          tokenAAmountThreshold:
+            tokenAAmountThreshold || chosen.account?.tokenAAmountThreshold || 0,
+          tokenBAmountThreshold:
+            tokenBAmountThreshold || chosen.account?.tokenBAmountThreshold || 0,
         });
       } else if ((cp as any).removeLiquidity) {
         txBuilder = (cp as any).removeLiquidity({
@@ -141,8 +164,8 @@ export async function POST(req: NextRequest) {
           pool,
           positionNftAccount: chosen.account?.positionNftAccount || positionPk,
           liquidityDelta,
-          tokenAAmountThreshold: 0,
-          tokenBAmountThreshold: 0,
+          tokenAAmountThreshold,
+          tokenBAmountThreshold,
           tokenAMint: chosen.account?.tokenAMint || chosen.account?.tokenA,
           tokenBMint: chosen.account?.tokenBMint || chosen.account?.tokenB,
           tokenAVault:

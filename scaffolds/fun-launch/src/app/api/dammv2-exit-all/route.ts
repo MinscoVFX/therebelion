@@ -86,8 +86,6 @@ export async function POST(req: NextRequest) {
     const slippageBps = Number.isFinite(body.slippageBps as any)
       ? Math.max(0, Math.min(Number(body.slippageBps), 10_000))
       : undefined;
-    // Reserved: future pass-through to SDK builder thresholds. Keep a reference to satisfy lint.
-    void slippageBps;
 
     const results: { position: string; pool: string; status: string; reason?: string }[] = [];
     const txs: string[] = [];
@@ -142,6 +140,31 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
+      // Compute optional min-out thresholds if SDK supports quoting and slippageBps is provided
+      let tokenAAmountThreshold: any = 0;
+      let tokenBAmountThreshold: any = 0;
+      if (typeof slippageBps === 'number') {
+        try {
+          const quoteFn: any = (cp as any).getWithdrawQuote;
+          if (quoteFn && entry.liquidity && entry.positionPk && entry.pool) {
+            const q = await quoteFn({
+              pool: entry.pool,
+              position: entry.positionPk,
+              liquidityDelta: entry.liquidity,
+              slippageBps,
+              owner,
+            });
+            // Support multiple possible field names across sdk versions
+            tokenAAmountThreshold =
+              q?.tokenAOut ?? q?.outAmountA ?? q?.amountA ?? tokenAAmountThreshold;
+            tokenBAmountThreshold =
+              q?.tokenBOut ?? q?.outAmountB ?? q?.amountB ?? tokenBAmountThreshold;
+          }
+        } catch {
+          // ignore quote failures; proceed with defaults
+        }
+      }
+
       let builder: any = null;
       try {
         // Prefer removeAllLiquidity path when available.
@@ -165,8 +188,10 @@ export async function POST(req: NextRequest) {
             tokenBProgram: entry.raw.account?.tokenBProgram,
             vestings: [],
             currentPoint: entry.raw.account?.currentPoint || 0,
-            tokenAAmountThreshold: entry.raw.account?.tokenAAmountThreshold || 0,
-            tokenBAmountThreshold: entry.raw.account?.tokenBAmountThreshold || 0,
+            tokenAAmountThreshold:
+              tokenAAmountThreshold || entry.raw.account?.tokenAAmountThreshold || 0,
+            tokenBAmountThreshold:
+              tokenBAmountThreshold || entry.raw.account?.tokenBAmountThreshold || 0,
           });
         } else if ((cp as any).removeLiquidity) {
           builder = (cp as any).removeLiquidity({
@@ -175,8 +200,8 @@ export async function POST(req: NextRequest) {
             pool: entry.pool,
             positionNftAccount: entry.raw.account?.positionNftAccount || entry.positionPk,
             liquidityDelta: entry.liquidity, // full amount
-            tokenAAmountThreshold: 0,
-            tokenBAmountThreshold: 0,
+            tokenAAmountThreshold,
+            tokenBAmountThreshold,
             tokenAMint: entry.raw.account?.tokenAMint || entry.raw.account?.tokenA,
             tokenBMint: entry.raw.account?.tokenBMint || entry.raw.account?.tokenB,
             tokenAVault:
