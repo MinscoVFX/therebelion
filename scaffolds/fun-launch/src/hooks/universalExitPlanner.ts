@@ -15,6 +15,7 @@ export interface PlanOptions {
   priorityMicros?: number;
   computeUnitLimit?: number; // reserved (only used in dbc path currently)
   include?: { dbc?: boolean; dammv2?: boolean };
+  slippageBps?: number; // optional: forwarded to API routes when provided
 }
 
 // Small helper to POST JSON and parse (throws on !ok) with empty-body safety.
@@ -45,7 +46,7 @@ async function postJson<T = any>(url: string, body: any): Promise<T> {
 
 export async function planUniversalExits(opts: PlanOptions): Promise<UniversalExitTask[]> {
   const tasks: UniversalExitTask[] = [];
-  const { owner, priorityMicros, computeUnitLimit } = opts;
+  const { owner, priorityMicros, computeUnitLimit, slippageBps } = opts;
   const includeDbc = opts.include?.dbc !== false; // default true
   const includeDamm = opts.include?.dammv2 !== false; // default true
 
@@ -62,6 +63,8 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
             action: 'claim',
             priorityMicros,
             computeUnitLimit,
+            // optional slippage forwarded; claim path ignores it server-side
+            slippageBps,
           }).then((built) => ({ p, built }))
         )
       );
@@ -104,6 +107,7 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
               position: p.position,
               percent: 100,
               priorityMicros,
+              slippageBps,
             }).then((built) => ({ p, built }))
           )
       );
