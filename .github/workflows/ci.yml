@@ -31,13 +31,8 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-      - name: Install pnpm (escape hatch)
-        run: |
-          set -euo pipefail
-          corepack enable || true
-          corepack prepare pnpm@10.14.0 --activate || true
-          pnpm --version || npm install -g pnpm@10.14.0
-          pnpm --version
+      - name: Verify pnpm
+        run: pnpm --version
       - name: Turbo cache
         uses: actions/cache@v4
         with:
@@ -51,8 +46,7 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Ensure pnpm (composite)
-        uses: ./.github/actions/ensure-pnpm
+      # pnpm is provisioned by pnpm/action-setup; no additional ensure step needed
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -97,13 +91,8 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-      - name: Install pnpm (escape hatch)
-        run: |
-          set -euo pipefail
-          corepack enable || true
-          corepack prepare pnpm@10.14.0 --activate || true
-          pnpm --version || npm install -g pnpm@10.14.0
-          pnpm --version
+      - name: Verify pnpm
+        run: pnpm --version
       - name: Turbo cache
         uses: actions/cache@v4
         with:
@@ -117,8 +106,7 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Ensure pnpm (composite)
-        uses: ./.github/actions/ensure-pnpm
+      # pnpm is provisioned by pnpm/action-setup; no additional ensure step needed
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -136,13 +124,8 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-      - name: Install pnpm (escape hatch)
-        run: |
-          set -euo pipefail
-          corepack enable || true
-          corepack prepare pnpm@10.14.0 --activate || true
-          pnpm --version || npm install -g pnpm@10.14.0
-          pnpm --version
+      - name: Verify pnpm
+        run: pnpm --version
       - name: Turbo cache
         uses: actions/cache@v4
         with:
@@ -156,8 +139,7 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Ensure pnpm (composite)
-        uses: ./.github/actions/ensure-pnpm
+      # pnpm is provisioned by pnpm/action-setup; no additional ensure step needed
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -175,13 +157,8 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-      - name: Install pnpm (escape hatch)
-        run: |
-          set -euo pipefail
-          corepack enable || true
-          corepack prepare pnpm@10.14.0 --activate || true
-          pnpm --version || npm install -g pnpm@10.14.0
-          pnpm --version
+      - name: Verify pnpm
+        run: pnpm --version
       - name: Turbo cache
         uses: actions/cache@v4
         with:
@@ -195,8 +172,7 @@ jobs:
           node-version: '20'
           cache: 'pnpm'
 
-      - name: Ensure pnpm (composite)
-        uses: ./.github/actions/ensure-pnpm
+      # pnpm is provisioned by pnpm/action-setup; no additional ensure step needed
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
