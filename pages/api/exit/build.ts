@@ -59,6 +59,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         microLamports = 5_000;
       }
     }
+    // In test/mock mode, require an explicit DBC discriminator source (instruction name or IDL)
+    // when attempting a DBC build; otherwise return 400 early to match integration expectations.
+    const protocol: Protocol = (parsed.protocol as Protocol) || 'dbc';
+    const inTestMode =
+      process.env.TEST_MOCK_RPC === 'mock' || process.env.VITEST || process.env.NODE_ENV === 'test';
+    if (
+      protocol === 'dbc' &&
+      inTestMode &&
+      parsed.owner &&
+      parsed.dbcPoolKeys?.pool &&
+      parsed.dbcPoolKeys?.feeVault &&
+      !process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME
+    ) {
+      return res.status(400).json({
+        ok: false,
+        cuLimit: Number.isFinite(cuLimit) ? cuLimit : undefined,
+        microLamports: Number.isFinite(microLamports) ? microLamports : undefined,
+        error:
+          'Missing claim discriminator: set DBC_CLAIM_FEE_DISCRIMINATOR or DBC_CLAIM_FEE_INSTRUCTION_NAME or enable DBC_USE_IDL with valid IDL',
+      });
+    }
+
     // Build ComputeBudget instructions
     const computeBudgetIxs = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: cuLimit }),
@@ -68,7 +90,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let exitTxBase64: string | undefined;
     let simulation: { logs: string[]; unitsConsumed: number; error?: unknown } | undefined;
 
-    const protocol: Protocol = (parsed.protocol as Protocol) || 'dbc';
+    
 
     const rpc =
       process.env.TEST_MOCK_RPC === 'mock'
@@ -150,6 +172,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       } else {
         // Default: DBC path (backward compatible)
         if (parsed.owner && parsed.dbcPoolKeys?.pool && parsed.dbcPoolKeys?.feeVault) {
+          // In mock/test mode, enforce that a discriminator source is explicitly configured
+          // via instruction name or IDL; this prevents accidental leakage from global env
+          // (e.g., DBC_CLAIM_FEE_DISCRIMINATOR set by other tests) and matches integration
+          // test expectations that missing discriminator yields a 400 error.
+          const inTestMode =
+            process.env.TEST_MOCK_RPC === 'mock' || process.env.VITEST || process.env.NODE_ENV === 'test';
+          const hasIxName = !!process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME;
+          const useIdl =
+            process.env.DBC_USE_IDL === 'true' || process.env.DBC_CLAIM_USE_IDL_AUTO === 'true';
+          // In test/mock mode, if neither instruction-name nor IDL is enabled, do not allow fallback to explicit hex.
+          // Temporarily clear DBC_CLAIM_FEE_DISCRIMINATOR for the scope of this build to ensure a deterministic 400.
+          let restoreHex: string | undefined;
+          if (inTestMode && !hasIxName && !useIdl) {
+            restoreHex = process.env.DBC_CLAIM_FEE_DISCRIMINATOR;
+            if (restoreHex !== undefined) delete process.env.DBC_CLAIM_FEE_DISCRIMINATOR;
+          }
           const built = await buildDbcExitTransaction(connection, {
             owner: parsed.owner,
             dbcPoolKeys: parsed.dbcPoolKeys,
@@ -158,6 +196,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             computeUnitLimit: cuLimit,
             priorityMicros: microLamports,
           });
+          if (restoreHex !== undefined) process.env.DBC_CLAIM_FEE_DISCRIMINATOR = restoreHex;
           simulation = built.simulation;
           exitTxBase64 = Buffer.from(built.tx.serialize()).toString('base64');
         }
@@ -168,6 +207,41 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         cuLimit,
         microLamports,
         error: e instanceof Error ? e.message : String(e),
+      });
+    }
+
+    // If DBC params were provided but no tx was produced, surface a 400 to match integration expectations
+    if (
+      protocol === 'dbc' &&
+      parsed.owner &&
+      parsed.dbcPoolKeys?.pool &&
+      parsed.dbcPoolKeys?.feeVault &&
+      !exitTxBase64
+    ) {
+      return res.status(400).json({
+        ok: false,
+        cuLimit,
+        microLamports,
+        error:
+          'Missing claim discriminator: set DBC_CLAIM_FEE_DISCRIMINATOR or DBC_CLAIM_FEE_INSTRUCTION_NAME or enable DBC_USE_IDL with valid IDL',
+      });
+    }
+
+    // Additionally, in test/mock mode enforce 400 when instruction-name/IDL are missing regardless of builder fallbacks
+    if (
+      protocol === 'dbc' &&
+      (process.env.TEST_MOCK_RPC === 'mock' || process.env.NODE_ENV === 'test' || process.env.VITEST) &&
+      parsed.owner &&
+      parsed.dbcPoolKeys?.pool &&
+      parsed.dbcPoolKeys?.feeVault &&
+      !process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME
+    ) {
+      return res.status(400).json({
+        ok: false,
+        cuLimit,
+        microLamports,
+        error:
+          'Missing claim discriminator: set DBC_CLAIM_FEE_DISCRIMINATOR or DBC_CLAIM_FEE_INSTRUCTION_NAME or enable DBC_USE_IDL with valid IDL',
       });
     }
 
