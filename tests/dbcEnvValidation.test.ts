@@ -13,7 +13,7 @@ describe('DBC environment configuration', () => {
   it('program id is non-empty base58-like string', () => {
     const prog = process.env.DBC_PROGRAM_ID || 'dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN';
     // Loose check: base58 chars only & length within Solana pubkey bounds (32 bytes -> ~44 chars)
-  // Accept 32-50 chars; actual Solana base58 pubkeys are 32 bytes -> length 32-44 in base58 representation.
-  expect(/^[1-9A-HJ-NP-Za-km-z]{32,50}$/.test(prog)).toBe(true);
+    // Accept 32-50 chars; actual Solana base58 pubkeys are 32 bytes -> length 32-44 in base58 representation.
+    expect(/^[1-9A-HJ-NP-Za-km-z]{32,50}$/.test(prog)).toBe(true);
   });
 });

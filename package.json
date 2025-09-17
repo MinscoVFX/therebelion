@@ -7,21 +7,35 @@
   "packageManager": "pnpm@10.14.0",
   "scripts": {
     "build": "tsc && tsc-alias && turbo build",
+    "vercel-build": "pnpm --filter @meteora-invent/scaffold-fun-launch build",
+    "vercel:health-check": "node -e \"const u=process.env.APP_URL||process.env.VERCEL_URL||'';if(!u){console.error('APP_URL/VERCEL_URL missing');process.exit(1);}fetch((u.startsWith('http')?u:'https://'+u)+'/api/health').then(r=>r.json()).then(j=>{console.log(j);if(!j.ok){console.error('Health not ok');process.exit(1);}}).catch(e=>{console.error(e);process.exit(1);});\"",
+    "dbc:introspect": "tsx scripts/dbc-introspect.ts",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "test": "vitest",
     "test:run": "vitest run",
-    "lint": "eslint src --ext .ts --fix && turbo lint",
-  "lint:ci": "eslint src --ext .ts --max-warnings=0 && turbo lint",
+    "coverage": "vitest run --coverage",
+    "ci:coverage": "node scripts/load-env-ci.mjs pnpm coverage",
+    "lint": "pnpm -w exec eslint . --ext .ts,.tsx,.js --max-warnings=0",
+    "typecheck": "pnpm -w exec tsc --noEmit",
     "format": "prettier --write . && turbo format",
     "format:check": "prettier --check . && turbo format:check",
     "syncpack:check": "syncpack list-mismatches",
     "clean": "rimraf dist",
-    "typecheck": "tsc --noEmit",
     "env:check": "node scripts/env-check.mjs",
     "preflight": "pnpm typecheck && pnpm lint && pnpm test:run",
     "health": "pnpm preflight",
-    "health:full": "pnpm env:check && pnpm health"
+    "health:full": "pnpm env:check && pnpm health",
+    "ci:env": "node scripts/load-env-ci.mjs node -e 'console.log(\"env loaded\")'",
+    "ci:lint": "node scripts/load-env-ci.mjs pnpm lint",
+    "ci:typecheck": "node scripts/load-env-ci.mjs pnpm typecheck",
+    "ci:test": "node scripts/load-env-ci.mjs pnpm test:run",
+    "ci:build": "node scripts/load-env-ci.mjs pnpm build",
+    "ci:all": "pnpm ci:lint && pnpm ci:typecheck && pnpm ci:test && pnpm ci:build",
+    "coverage:badge": "pnpm coverage && node scripts/update-coverage-badge.mjs",
+    "ci:coverage:badge": "pnpm ci:coverage && node scripts/update-coverage-badge.mjs",
+    "smoke": "node scripts/prod-smoke.mjs",
+    "ci:smoke": "APP_URL=$APP_URL node scripts/prod-smoke.mjs"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1",
@@ -36,12 +50,17 @@
     "zod": "^3.25.74"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/react-hooks": "^8.0.1",
     "@types/bn.js": "^5.1.5",
     "@types/node": "^20.19.4",
     "@typescript-eslint/eslint-plugin": "^8.43.0",
     "@typescript-eslint/parser": "^8.43.0",
+    "@vitest/coverage-v8": "^1.6.0",
     "eslint": "^8.57.0",
     "eslint-import-resolver-typescript": "^3.10.1",
+    "jsdom": "^27.0.0",
     "prettier": "^3.3.2",
     "rimraf": "^5.0.7",
     "syncpack": "^12.3.2",
@@ -53,5 +72,11 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@reown/appkit": "1.7.12",
+      "@reown/appkit-scaffold-ui": "1.7.12"
+    }
   }
 }

@@ -9,24 +9,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # PRE: ensure pnpm exists so setup-node cache:pnpm doesn't fail
       - name: Setup pnpm (pre-cache guard)
         uses: pnpm/action-setup@v4
         with:
           version: 10.14.0
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'pnpm'
-
-      # POST: re-add pnpm to PATH in case setup-node tweaked it
-      - name: Setup pnpm (post PATH restore)
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.14.0
+      - name: Ensure pnpm (composite)
+        uses: ./.github/actions/ensure-pnpm
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile

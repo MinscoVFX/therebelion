@@ -15,10 +15,10 @@ module.exports = {
   plugins: ['@next/next'],
   extends: [
     'eslint:recommended',
-  'plugin:@typescript-eslint/recommended',
-  'plugin:react/recommended',
-  'plugin:react-hooks/recommended',
-  'plugin:import/recommended',
+    'plugin:@typescript-eslint/recommended',
+    'plugin:react/recommended',
+    'plugin:react-hooks/recommended',
+    'plugin:import/recommended',
     'plugin:@next/next/core-web-vitals',
   ],
   settings: {

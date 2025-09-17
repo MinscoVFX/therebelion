@@ -214,7 +214,36 @@ Imports should be organized in the following order:
 
 ## Testing
 
-(Testing guidelines to be added as testing infrastructure is implemented)
+Some tests intentionally exercise failure paths (e.g. mock RPC slot errors, network failures, or
+missing environment variables) to assert robust handling. As a result, you may see stderr output
+like:
+
+```
+Connection health check failed: ReferenceError: fake is not defined
+bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+RPC missing: set RPC_ENDPOINT or RPC_URL or NEXT_PUBLIC_RPC_URL
+```
+
+This is expected and does not mean the test failed unless Vitest reports a failing assertion.
+
+To locally silence some of that noise while developing, you can temporarily stub console methods:
+
+```ts
+import { beforeAll, afterAll } from 'vitest';
+
+let restore: (() => void) | undefined;
+beforeAll(() => {
+  const orig = console.error;
+  console.error = (...args) => {
+    if (String(args[0]).includes('Failed to load bindings')) return; // suppress
+    orig(...args);
+  };
+  restore = () => (console.error = orig);
+});
+afterAll(() => restore?.());
+```
+
+Avoid committing broad console suppression; keep it targeted or development-only.
 
 ## Commit Guidelines
 
@@ -252,9 +281,11 @@ chore: update dependencies
 
 1. **Fork and Clone**: Fork the repository and clone your fork
 2. **Branch**: Create a feature branch from `develop`
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
+
 3. **Develop**: Make your changes following the guidelines above
 4. **Test**: Ensure all tests pass and linting is clean
 5. **Commit**: Use conventional commit messages
@@ -308,3 +339,75 @@ If you have questions or need help:
 3. Join our [Discord](https://discord.com/invite/meteora)
 
 Thank you for contributing to Meteora Invent! 🚀
+
+## CI Tooling & pnpm Provisioning
+
+We use `pnpm` via **Corepack** in CI instead of relying on a globally pre-installed binary. Some key
+notes about the setup and a recent root cause analysis:
+
+### Why Corepack Only?
+
+Originally we attempted to mix a composite action with a nested `uses: pnpm/action-setup` step.
+Composite actions cannot call other actions as normal shell steps in every context; this led to
+nondeterministic PATH state early in jobs causing `Unable to locate executable file: pnpm` across
+multiple workflows.
+
+### Current Pattern
+
+The custom action lives at `.github/actions/ensure-pnpm` and:
+
+1. Enables Corepack (`corepack enable || true`)
+2. Retries `corepack prepare pnpm@<version> --activate` up to 3 times
+3. Verifies `pnpm -v`
+4. Normalizes registry config (removes accidental custom scopes, sets retries & timeout)
+
+Version is pinned (currently `10.14.0`) for full reproducibility.
+
+### Adding New Workflows
+
+Always add near the top of a job:
+
+```yaml
+      - name: Ensure pnpm
+         uses: ./.github/actions/ensure-pnpm
+```
+
+Do **not** add a separate `pnpm/action-setup` step; the composite already handles provisioning.
+
+### Common Failure Modes
+
+| Symptom                                  | Likely Cause                                                 | Fix                                                  |
+| ---------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------- |
+| `Unable to locate executable file: pnpm` | Action not invoked or earlier step exits before provisioning | Ensure the composite runs before cache/install steps |
+| `corepack: command not found`            | Very old Node image (not in use here)                        | Upgrade Node to >=16.13 (we use 20+)                 |
+| Network timeouts during prepare          | Transient registry issues                                    | Automatic retry handles most; re-run workflow        |
+
+### Local Reproduction
+
+You can emulate CI provisioning locally:
+
+```bash
+corepack disable || true
+hash -r
+node -v
+corepack enable
+corepack prepare pnpm@10.14.0 --activate
+pnpm -v
+```
+
+If that fails locally, CI will fail too—fix before pushing.
+
+### Formatting & Consistency
+
+Run `pnpm format` before committing to avoid CI `format:check` failures. A prior warning surfaced on
+`package.json`; running the formatter resolved it.
+
+---
+
+If you encounter a new tooling issue, capture:
+
+1. Workflow name + job + failing step
+2. Full stderr block
+3. `node -v` and whether the ensure step executed
+
+Then open an issue tagged `ci`.

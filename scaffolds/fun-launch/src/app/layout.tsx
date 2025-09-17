@@ -10,17 +10,23 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 
 import { useWindowWidthListener } from '@/lib/device';
+import { resolveRpc } from '@meteora-invent/shared-utils';
 
 /**
  * Client RPC endpoint. Set NEXT_PUBLIC_RPC_URL in Vercel to match server RPC_URL.
  * Falls back to mainnet public RPC if not set.
  */
-const CLIENT_RPC_ENDPOINT =
-  process.env.NEXT_PUBLIC_RPC_URL || 'https://api.mainnet-beta.solana.com';
+let CLIENT_RPC_ENDPOINT: string;
+try {
+  CLIENT_RPC_ENDPOINT = resolveRpc();
+} catch {
+  // Fallback retained only for build-time safety; runtime will usually inject envs.
+  CLIENT_RPC_ENDPOINT = 'https://api.mainnet-beta.solana.com';
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   // Initialize empty wallets array to avoid dependency issues
-  const wallets = useMemo(() => [], []);
+  const wallets: any[] = useMemo<any[]>(() => [], []); // TODO: populate adapters as needed
 
   // React Query client
   const queryClient = useMemo(() => new QueryClient(), []);

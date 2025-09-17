@@ -1,0 +1,53 @@
+name: Ensure pnpm
+description: Ensure pnpm is available via Corepack fallback with retry (composite action cannot invoke other actions in steps for reliability here).
+runs:
+  using: composite
+  steps:
+    - name: Provision pnpm via Corepack (retry + diagnostics + fallback)
+      shell: bash
+      run: |
+        set -euo pipefail
+        TARGET_VERSION="10.14.0"
+        echo "::group::pnpm pre-diagnostics"
+        echo "PATH=$PATH"
+        echo "node version: $(node -v || true)"
+        echo "corepack version: $(corepack --version 2>/dev/null || echo 'unavailable')"
+        which -a pnpm || echo "pnpm not on PATH pre-install"
+        echo "::endgroup::"
+        if command -v pnpm >/dev/null 2>&1; then
+          echo "pnpm already present: $(pnpm -v)"; exit 0; fi
+        echo "Provisioning pnpm@${TARGET_VERSION} via Corepack"
+        corepack enable || true
+        hash -r || true
+        for i in 1 2 3; do
+          echo "Attempt $i: corepack prepare pnpm@${TARGET_VERSION} --activate";
+          if corepack prepare pnpm@${TARGET_VERSION} --activate; then
+            break
+          fi
+          sleep $((i*2))
+        done
+        hash -r || true
+        if ! command -v pnpm >/dev/null 2>&1; then
+          echo "Corepack provisioning failed; falling back to npm install -g pnpm@${TARGET_VERSION}";
+          npm install -g pnpm@${TARGET_VERSION}
+          hash -r || true
+        fi
+        if ! command -v pnpm >/dev/null 2>&1; then
+          echo '::error::Failed to provision pnpm after retries & fallback'; exit 1; fi
+        echo "::group::pnpm post-diagnostics"
+        which -a pnpm || true
+        pnpm -v
+        (pnpm config get store-dir 2>/dev/null || pnpm store path || true) | sed 's/^/store: /'
+        echo "Real pnpm path: $(readlink -f $(command -v pnpm))"
+        echo "::endgroup::"
+    - name: Sanitize npm registries
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "registry=https://registry.npmjs.org/" > ~/.npmrc
+        pnpm config set registry https://registry.npmjs.org/
+        npm config set registry https://registry.npmjs.org/
+        pnpm config delete @jsr:registry || true
+        npm config delete @jsr:registry || true
+        pnpm config set fetch-retries 4
+        pnpm config set network-timeout 600000

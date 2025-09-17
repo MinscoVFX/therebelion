@@ -10,7 +10,7 @@ import {
   createAssociatedTokenAccountIdempotentInstruction,
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
-import path from 'path';
+import { getDammV2Runtime } from './studioRuntime';
 
 /** DAMM v2 pool keys we care about */
 export type DammV2PoolKeys = {
@@ -24,30 +24,10 @@ export type DammV2PoolKeys = {
   authorityPda: PublicKey;
 };
 
-function resolveStudioDammV2(): string | null {
-  const candidates = [
-    '@meteora-invent/studio/dist/lib/damm_v2/index.js',
-    path.join(process.cwd(), '../../studio/dist/lib/damm_v2/index.js'),
-    path.join(process.cwd(), '../../studio/src/lib/damm_v2/index.ts'),
-  ];
-  for (const c of candidates) {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      return require.resolve(c);
-    } catch {
-      /* skip */
-    }
-  }
-  return null;
-}
-
 async function importDammRuntime(): Promise<any> {
-  const target = resolveStudioDammV2();
-  if (!target)
-    throw new Error('Studio DAMM v2 module not found (build studio or keep it in the monorepo).');
-  const mod = await import(/* webpackIgnore: true */ target);
-  if (!mod) throw new Error('Failed to import DAMM v2 runtime.');
-  return mod;
+  const mod = await getDammV2Runtime();
+  if (mod) return mod;
+  throw new Error('Studio DAMM v2 module not found (build @meteora-invent/studio).');
 }
 
 function pickRemoveBuilder(
@@ -87,10 +67,12 @@ export async function buildDammV2RemoveAllLpIxs(args: {
   owner: PublicKey;
   poolKeys: DammV2PoolKeys;
   priorityMicros?: number;
+  /** Optional injected runtime module (test seam) */
+  runtimeModule?: any;
 }): Promise<TransactionInstruction[]> {
-  const { connection, owner, poolKeys, priorityMicros = 250_000 } = args;
+  const { connection, owner, poolKeys, priorityMicros = 250_000, runtimeModule } = args;
 
-  const damm = await importDammRuntime();
+  const damm = runtimeModule || (await importDammRuntime());
   const removeBuilder = pickRemoveBuilder(damm);
   if (!removeBuilder)
     throw new Error('DAMM v2 remove-liquidity function not found in studio runtime.');

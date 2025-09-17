@@ -7,7 +7,10 @@ export interface SafeJsonOptions {
   maxPreview?: number; // characters of body to include in thrown errors
 }
 
-export async function safeJson<T = any>(response: Response, opts: SafeJsonOptions = {}): Promise<T | null> {
+export async function safeJson<T = any>(
+  response: Response,
+  opts: SafeJsonOptions = {}
+): Promise<T | null> {
   const { allowEmptyObject = false, maxPreview = 200 } = opts;
   let text: string;
   try {
@@ -23,7 +26,9 @@ export async function safeJson<T = any>(response: Response, opts: SafeJsonOption
   } catch (e) {
     // Provide helpful diagnostics but truncate to avoid noisy logs
     const preview = text.slice(0, maxPreview).replace(/\s+/g, ' ').trim();
-    throw new Error(`Failed to parse JSON (status ${response.status}) preview="${preview}" err=${(e as any)?.message}`);
+    throw new Error(
+      `Failed to parse JSON (status ${response.status}) preview="${preview}" err=${(e as any)?.message}`
+    );
   }
 }
 
@@ -33,14 +38,18 @@ export interface FetchJsonOptions extends RequestInit {
   safeOptions?: SafeJsonOptions;
 }
 
-export async function fetchJson<T = any>(input: RequestInfo | URL, init: FetchJsonOptions = {}): Promise<T> {
+export async function fetchJson<T = any>(
+  input: RequestInfo | URL,
+  init: FetchJsonOptions = {}
+): Promise<T> {
   const { expectedStatus = 200, safeOptions, ...rest } = init;
   const res = await fetch(input, rest);
   const json = await safeJson<T>(res, safeOptions);
   const expected = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
   if (!expected.includes(res.status)) {
-    const errMsg = (json as any)?.error || (json as any)?.message || `Unexpected status ${res.status}`;
+    const errMsg =
+      (json as any)?.error || (json as any)?.message || `Unexpected status ${res.status}`;
     throw new Error(errMsg);
   }
-  return (json ?? ({} as T));
+  return json ?? ({} as T);
 }

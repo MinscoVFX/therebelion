@@ -539,7 +539,8 @@ export async function createDammV2BalancedPool(
   let quoteTokenInfo = null;
   // Track which token program is used (may switch to TOKEN_2022_PROGRAM_ID later)
   // Intentionally retain for future program selection logic; mark used via void
-  let _quoteTokenProgram = TOKEN_PROGRAM_ID; void _quoteTokenProgram;
+  let _quoteTokenProgram = TOKEN_PROGRAM_ID;
+  void _quoteTokenProgram;
 
   const quoteMintAccountInfo = await connection.getAccountInfo(
     new PublicKey(quoteTokenMint),

@@ -5,7 +5,11 @@ import { VersionedTransaction, TransactionMessage, PublicKey } from '@solana/web
 function dummyTx(): VersionedTransaction {
   // Minimal empty v0 message (payer dummy) – just for structure; not sent.
   const payer = new PublicKey('11111111111111111111111111111111');
-  const msg = new TransactionMessage({ payerKey: payer, recentBlockhash: '11111111111111111111111111111111', instructions: [] }).compileToV0Message();
+  const msg = new TransactionMessage({
+    payerKey: payer,
+    recentBlockhash: '11111111111111111111111111111111',
+    instructions: [],
+  }).compileToV0Message();
   return new VersionedTransaction(msg);
 }
 
@@ -13,7 +17,7 @@ describe('signTransactionsAdaptive', () => {
   it('uses batch path when available', async () => {
     const txs = [dummyTx(), dummyTx()];
     const wallet = {
-      signAllTransactions: vi.fn(async (arr: VersionedTransaction[]) => arr.map(t => t)),
+      signAllTransactions: vi.fn(async (arr: VersionedTransaction[]) => arr.map((t) => t)),
       signTransaction: vi.fn(),
     };
     const res = await signTransactionsAdaptive(wallet, txs);
@@ -36,9 +40,12 @@ describe('signTransactionsAdaptive', () => {
   it('records individual errors in serial mode', async () => {
     const txs = [dummyTx(), dummyTx()];
     const wallet = {
-      signTransaction: vi.fn()
+      signTransaction: vi
+        .fn()
         .mockImplementationOnce(async (t: VersionedTransaction) => t)
-        .mockImplementationOnce(async () => { throw new Error('boom'); }),
+        .mockImplementationOnce(async () => {
+          throw new Error('boom');
+        }),
     };
     const res = await signTransactionsAdaptive(wallet, txs);
     expect(res.usedBatch).toBe(false);
