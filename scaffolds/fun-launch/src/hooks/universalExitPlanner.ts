@@ -27,7 +27,9 @@ async function postJson<T = any>(url: string, body: any): Promise<T> {
   if (!resp.ok) {
     // Attempt to read text (may be empty) for diagnostics
     const maybeText = await resp.text().catch(() => '');
-    throw new Error(`${url} failed: ${resp.status}${maybeText ? ` body:${maybeText.slice(0,200)}` : ''}`);
+    throw new Error(
+      `${url} failed: ${resp.status}${maybeText ? ` body:${maybeText.slice(0, 200)}` : ''}`
+    );
   }
   // Some serverless platforms can yield empty 200 responses under race conditions; guard against that.
   const text = await resp.text();
@@ -53,15 +55,15 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
       const dbcPositions = discover.positions || [];
       // Build all DBC claim txs concurrently to reduce wall-clock time.
       const dbcBuilds = await Promise.allSettled(
-        dbcPositions.map(p => (
+        dbcPositions.map((p) =>
           postJson<{ tx: string; lastValidBlockHeight: number }>('/api/dbc-exit', {
             owner,
             dbcPoolKeys: { pool: p.pool, feeVault: p.feeVault },
             action: 'claim',
             priorityMicros,
             computeUnitLimit,
-          }).then(built => ({ p, built }))
-        ))
+          }).then((built) => ({ p, built }))
+        )
       );
       for (const res of dbcBuilds) {
         if (res.status === 'fulfilled') {
@@ -76,7 +78,10 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
           });
         } else {
           // eslint-disable-next-line no-console
-            console.warn('[universal-exit] skip dbc position build failure', res.reason?.message || res.reason);
+          console.warn(
+            '[universal-exit] skip dbc position build failure',
+            res.reason?.message || res.reason
+          );
         }
       }
     } catch (e) {
@@ -90,15 +95,17 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
       const discover = await postJson<{ positions?: any[] }>('/api/dammv2-discover', { owner });
       const dammPositions = discover.positions || [];
       const dammBuilds = await Promise.allSettled(
-        dammPositions.filter(p => p.pool).map(p => (
-          postJson<{ tx: string; lastValidBlockHeight: number }>('/api/dammv2-exit', {
-            owner,
-            pool: p.pool,
-            position: p.position,
-            percent: 100,
-            priorityMicros,
-          }).then(built => ({ p, built }))
-        ))
+        dammPositions
+          .filter((p) => p.pool)
+          .map((p) =>
+            postJson<{ tx: string; lastValidBlockHeight: number }>('/api/dammv2-exit', {
+              owner,
+              pool: p.pool,
+              position: p.position,
+              percent: 100,
+              priorityMicros,
+            }).then((built) => ({ p, built }))
+          )
       );
       for (const res of dammBuilds) {
         if (res.status === 'fulfilled') {
@@ -113,7 +120,10 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
           });
         } else {
           // eslint-disable-next-line no-console
-          console.warn('[universal-exit] skip dammv2 position build failure', res.reason?.message || res.reason);
+          console.warn(
+            '[universal-exit] skip dammv2 position build failure',
+            res.reason?.message || res.reason
+          );
         }
       }
     } catch (e) {

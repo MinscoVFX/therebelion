@@ -10,13 +10,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 
 import { useWindowWidthListener } from '@/lib/device';
+import { resolveRpc } from '@meteora-invent/shared-utils';
 
 /**
  * Client RPC endpoint. Set NEXT_PUBLIC_RPC_URL in Vercel to match server RPC_URL.
  * Falls back to mainnet public RPC if not set.
  */
-const CLIENT_RPC_ENDPOINT =
-  process.env.NEXT_PUBLIC_RPC_URL || 'https://api.mainnet-beta.solana.com';
+let CLIENT_RPC_ENDPOINT: string;
+try {
+  CLIENT_RPC_ENDPOINT = resolveRpc();
+} catch {
+  CLIENT_RPC_ENDPOINT = 'https://api.mainnet-beta.solana.com';
+}
 
 export default function App({ Component, pageProps }: AppProps) {
   // Initialize wallets once

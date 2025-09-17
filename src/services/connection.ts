@@ -1,12 +1,19 @@
 import { Connection } from '@solana/web3.js';
 import { RPC_ENDPOINTS, NETWORK } from '@/config/constants';
+import { resolveRpc } from '@/lib/rpc';
 
 class ConnectionService {
   private connection: Connection;
   private commitment: string = 'confirmed';
 
   constructor() {
-    const rpcUrl = RPC_ENDPOINTS[NETWORK];
+    const rpcUrl = (() => {
+      try {
+        return resolveRpc();
+      } catch {
+        return RPC_ENDPOINTS[NETWORK];
+      }
+    })();
     this.connection = new Connection(rpcUrl, {
       commitment: this.commitment as 'confirmed',
       confirmTransactionInitialTimeout: 60000,

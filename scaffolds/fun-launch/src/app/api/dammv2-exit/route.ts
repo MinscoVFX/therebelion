@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Connection, PublicKey, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from '@solana/web3.js';
+import {
+  Connection,
+  PublicKey,
+  TransactionMessage,
+  VersionedTransaction,
+  ComputeBudgetProgram,
+} from '@solana/web3.js';
 import { CpAmm } from '@meteora-ag/cp-amm-sdk';
 
 export const dynamic = 'force-dynamic';
 
 interface ExitBody {
-  owner?: string;           // wallet base58
-  position?: string;        // position NFT (optional: if absent we auto-pick largest for pool)
-  pool?: string;            // pool address (required)
-  percent?: number;         // optional percent of liquidity to remove (default: 100)
-  priorityMicros?: number;  // optional priority fee (clamped)
-  simulateOnly?: boolean;   // optional simulation flag
+  owner?: string; // wallet base58
+  position?: string; // position NFT (optional: if absent we auto-pick largest for pool)
+  pool?: string; // pool address (required)
+  percent?: number; // optional percent of liquidity to remove (default: 100)
+  priorityMicros?: number; // optional priority fee (clamped)
+  simulateOnly?: boolean; // optional simulation flag
 }
 
 /**
@@ -26,32 +32,49 @@ export async function POST(req: NextRequest) {
     const owner = new PublicKey(body.owner);
     const pool = new PublicKey(body.pool);
     const percent = typeof body.percent === 'number' ? body.percent : 100;
-    if (percent <= 0 || percent > 100) return NextResponse.json({ error: 'percent must be (0,100]' }, { status: 400 });
+    if (percent <= 0 || percent > 100)
+      return NextResponse.json({ error: 'percent must be (0,100]' }, { status: 400 });
 
     const connection = new Connection(
-      process.env.RPC_URL || process.env.NEXT_PUBLIC_RPC_URL || 'https://api.mainnet-beta.solana.com',
+      process.env.RPC_URL ||
+        process.env.NEXT_PUBLIC_RPC_URL ||
+        'https://api.mainnet-beta.solana.com',
       'confirmed'
     );
 
     const cp = new CpAmm(connection);
-    const helper: any = (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
-    if (!helper) return NextResponse.json({ error: 'sdk position helper missing' }, { status: 500 });
+    const helper: any =
+      (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
+    if (!helper)
+      return NextResponse.json({ error: 'sdk position helper missing' }, { status: 500 });
 
     let chosen: any | null = null;
     let allPositions: any[] = [];
     try {
       allPositions = await helper({ owner });
     } catch (e) {
-      return NextResponse.json({ error: 'position scan failed', detail: (e as any)?.message }, { status: 500 });
+      return NextResponse.json(
+        { error: 'position scan failed', detail: (e as any)?.message },
+        { status: 500 }
+      );
     }
 
-    const poolPositions = allPositions.filter(p => p.account?.pool?.toBase58?.() === pool.toBase58());
-    if (!poolPositions.length) return NextResponse.json({ error: 'no position for pool' }, { status: 404 });
+    const poolPositions = allPositions.filter(
+      (p) => p.account?.pool?.toBase58?.() === pool.toBase58()
+    );
+    if (!poolPositions.length)
+      return NextResponse.json({ error: 'no position for pool' }, { status: 404 });
 
     if (body.position) {
       const target = new PublicKey(body.position).toBase58();
-      chosen = poolPositions.find(p => (p.publicKey || p.account?.publicKey)?.toBase58?.() === target);
-      if (!chosen) return NextResponse.json({ error: 'specified position not found in pool' }, { status: 404 });
+      chosen = poolPositions.find(
+        (p) => (p.publicKey || p.account?.publicKey)?.toBase58?.() === target
+      );
+      if (!chosen)
+        return NextResponse.json(
+          { error: 'specified position not found in pool' },
+          { status: 404 }
+        );
     } else {
       // pick largest liquidity
       poolPositions.sort((a, b) => {
@@ -65,11 +88,13 @@ export async function POST(req: NextRequest) {
     }
 
     const positionPk = (chosen.publicKey || chosen.account?.publicKey) as any; // PublicKey instance
-    if (!positionPk) return NextResponse.json({ error: 'missing position public key' }, { status: 500 });
+    if (!positionPk)
+      return NextResponse.json({ error: 'missing position public key' }, { status: 500 });
 
     // Determine liquidity fraction
     let liquidityDelta = chosen.account?.liquidity;
-    if (!liquidityDelta) return NextResponse.json({ error: 'position liquidity unknown' }, { status: 500 });
+    if (!liquidityDelta)
+      return NextResponse.json({ error: 'position liquidity unknown' }, { status: 500 });
 
     if (percent < 100) {
       try {
@@ -91,8 +116,10 @@ export async function POST(req: NextRequest) {
           positionNftAccount: chosen.account?.positionNftAccount || positionPk,
           tokenAMint: chosen.account?.tokenAMint || chosen.account?.tokenA,
           tokenBMint: chosen.account?.tokenBMint || chosen.account?.tokenB,
-          tokenAVault: chosen.account?.tokenAVault || chosen.account?.tokenAReserve || chosen.account?.vaultA,
-          tokenBVault: chosen.account?.tokenBVault || chosen.account?.tokenBReserve || chosen.account?.vaultB,
+          tokenAVault:
+            chosen.account?.tokenAVault || chosen.account?.tokenAReserve || chosen.account?.vaultA,
+          tokenBVault:
+            chosen.account?.tokenBVault || chosen.account?.tokenBReserve || chosen.account?.vaultB,
           tokenAProgram: chosen.account?.tokenAProgram,
           tokenBProgram: chosen.account?.tokenBProgram,
           vestings: [],
@@ -111,8 +138,10 @@ export async function POST(req: NextRequest) {
           tokenBAmountThreshold: 0,
           tokenAMint: chosen.account?.tokenAMint || chosen.account?.tokenA,
           tokenBMint: chosen.account?.tokenBMint || chosen.account?.tokenB,
-          tokenAVault: chosen.account?.tokenAVault || chosen.account?.tokenAReserve || chosen.account?.vaultA,
-          tokenBVault: chosen.account?.tokenBVault || chosen.account?.tokenBReserve || chosen.account?.vaultB,
+          tokenAVault:
+            chosen.account?.tokenAVault || chosen.account?.tokenAReserve || chosen.account?.vaultA,
+          tokenBVault:
+            chosen.account?.tokenBVault || chosen.account?.tokenBReserve || chosen.account?.vaultB,
           tokenAProgram: chosen.account?.tokenAProgram,
           tokenBProgram: chosen.account?.tokenBProgram,
           vestings: [],
@@ -120,10 +149,17 @@ export async function POST(req: NextRequest) {
         });
       }
     } catch (e) {
-      return NextResponse.json({ error: 'builder failed', detail: (e as any)?.message }, { status: 500 });
+      return NextResponse.json(
+        { error: 'builder failed', detail: (e as any)?.message },
+        { status: 500 }
+      );
     }
 
-    if (!txBuilder) return NextResponse.json({ error: 'no sdk removeLiquidity builder available' }, { status: 500 });
+    if (!txBuilder)
+      return NextResponse.json(
+        { error: 'no sdk removeLiquidity builder available' },
+        { status: 500 }
+      );
 
     // Extract instructions
     let ixs: any[] = [];
@@ -131,26 +167,39 @@ export async function POST(req: NextRequest) {
       if (Array.isArray(txBuilder.ixs)) ixs = txBuilder.ixs;
       else if (txBuilder.build) {
         const built = await txBuilder.build();
-        if (Array.isArray(built)) ixs = built; else if (built?.instructions) ixs = built.instructions;
+        if (Array.isArray(built)) ixs = built;
+        else if (built?.instructions) ixs = built.instructions;
       } else if (txBuilder.tx?.instructions) {
         ixs = txBuilder.tx.instructions;
       }
     } catch (e) {
-      return NextResponse.json({ error: 'extract instructions failed', detail: (e as any)?.message }, { status: 500 });
+      return NextResponse.json(
+        { error: 'extract instructions failed', detail: (e as any)?.message },
+        { status: 500 }
+      );
     }
 
-    if (!ixs.length) return NextResponse.json({ error: 'no instructions produced' }, { status: 500 });
+    if (!ixs.length)
+      return NextResponse.json({ error: 'no instructions produced' }, { status: 500 });
 
     const priorityMicros = Math.max(0, Math.min(body.priorityMicros ?? 250_000, 3_000_000));
     const extra: any[] = [];
-    if (priorityMicros > 0) extra.push(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: priorityMicros }));
+    if (priorityMicros > 0)
+      extra.push(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: priorityMicros }));
 
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-    const msg = new TransactionMessage({ payerKey: owner, recentBlockhash: blockhash, instructions: [...extra, ...ixs] }).compileToV0Message();
+    const msg = new TransactionMessage({
+      payerKey: owner,
+      recentBlockhash: blockhash,
+      instructions: [...extra, ...ixs],
+    }).compileToV0Message();
     const tx = new VersionedTransaction(msg);
 
     if (body.simulateOnly) {
-      const sim = await connection.simulateTransaction(tx, { commitment: 'confirmed', sigVerify: false });
+      const sim = await connection.simulateTransaction(tx, {
+        commitment: 'confirmed',
+        sigVerify: false,
+      });
       return NextResponse.json({
         tx: Buffer.from(tx.serialize()).toString('base64'),
         lastValidBlockHeight,
@@ -158,9 +207,15 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ tx: Buffer.from(tx.serialize()).toString('base64'), lastValidBlockHeight });
+    return NextResponse.json({
+      tx: Buffer.from(tx.serialize()).toString('base64'),
+      lastValidBlockHeight,
+    });
   } catch (error) {
     console.error('[dammv2-exit] error', error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'internal error' }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'internal error' },
+      { status: 500 }
+    );
   }
 }

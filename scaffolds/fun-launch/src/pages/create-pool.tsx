@@ -9,6 +9,7 @@ const useFormAny = (ReactForm as any).useForm as any;
 
 import { Button } from '@/components/ui/button';
 import { Keypair, Transaction, PublicKey, SystemProgram } from '@solana/web3.js';
+import { assertOnlyAllowedUnsignedSignersLegacy } from '@/lib/txSigners';
 import { useUnifiedWalletContext, useWallet } from '@jup-ag/wallet-adapter';
 import { toast } from 'sonner';
 
@@ -54,7 +55,11 @@ async function findVanityKeypair(suffix: string, maxSeconds = 30) {
 async function safeJson<T = any>(resp: Response, fallback: T | null = null): Promise<T | null> {
   const text = await resp.text().catch(() => '');
   if (!text) return fallback;
-  try { return JSON.parse(text) as T; } catch { return fallback; }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return fallback;
+  }
 }
 
 async function getJitoTipAccounts(): Promise<string[]> {
@@ -150,18 +155,70 @@ export default function CreatePool() {
           }),
         });
 
-        const uploadJson = await safeJson<{ poolTx?: string; pool?: string; error?: string }>(uploadResponse, null);
+        const uploadJson = await safeJson<{ poolTx?: string; pool?: string; error?: string }>(
+          uploadResponse,
+          null
+        );
         if (!uploadResponse.ok || !uploadJson?.poolTx) {
           throw new Error(uploadJson?.error || 'Upload/build failed');
         }
 
         const { poolTx, pool } = uploadJson as { poolTx: string; pool?: string | null };
 
-        // Step 2: Decode tx, sign with mint authority (keyPair), then user wallet
+        // Step 2: Decode tx
         const createTx = Transaction.from(Buffer.from(poolTx, 'base64'));
-        createTx.sign(keyPair);
+
+        // Determine if the mint pubkey is actually a required signer in the message.
+        const msgKeys = createTx.compileMessage().accountKeys;
+        const mintIsSignerIndex = msgKeys.findIndex((k) => k.equals(keyPair.publicKey));
+
+        if (mintIsSignerIndex !== -1) {
+          // Use partialSign for non-wallet key first.
+          createTx.partialSign(keyPair);
+        } else {
+          // Diagnostic only – mint may legitimately not be part of stub tx yet.
+          console.warn(
+            '[create-pool] Mint key not present as signer in returned tx; skipping mint partialSign'
+          );
+        }
+
+        // Diagnostic: log which signers are expected and which have signatures BEFORE wallet signing.
+        try {
+          const preSignStatus = createTx.signatures.map((s, i) => ({
+            index: i,
+            key: msgKeys[i]?.toBase58(),
+            hasSig: !!s.signature,
+          }));
+          // Only log in dev / preview to reduce noise in production (adjust as needed)
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[create-pool] Pre-wallet signer status', preSignStatus);
+          }
+        } catch {
+          /* swallow signer status diagnostic failure */
+        }
+
+        // Validate that after partial signing (if any) only the wallet remains unsigned.
+        try {
+          assertOnlyAllowedUnsignedSignersLegacy(createTx, [publicKey]);
+        } catch (e: any) {
+          throw new Error(`Create transaction signer validation failed: ${e?.message || e}`);
+        }
 
         const signedCreate = await signTransaction(createTx);
+        // Post-sign diagnostics
+        try {
+          if (process.env.NODE_ENV !== 'production') {
+            const postSignStatus = signedCreate.signatures.map((s, i) => ({
+              index: i,
+              key: msgKeys[i]?.toBase58(),
+              hasSig: !!s.signature,
+            }));
+            console.log('[create-pool] Post-wallet signer status', postSignStatus);
+          }
+        } catch {
+          /* swallow signer status diagnostic failure */
+        }
+
         const signedCreateB64 = Buffer.from(signedCreate.serialize()).toString('base64');
 
         // Should we dev pre-buy (bundled)?
@@ -192,7 +249,10 @@ export default function CreatePool() {
               blockhash: String(createTx.recentBlockhash || ''), // share blockhash
             }),
           });
-          const buildSwapJson = await safeJson<{ swapTx?: string; error?: string }>(buildSwapRes, null);
+          const buildSwapJson = await safeJson<{ swapTx?: string; error?: string }>(
+            buildSwapRes,
+            null
+          );
           if (!buildSwapRes.ok || !buildSwapJson?.swapTx) {
             throw new Error(buildSwapJson?.error || 'Failed to build swap');
           }
@@ -222,6 +282,11 @@ export default function CreatePool() {
             console.warn('Skipping Jito tip append:', e);
           }
 
+          try {
+            assertOnlyAllowedUnsignedSignersLegacy(swapTx, [publicKey]);
+          } catch (e: any) {
+            throw new Error(`Swap transaction signer validation failed: ${e?.message || e}`);
+          }
           const signedSwap = await signTransaction(swapTx);
           const signedSwapB64 = Buffer.from(signedSwap.serialize()).toString('base64');
 
@@ -234,7 +299,10 @@ export default function CreatePool() {
               waitForLanded: true,
             }),
           });
-          const sendJson = await safeJson<{ success?: boolean; status?: string; error?: string }>(sendRes, null);
+          const sendJson = await safeJson<{ success?: boolean; status?: string; error?: string }>(
+            sendRes,
+            null
+          );
           if (!sendRes.ok || !sendJson?.success) {
             throw new Error(sendJson?.error || 'Bundle submission failed');
           }
@@ -246,7 +314,10 @@ export default function CreatePool() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ signedTransaction: signedCreateB64 }),
           });
-          const sendJson = await safeJson<{ success?: boolean; error?: string }>(sendResponse, null);
+          const sendJson = await safeJson<{ success?: boolean; error?: string }>(
+            sendResponse,
+            null
+          );
           if (!sendResponse.ok || !sendJson?.success) {
             throw new Error(sendJson?.error || 'Send failed');
           }

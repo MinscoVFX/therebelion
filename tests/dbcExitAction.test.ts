@@ -1,5 +1,19 @@
-import { describe, it, expect } from 'vitest';
-import { buildDbcExitTransaction } from '../scaffolds/fun-launch/src/server/dbc-exit-builder';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { describe, it, expect, beforeAll } from 'vitest';
+
+// Set fake discriminators (16 hex chars = 8 bytes) before importing builder
+beforeAll(() => {
+  process.env.DBC_CLAIM_FEE_DISCRIMINATOR = 'aaaaaaaaaaaaaaaa';
+  process.env.DBC_WITHDRAW_DISCRIMINATOR = 'bbbbbbbbbbbbbbbb';
+});
+
+let buildDbcExitTransaction: any;
+beforeAll(async () => {
+  // Dynamic import after env set
+  ({ buildDbcExitTransaction } = await import(
+    '../scaffolds/fun-launch/src/server/dbc-exit-builder'
+  ));
+});
 import { Connection, Keypair } from '@solana/web3.js';
 
 // Use a public RPC that should be stable for basic blockhash fetch, fallback to mainnet.
@@ -9,10 +23,19 @@ class MockConnection extends Connection {
     // Return minimal SPL token account-like buffer (at least 64 bytes) with dummy mint/owner.
     const data = Buffer.alloc(165); // standard token account size
     // leave zeros; builder slices mint(0..32) and owner(32..64)
-    return { data, executable: false, lamports: 1, owner: Keypair.generate().publicKey, rentEpoch: 0 } as any;
+    return {
+      data,
+      executable: false,
+      lamports: 1,
+      owner: Keypair.generate().publicKey,
+      rentEpoch: 0,
+    } as any;
   }
 }
-const connection = new MockConnection(process.env.RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
+const connection = new MockConnection(
+  process.env.RPC_URL || 'https://api.mainnet-beta.solana.com',
+  'confirmed'
+);
 
 // NOTE: This test only validates builder branching logic & immediate errors; it doesn't sign or send.
 
@@ -28,21 +51,19 @@ describe('DBC exit builder action handling', () => {
       buildDbcExitTransaction(connection, {
         owner,
         dbcPoolKeys: { pool: dummyPool, feeVault: dummyFeeVault },
-        // @ts-expect-error intentionally wrong
         action: 'nope',
         simulateOnly: true,
       })
     ).rejects.toThrow(/Unsupported DBC exit action/);
   });
 
-  it('errors for withdraw placeholder action', async () => {
-    await expect(
-      buildDbcExitTransaction(connection, {
-        owner,
-        dbcPoolKeys: { pool: dummyPool, feeVault: dummyFeeVault },
-        action: 'withdraw',
-        simulateOnly: true,
-      })
-    ).rejects.toThrow(/not implemented/i);
+  it('builds withdraw (placeholder discriminator allowed in test env) simulateOnly', async () => {
+    const built = await buildDbcExitTransaction(connection, {
+      owner,
+      dbcPoolKeys: { pool: dummyPool, feeVault: dummyFeeVault },
+      action: 'withdraw',
+      simulateOnly: true,
+    });
+    expect(built.simulation).toBeDefined();
   });
 });

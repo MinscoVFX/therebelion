@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
+import { assertOnlyAllowedUnsignedSigners } from '../lib/txSigners';
 
 export interface DbcPoolKeys {
   pool: string;
@@ -9,6 +10,7 @@ export interface DbcPoolKeys {
 
 export interface ExitOptions {
   dbcPoolKeys: DbcPoolKeys;
+  action?: 'claim' | 'withdraw' | 'claim_and_withdraw';
   priorityMicros?: number;
   slippageBps?: number;
   simulateFirst?: boolean;
@@ -120,6 +122,7 @@ export function useDbcInstantExit() {
               body: JSON.stringify({
                 owner: publicKey.toString(),
                 dbcPoolKeys: options.dbcPoolKeys,
+                action: options.action || 'claim',
                 priorityMicros: currentPriority,
                 slippageBps: options.slippageBps,
                 simulateOnly: true,
@@ -142,7 +145,11 @@ export function useDbcInstantExit() {
             const simText = await simResponse.text();
             if (!simText) throw new Error('Simulation returned empty response body');
             let simResult: SimJson;
-            try { simResult = JSON.parse(simText) as SimJson; } catch (e) { throw new Error('Simulation JSON parse failed: ' + (e as any)?.message); }
+            try {
+              simResult = JSON.parse(simText) as SimJson;
+            } catch (e) {
+              throw new Error('Simulation JSON parse failed: ' + (e as any)?.message);
+            }
             if (simResult.error) {
               throw new Error(`Simulation error: ${JSON.stringify(simResult.error)}`);
             }
@@ -164,6 +171,7 @@ export function useDbcInstantExit() {
             body: JSON.stringify({
               owner: publicKey.toString(),
               dbcPoolKeys: options.dbcPoolKeys,
+              action: options.action || 'claim',
               priorityMicros: currentPriority,
               slippageBps: options.slippageBps,
               simulateOnly: false,
@@ -184,7 +192,11 @@ export function useDbcInstantExit() {
           const buildText = await response.text();
           if (!buildText) throw new Error('Build returned empty response body');
           let result: BuildJson;
-          try { result = JSON.parse(buildText) as BuildJson; } catch (e) { throw new Error('Build JSON parse failed: ' + (e as any)?.message); }
+          try {
+            result = JSON.parse(buildText) as BuildJson;
+          } catch (e) {
+            throw new Error('Build JSON parse failed: ' + (e as any)?.message);
+          }
           if (result.error) {
             throw new Error(result.error);
           }
@@ -196,6 +208,12 @@ export function useDbcInstantExit() {
           setState((prev) => ({ ...prev, status: 'signing' }));
 
           const tx = VersionedTransaction.deserialize(Buffer.from(result.tx, 'base64'));
+          // Proactive signer validation (wallet should be the only remaining required unsigned signer)
+          try {
+            assertOnlyAllowedUnsignedSigners(tx, [publicKey]);
+          } catch (e: any) {
+            throw new Error('Signer validation failed: ' + (e?.message || e));
+          }
           const signedTx = await signTransaction(tx);
 
           timings.signed = Date.now();

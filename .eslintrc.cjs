@@ -1,3 +1,4 @@
+/* eslint-env node */
 /** @type {import('eslint').Linter.Config} */
 module.exports = {
   root: true,
@@ -15,17 +16,23 @@ module.exports = {
     'plugin:react-hooks/recommended',
     'plugin:import/recommended',
   ],
-  settings: { 
+  settings: {
     react: { version: 'detect' },
     'import/resolver': {
       typescript: {
         alwaysTryTypes: true,
-        project: './tsconfig.json'
-      }
-    }
+        project: './tsconfig.json',
+      },
+    },
   },
   ignorePatterns: ['**/node_modules/**', '**/dist/**', '**/.next/**', 'scaffolds/**'],
   rules: {
     'react/react-in-jsx-scope': 'off',
+    // Merged from former .eslintrc.json
+    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    '@typescript-eslint/no-explicit-any': 'warn',
+    '@typescript-eslint/explicit-function-return-type': 'off',
+    '@typescript-eslint/explicit-module-boundary-types': 'off',
+    '@typescript-eslint/no-non-null-assertion': 'warn',
   },
 };

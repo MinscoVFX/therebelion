@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useWallet } from '@jup-ag/wallet-adapter';
-import { Connection, Keypair, Transaction, sendAndConfirmRawTransaction } from '@solana/web3.js';
+import { Connection, Keypair, VersionedTransaction } from '@solana/web3.js';
+import { assertOnlyAllowedUnsignedSigners } from '@/lib/txSigners';
 
 type SendTransactionOptions = {
   onSuccess?: (signature: string) => void;
@@ -16,7 +17,7 @@ export function useSendTransaction() {
   const { publicKey, signTransaction } = useWallet();
 
   const sendTransaction = async (
-    transaction: Transaction,
+    vtx: VersionedTransaction,
     connection: Connection,
     options: SendTransactionOptions = {}
   ) => {
@@ -33,38 +34,44 @@ export function useSendTransaction() {
     setSignature(null);
 
     try {
-      // Prepare transaction
-
-      transaction.feePayer = transaction.feePayer || publicKey;
-      if (!transaction.recentBlockhash) {
-        const { blockhash } = await connection.getLatestBlockhash();
-        transaction.recentBlockhash = blockhash;
+      // Only VersionedTransaction is supported now. Caller must provide a compiled v0 tx.
+      if (!(vtx instanceof VersionedTransaction)) {
+        throw new Error('sendTransaction expects a VersionedTransaction');
       }
 
-      // Simulate transaction
-      const simulation = await connection.simulateTransaction(transaction);
+      // Simulate transaction (no sigVerify to save CU)
+      const simulation = await connection.simulateTransaction(vtx, { sigVerify: false });
 
       if (simulation.value.err) {
         throw new Error(`Transaction simulation failed: ${JSON.stringify(simulation.value.err)}`);
       }
 
+      // Pre-flight signer sanity: ensure only wallet needs to sign now.
+      try {
+        assertOnlyAllowedUnsignedSigners(vtx, [publicKey]);
+      } catch (e: any) {
+        throw new Error(e?.message || 'Signer validation failed');
+      }
+
       // Sign and send transaction
-      const signedTransaction = await signTransaction(transaction);
+      const signed = await signTransaction(vtx as any); // adapter supports VersionedTransaction
       if (options.additionalSigners) {
         options.additionalSigners.forEach((signer) => {
-          transaction.sign(signer);
+          (signed as any).sign([signer]);
         });
       }
 
-      const txSignature = await sendAndConfirmRawTransaction(
-        connection,
-        signedTransaction.serialize(),
-        { commitment: 'confirmed' }
-      );
+      const raw = signed.serialize();
+      const sig = await connection.sendRawTransaction(raw, { skipPreflight: false, maxRetries: 3 });
+      await connection.confirmTransaction({
+        signature: sig,
+        blockhash: vtx.message.recentBlockhash,
+        lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight,
+      });
 
-      setSignature(txSignature);
-      options.onSuccess?.(txSignature);
-      return txSignature;
+      setSignature(sig);
+      options.onSuccess?.(sig);
+      return sig;
     } catch (error: any) {
       const errorMessage = error?.message || 'Unknown error';
       setError(new Error(errorMessage));

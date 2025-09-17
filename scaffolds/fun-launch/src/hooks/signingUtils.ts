@@ -21,7 +21,10 @@ interface WalletLike {
  * Does NOT partially fallback mid-array (to avoid mixed trust contexts). If batch call throws,
  * we re-run serially. Individual serial failures are recorded but do not abort the whole list.
  */
-export async function signTransactionsAdaptive(wallet: WalletLike, txs: VersionedTransaction[]): Promise<AdaptiveSigningResult> {
+export async function signTransactionsAdaptive(
+  wallet: WalletLike,
+  txs: VersionedTransaction[]
+): Promise<AdaptiveSigningResult> {
   if (!Array.isArray(txs) || txs.length === 0) return { signed: [], usedBatch: false, errors: [] };
 
   // First try batch path if present.
