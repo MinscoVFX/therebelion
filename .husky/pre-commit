@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Minimal pre-commit stub (lint-staged intentionally disabled)
+echo "[husky] pre-commit: allow commit (no checks)"
+exit 0

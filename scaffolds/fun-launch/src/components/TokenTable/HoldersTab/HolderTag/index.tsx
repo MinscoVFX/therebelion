@@ -26,11 +26,11 @@ type HolderAddressTagProps = {
   tags?: CustomHolderTag[] | undefined;
 };
 
-export const HolderAddressTag: React.FC<HolderAddressTagProps> = ({ address, tags }) => {
+export const HolderAddressTag: React.FC<HolderAddressTagProps> = ({ tags }) => {
   // We only display the first custom tag provided
   const customTag = useMemo(() => {
     if (!tags || tags.length === 0) {
-      return;
+      return undefined;
     }
     return tags[0];
   }, [tags]);

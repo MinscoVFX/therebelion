@@ -1,9 +1,23 @@
-import { Connection, PublicKey } from '@solana/web3.js';
-import { safeParseKeypairFromFile, parseConfigFromCli } from '../../helpers';
+import { Connection } from '@solana/web3.js';
 import { Wallet } from '@coral-xyz/anchor';
+import { safeParseKeypairFromFile, parseConfigFromCli } from '../../helpers';
 import { DbcConfig } from '../../utils/types';
 import { DEFAULT_COMMITMENT_LEVEL } from '../../utils/constants';
 import { claimTradingFee } from '../../lib/dbc';
+
+function parseBaseMintsFromEnv(): string[] {
+  const raw = (process.env.BASE_MINTS || '').trim();
+  if (!raw)
+    throw new Error('Missing BASE_MINTS. Provide a comma-separated list of base mint addresses.');
+  return Array.from(
+    new Set(
+      raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    )
+  );
+}
 
 async function main() {
   const config = (await parseConfigFromCli()) as DbcConfig;
@@ -14,29 +28,47 @@ async function main() {
   console.log('\n> Initializing with general configuration...');
   console.log(`- Using RPC URL ${config.rpcUrl}`);
   console.log(`- Dry run = ${config.dryRun}`);
-  console.log(`- Using wallet ${keypair.publicKey} to claim trading fee`);
+  console.log(`- Using wallet ${keypair.publicKey} to claim trading fees`);
 
   const connection = new Connection(config.rpcUrl, DEFAULT_COMMITMENT_LEVEL);
   const wallet = new Wallet(keypair);
 
-  if (!config.quoteMint) {
-    throw new Error('Missing quoteMint in configuration');
-  }
-  const quoteMint = new PublicKey(config.quoteMint);
-  if (!config.baseMint) {
-    throw new Error('Missing baseMint in configuration');
-  }
-  const baseMint = new PublicKey(config.baseMint);
+  const baseMints = parseBaseMintsFromEnv();
+  console.log(`\n> Found ${baseMints.length} base mint(s) to process`);
 
-  console.log(`- Using quote token mint ${quoteMint.toString()}`);
-  console.log(`- Using base token mint ${baseMint.toString()}`);
+  const results: { mint: string; ok: boolean; error?: string }[] = [];
 
-  /// --------------------------------------------------------------------------
-  if (config) {
-    await claimTradingFee(config, connection, wallet);
-  } else {
-    throw new Error('Must provide DAMM V1 configuration');
+  for (const mint of baseMints) {
+    const runCfg: DbcConfig = { ...config, baseMint: mint };
+    console.log(`\n=== Claiming trading fee for baseMint ${mint} ===`);
+    try {
+      await claimTradingFee(runCfg, connection, wallet);
+      results.push({ mint, ok: true });
+      console.log(`✔ Success for ${mint}`);
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      results.push({ mint, ok: false, error: msg });
+      console.error(`✖ Failed for ${mint}: ${msg}`);
+    }
   }
+
+  const okCount = results.filter((r) => r.ok).length;
+  const failCount = results.length - okCount;
+
+  console.log('\n> Summary:');
+  console.log(`- Success: ${okCount}`);
+  console.log(`- Failed:  ${failCount}`);
+  if (failCount) {
+    for (const r of results.filter((r) => !r.ok)) {
+      console.log(`  * ${r.mint}: ${r.error}`);
+    }
+  }
+
+  // Exit nonzero if any failed (so CI flags it)
+  if (failCount) process.exit(1);
 }
 
-main();
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

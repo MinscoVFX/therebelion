@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
-import { VariantProps, cva } from 'class-variance-authority';
+import { cva, type VariantProps } from 'class-variance-authority';
+import PropTypes from 'prop-types';
 
 const skeletonVariants = cva('h-12 w-full rounded-lg bg-[var(--tw-gradient-from)]', {
   variants: {
@@ -23,4 +24,14 @@ type SkeletonProps = React.ComponentPropsWithoutRef<'div'> & VariantProps<typeof
 
 export const Skeleton: React.FC<SkeletonProps> = ({ variant, color, className, ...props }) => {
   return <div className={cn(skeletonVariants({ variant, color }), className)} {...props} />;
+};
+Skeleton.propTypes = {
+  variant: PropTypes.string,
+  color: PropTypes.string,
+  className: PropTypes.string,
+};
+Skeleton.propTypes = {
+  variant: PropTypes.string,
+  color: PropTypes.string,
+  className: PropTypes.string,
 };

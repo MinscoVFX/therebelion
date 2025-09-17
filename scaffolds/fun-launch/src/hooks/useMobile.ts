@@ -1,4 +1,5 @@
 import { useState } from 'react';
+declare const window: any;
 import { useIsomorphicLayoutEffect } from 'react-use';
 
 export const useMobile = (width = 1024) => {
@@ -8,7 +9,7 @@ export const useMobile = (width = 1024) => {
 
   useIsomorphicLayoutEffect(() => {
     if (typeof window === 'undefined') {
-      return;
+      return undefined; // SSR safety
     }
 
     function updateSize() {
@@ -16,13 +17,12 @@ export const useMobile = (width = 1024) => {
       setIsDesktop(desktopQuery.matches);
     }
 
-    // Initial check
     updateSize();
-
-    // Listen to resize events
     window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
-  }, []);
+    return () => {
+      window.removeEventListener('resize', updateSize);
+    };
+  }, [width]);
 
   // Initially, the state will be false (indicating non-desktop)
   // until the effect runs on the client side.

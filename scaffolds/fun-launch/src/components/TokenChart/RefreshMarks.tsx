@@ -6,6 +6,7 @@ type RefreshMarksProps = {
   isLoaded: boolean;
   widgetRef: MutableRefObject<IChartingLibraryWidget | null>;
 };
+
 export const RefreshMarks: React.FC<RefreshMarksProps> = memo(({ isLoaded, widgetRef }) => {
   const { publicKey } = useWallet();
   // Refresh marks on user wallet change

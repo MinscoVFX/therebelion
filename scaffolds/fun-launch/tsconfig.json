@@ -5,8 +5,15 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "composite": true,
-    "noEmit": false,
+    "jsx": "preserve",
+    "types": ["react", "react-dom"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM"],
+    "moduleResolution": "Bundler",
     "strictNullChecks": false
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

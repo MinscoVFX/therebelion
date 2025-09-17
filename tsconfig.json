@@ -1,18 +1,40 @@
 {
   "extends": "@meteora-invent/config/typescript/base",
   "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": false,
+    "lib": ["ES2022"],
+    "types": ["node"],
     "baseUrl": ".",
     "paths": {
-      "@meteora-invent/config/*": ["./packages/config/*"],
-      "@meteora-invent/studio": ["./studio"],
-      "@meteora-invent/scaffold/*": ["./scaffolds/*"]
+      "@/*": ["src/*"],
+      "@/types/*": ["src/types/*"],
+      "@/services/*": ["src/services/*"],
+      "@/config/*": ["src/config/*"],
+      "@/utils/*": ["src/utils/*"],
+      "@/lib/*": ["src/lib/*"]
     }
   },
-  "references": [
-    { "path": "./packages/config" },
-    { "path": "./packages/shared/utils" },
-    { "path": "./studio" },
-    { "path": "./scaffolds/fun-launch" }
-  ],
-  "exclude": ["node_modules", "dist", "build", ".next", ".turbo"]
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"],
+  "ts-node": {
+    "esm": true,
+    "compilerOptions": {
+      "module": "ESNext"
+    }
+  }
 }

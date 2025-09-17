@@ -11,131 +11,78 @@
   /* computeUnitPriceMicroLamports is required and can be adjusted to fit your needs */
   "computeUnitPriceMicroLamports": 100000,
 
-  /* quoteMint is required for the following actions:
+  /* quoteMint is required for:
    * 1. dbc-create-config
    * 2. dbc-create-pool (if there is no configKeyAddress)
-   * SOL: So11111111111111111111111111111111111111112 | USDC: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v | any other token address
    */
-  "quoteMint": "So11111111111111111111111111111111111111112",
+  "quoteMint": "So11111111111111111111111111111111111111112", // WSOL
 
-  /* baseMint is required for the following actions:
-   * 1. dbc-swap (Buy or Sell)
-   * 2. dbc-migrate-damm-v1
-   * 3. dbc-migrate-damm-v2
-   */
-  "baseMint": "YOUR_BASE_MINT_ADDRESS",
+  /* baseMint is required for some actions (not used by claim trading fee). Set to a valid Base58 address to avoid parsing errors. */
+  "baseMint": "So11111111111111111111111111111111111111112",
 
-  /* Either use dbcConfigAddress or dbcConfig, but not both.
-   *
-   * dbcConfigAddress is only used in the following action:
-   * 1. dbc-create-pool (if the dbcConfigAddress is already created)
-   *
-   * dbcConfig is only used in the following actions:
-   * 1. dbc-create-config
-   * 2. dbc-create-pool (if there is no dbcConfigAddress)
-   */
   // "dbcConfigAddress": "YOUR_DBC_CONFIG_ADDRESS",
   "dbcConfig": {
     "buildCurveMode": 0, // 0 - buildCurve | 1 - buildCurveWithMarketCap | 2 - buildCurveWithTwoSegments | 3 - buildCurveWithLiquidityWeights
 
-    /* Only use the following parameters for buildCurveMode: 0 (buildCurve)
-     * 1. percentageSupplyOnMigration
-     * 2. migrationQuoteThreshold
-     */
-    "percentageSupplyOnMigration": 20, // percentage of total token supply to be migrated
-    "migrationQuoteThreshold": 1, // migration quote threshold needed to migrate the DBC token pool
+    /* Only use the following parameters for buildCurveMode: 0 (buildCurve) */
+    "percentageSupplyOnMigration": 20,
+    "migrationQuoteThreshold": 1,
 
-    /* Only use the following parameters for buildCurveMode: 1 (buildCurveWithMarketCap)
-     * 1. initialMarketCap
-     * 2. migrationMarketCap
-     */
-    // "initialMarketCap": 20, // the market cap of the DBC token pool when the pool is created specified in terms of quoteMint (not in lamports)
-    // "migrationMarketCap": 600, // the market cap of the DBC token pool when the pool graduates specified in terms of quoteMint (not in lamports)
+    /* supply others only for modes 1/2/3 as needed */
 
-    /* Only use the following parameters for buildCurveMode: 2 (buildCurveWithTwoSegments)
-     * 1. initialMarketCap
-     * 2. migrationMarketCap
-     * 3. percentageSupplyOnMigration
-     */
-    // "initialMarketCap": 20, // the market cap of the DBC token pool when the pool is created specified in terms of quoteMint (not in lamports)
-    // "migrationMarketCap": 600, // the market cap of the DBC token pool when the pool graduates specified in terms of quoteMint (not in lamports)
-    // "percentageSupplyOnMigration": 20, // percentage of total token supply to be migrated
-
-    /* Only use the following parameters for buildCurveMode: 3 (buildCurveWithLiquidityWeights)
-     * 1. initialMarketCap
-     * 2. migrationMarketCap
-     * 3. liquidityWeights
-     */
-    // "initialMarketCap": 20, // the market cap of the DBC token pool when the pool is created specified in terms of quoteMint (not in lamports)
-    // "migrationMarketCap": 600, // the market cap of the DBC token pool when the pool graduates specified in terms of quoteMint (not in lamports)
-    // "liquidityWeights": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], // a array of 16 liquidity weights for each liquidity segment in the curve
-
-    "totalTokenSupply": 1000000000, // total token supply (not in lamports)
-    "migrationOption": 1, // 0 - Migrate to DAMM v1 | 1 - Migrate to DAMM v2
-    "tokenBaseDecimal": 6, // token base decimal
-    "tokenQuoteDecimal": 9, // token quote decimal
+    "totalTokenSupply": 1000000000,
+    "migrationOption": 1, // 0 - DAMM v1 | 1 - DAMM v2
+    "tokenBaseDecimal": 6,
+    "tokenQuoteDecimal": 9,
     "lockedVestingParam": {
-      "totalLockedVestingAmount": 100000000, // total locked vesting amount (not in lamports)
-      "numberOfVestingPeriod": 24, // number of vesting period
-      "cliffUnlockAmount": 100000000, // cliff unlock amount (not in lamports)
-      "totalVestingDuration": 2592000, // total vesting duration (in seconds)
-      "cliffDurationFromMigrationTime": 0 // cliff duration from migration time (in seconds)
+      "totalLockedVestingAmount": 100000000,
+      "numberOfVestingPeriod": 24,
+      "cliffUnlockAmount": 100000000,
+      "totalVestingDuration": 2592000,
+      "cliffDurationFromMigrationTime": 0
     },
     "baseFeeParams": {
-      "baseFeeMode": 0, // 0 - Fee Scheduler: Linear | 1 - Fee Scheduler: Exponential
+      "baseFeeMode": 0, // 0 - Linear
       "feeSchedulerParam": {
-        "startingFeeBps": 200, // starting fee (max 99% fee === 9900 bps)
-        "endingFeeBps": 200, // ending fee (minimum 0.01% fee === 1 bps)
-        "numberOfPeriod": 0, // number of period
-        "totalDuration": 0 // total duration (If activationType is 0 (slots), totalDuration = duration / 0.4 | If activationType is 1 (timestamp), totalDuration = duration)
+        "startingFeeBps": 200,
+        "endingFeeBps": 200,
+        "numberOfPeriod": 0,
+        "totalDuration": 0
       }
-      /*
-            "baseFeeMode": 2, // 2 - Rate Limiter
-            "rateLimiterParam": {
-                "baseFeeBps": 200, // base fee (max 99% base fee === 9900 bps)
-                "feeIncrementBps": 200, // fee increment (max fee increment = 9900 bps - baseFeeBps)
-                "referenceAmount": 0, // reference amount (not in lamports)
-                "maxLimiterDuration": 0 // if activationType is 0 (slots), maxLimiterDuration = duration / 0.4, if activationType is 1 (timestamp), maxLimiterDuration = duration)
-            }
-            */
     },
-    "dynamicFeeEnabled": true, // If true, dynamic fee will add 20% of minimum base fee to the total fee.
+    "dynamicFeeEnabled": true,
     "activationType": 1, // 0 - Slot | 1 - Timestamp
     "collectFeeMode": 0, // 0 - Quote Token | 1 - Output Token
-    "migrationFeeOption": 3, // 0 - LP Fee 0.25% | 1 - LP Fee 0.3% | 2 - LP Fee 1% | 3 - LP Fee 2% | 4 - LP Fee 4% | 5 - LP Fee 6%
-    "tokenType": 0, // 0 - SPL | 1 - Token 2022
-    "partnerLpPercentage": 25, // Partner claimable LP (withdrawable LP once pool migrates)
-    "creatorLpPercentage": 25, // Creator claimable LP (withdrawable LP once pool migrates)
-    "partnerLockedLpPercentage": 25, // Partner locked LP (permanently locked LP once pool migrates)
-    "creatorLockedLpPercentage": 25, // Creator locked LP (permanently locked LP once pool migrates)
-    "creatorTradingFeePercentage": 0, // Bonding curve trading fee sharing (0% to 100%) - 0% means all trading fees go to the partner
-    "leftover": 0, // leftover tokens in the bonding curve (claimable once pool migrates)
-    "tokenUpdateAuthority": 1, // 0 - CreatorUpdateAuthority | 1 - Immutable | 2 - PartnerUpdateAuthority | 3 - CreatorUpdateAndMintAuthority | 4 - PartnerUpdateAndMintAuthority
+    "migrationFeeOption": 3, // 2% LP fee
+    "tokenType": 0, // SPL
+    "partnerLpPercentage": 25,
+    "creatorLpPercentage": 25,
+    "partnerLockedLpPercentage": 25,
+    "creatorLockedLpPercentage": 25,
+    "creatorTradingFeePercentage": 0,
+    "leftover": 0,
+    "tokenUpdateAuthority": 1,
     "migrationFee": {
-      "feePercentage": 0, // Percentage of fee taken from migration quote threshold once pool migrates (0% to 50%)
-      "creatorFeePercentage": 0 // Percentage of the migrationFee.feePercentage claimable by creator (0% to 100%)
+      "feePercentage": 0,
+      "creatorFeePercentage": 0
     },
-    "leftoverReceiver": "YOUR_LEFTOVER_RECEIVER_ADDRESS", // leftover receiver address
-    "feeClaimer": "YOUR_FEE_CLAIMER_ADDRESS" // fee claimer address
+
+    /* ⬇⬇⬇ replaced placeholders with your Phantom pubkey ⬇⬇⬇ */
+    "leftoverReceiver": "AkJAjSMBBWbBJWT6LewYBDJXajTVdNEdDhBR1iVAnmCb",
+    "feeClaimer": "AkJAjSMBBWbBJWT6LewYBDJXajTVdNEdDhBR1iVAnmCb"
   },
 
-  /* dbcPool is only used in the following actions:
-   * 1. dbc-create-pool
-   */
   "dbcPool": {
-    // "baseMintKeypairFilepath": "./baseMintKeypair.json", // optional base mint keypair file path
-    "name": "DBC Pool", // token name
-    "symbol": "DBC", // token symbol
-    "uri": "https://example.com" // metaplex token metadata format for the token - https://developers.metaplex.com/core/json-schema
+    // "baseMintKeypairFilepath": "./baseMintKeypair.json",
+    "name": "DBC Pool",
+    "symbol": "DBC",
+    "uri": "https://example.com"
   },
 
-  /* dbcSwap is only used in the following actions:
-   * 1. dbc-swap (Buy or Sell)
-   */
   "dbcSwap": {
-    "amountIn": 1.03, // the amount of quoteMint or baseMint to be swapped
-    "slippageBps": 100, // slippage in bps
-    "swapBaseForQuote": false, // if true, swap base for quote | if false, swap quote for base
-    "referralTokenAccount": null // optional referral token account address
+    "amountIn": 1.03,
+    "slippageBps": 100,
+    "swapBaseForQuote": false,
+    "referralTokenAccount": null
   }
 }

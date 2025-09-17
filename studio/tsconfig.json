@@ -1,12 +1,17 @@
 {
-  "extends": "@meteora-invent/config/typescript/node",
   "compilerOptions": {
-    "rootDir": ".",
-    "outDir": "./dist",
-    "noEmit": false,
-    "composite": true,
-    "strictNullChecks": false
+    "target": "ES2020",
+    "module": "commonjs",
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "moduleResolution": "Node",
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true
   },
-  "include": ["**/*.ts", "**/*.js"],
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
   "exclude": ["node_modules", "dist"]
 }

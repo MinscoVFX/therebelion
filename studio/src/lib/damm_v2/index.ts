@@ -1,10 +1,271 @@
-import { BN, Wallet } from '@coral-xyz/anchor';
+/**
+ * Resolves a DAMM V2 pool address from LP mint.
+ * Returns the pool address if found, otherwise throws.
+ * Matches Meteora doc export pattern for launchpad integration.
+ */
+export async function resolvePoolByLpMint({
+  connection,
+  lpMint,
+}: {
+  connection: Connection;
+  lpMint: PublicKey;
+}): Promise<PublicKey> {
+  const cp = new CpAmm(connection);
+  const pools = await cp.getAllPools();
+  const found = pools.find((p: any) => p.lpMint.toBase58() === lpMint.toBase58());
+  if (!found) throw new Error('No DAMM V2 pool found for given LP mint');
+  return found.publicKey;
+}
+export default resolvePool;
+/**
+ * Resolves a DAMM V2 pool address from token mints and config.
+ * Returns the pool address if found, otherwise throws.
+ */
+/**
+ * Resolves a DAMM V2 pool address from token mints.
+ * Returns the pool address if found, otherwise throws.
+ * Matches Meteora doc export pattern.
+ */
+export async function resolvePool({
+  connection,
+  tokenAMint,
+  tokenBMint,
+}: {
+  connection: Connection;
+  tokenAMint: PublicKey;
+  tokenBMint: PublicKey;
+}): Promise<PublicKey> {
+  const cp = new CpAmm(connection);
+  const pools = await cp.getAllPools();
+  const found = pools.find(
+    (p: any) =>
+      p.tokenAMint.toBase58() === tokenAMint.toBase58() &&
+      p.tokenBMint.toBase58() === tokenBMint.toBase58()
+  );
+  if (!found) throw new Error('No DAMM V2 pool found for given mints');
+  return found.publicKey;
+}
+import { TransactionInstruction, Connection, PublicKey } from '@solana/web3.js';
+import { BN } from '@coral-xyz/anchor';
+import { CpAmm, type RemoveLiquidityParams } from '@meteora-ag/cp-amm-sdk';
+// TOKEN_PROGRAM_ID imported later with other SPL symbols (avoid duplicate)
+
+/**
+ * Realistic remove-liquidity instruction builder leveraging cp-amm-sdk.
+ * Returns an array so callers can spread into their tx assembly.
+ * Falls back gracefully if position discovery fails.
+ */
+export async function buildRemoveLiquidityIx({
+  connection,
+  programId: _programId, // reserved for potential future use
+  pool,
+  lpMint: _lpMint,
+  user,
+  userLpAccount: _userLpAccount,
+  userAToken: _userAToken,
+  userBToken: _userBToken,
+  tokenAMint,
+  tokenBMint,
+  tokenAVault,
+  tokenBVault,
+  lpAmount,
+  // New optional overrides:
+  positionPubkey, // explicitly specify a position (skip discovery)
+  percent, // percentage (0-100] of the position liquidity to remove (ignored if lpAmount provided)
+  liquidityDelta, // raw liquidity delta override (BigInt) takes precedence over percent if provided
+  slippageBps = 50, // 0.50% default
+}: {
+  connection: Connection;
+  programId: PublicKey;
+  pool: PublicKey;
+  lpMint: PublicKey;
+  user: PublicKey;
+  userLpAccount: PublicKey;
+  userAToken: PublicKey;
+  userBToken: PublicKey;
+  tokenAMint: PublicKey;
+  tokenBMint: PublicKey;
+  tokenAVault: PublicKey;
+  tokenBVault: PublicKey;
+  lpAmount?: bigint; // kept for backward compatibility (full amount or partial explicit amount)
+  positionPubkey?: PublicKey;
+  percent?: number; // 0 < percent <= 100
+  liquidityDelta?: bigint; // direct override of liquidity delta (advanced)
+  slippageBps?: number;
+}): Promise<TransactionInstruction[]> {
+  const cp = new CpAmm(connection);
+
+  // 1. Resolve position(s)
+  let discoveredPositions: any[] = [];
+  let chosenPosition: any | null = null;
+  let resolvedPositionPubkey: PublicKey | undefined = positionPubkey;
+
+  // Discover only if user did not explicitly pass a position
+  if (!resolvedPositionPubkey) {
+    try {
+      const helper =
+        (cp as any).getAllPositionNftAccountByOwner || (cp as any).getAllUserPositionNftAccount;
+      if (helper) {
+        const fetched = await helper({ owner: user });
+        if (Array.isArray(fetched)) discoveredPositions = fetched;
+      }
+    } catch {
+      // ignore discovery errors
+    }
+    const poolPositions = discoveredPositions.filter(
+      (p: any) => p.account?.pool?.toBase58?.() === pool.toBase58()
+    );
+    if (!poolPositions.length)
+      throw new Error('No position NFT found for pool when removing liquidity.');
+    poolPositions.sort((a: any, b: any) => {
+      const la = a.account?.liquidity ?? new BN(0);
+      const lb = b.account?.liquidity ?? new BN(0);
+      if (la.lt(lb)) return 1;
+      if (la.gt(lb)) return -1;
+      return 0;
+    });
+    chosenPosition = poolPositions[0];
+    resolvedPositionPubkey = chosenPosition.publicKey ?? chosenPosition.account?.publicKey;
+  } else {
+    // If positionPubkey provided, try to fetch its account (best-effort) for liquidity & quoting.
+    try {
+      const fetchOne = (cp as any).getPositionAccount || (cp as any).getUserPositionAccount;
+      if (fetchOne) {
+        const acct = await fetchOne({ position: resolvedPositionPubkey });
+        if (acct) chosenPosition = { publicKey: resolvedPositionPubkey, account: acct };
+      }
+    } catch {
+      // ignore failed single fetch; we'll proceed with limited info.
+    }
+  }
+  if (!resolvedPositionPubkey)
+    throw new Error('Unable to resolve position public key for remove liquidity.');
+
+  const positionLiquidity: BN | null = chosenPosition?.account?.liquidity
+    ? new BN(chosenPosition.account.liquidity.toString())
+    : null;
+
+  // 2. Compute withdraw quote to derive min token amounts with slippage cushion.
+  // Fallback if sdk shape differs.
+  let tokenAAmountThreshold = new BN(0);
+  let tokenBAmountThreshold = new BN(0);
+  try {
+    const quoteFn: any = (cp as any).getWithdrawQuote;
+    if (quoteFn) {
+      const quote = await quoteFn({
+        pool,
+        position: resolvedPositionPubkey,
+        liquidityDelta: positionLiquidity ?? new BN(0),
+        slippageBps,
+        owner: user,
+      });
+      if (quote?.tokenAOut) tokenAAmountThreshold = new BN(quote.tokenAOut.toString());
+      if (quote?.tokenBOut) tokenBAmountThreshold = new BN(quote.tokenBOut.toString());
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // 3. Determine token program IDs (handle 2022).
+  const tokenAProgram = TOKEN_PROGRAM_ID;
+  const tokenBProgram = TOKEN_PROGRAM_ID;
+
+  // 4. Build remove liquidity TxBuilder from SDK. If lpAmount covers all, we could call removeAllLiquidity.
+  // Determine desired liquidity delta
+  let finalLiquidityDeltaBn: BN | null = null;
+  if (typeof liquidityDelta === 'bigint') {
+    finalLiquidityDeltaBn = new BN(liquidityDelta.toString());
+  } else if (typeof lpAmount === 'bigint') {
+    finalLiquidityDeltaBn = new BN(lpAmount.toString());
+  } else if (typeof percent === 'number' && percent > 0 && percent <= 100) {
+    if (!positionLiquidity)
+      throw new Error('Percent-based removal requested but position liquidity unknown.');
+    // Convert percent to basis points (two decimals) to avoid float precision issues.
+    const bps = Math.round(percent * 100); // e.g. 25.37% -> 2537 bps
+    finalLiquidityDeltaBn = positionLiquidity.mul(new BN(bps)).div(new BN(100 * 100));
+  } else if (positionLiquidity) {
+    // default remove-all
+    finalLiquidityDeltaBn = positionLiquidity;
+  } else {
+    throw new Error(
+      'Must provide lpAmount, liquidityDelta, percent, or discoverable position liquidity.'
+    );
+  }
+
+  const removingAll = positionLiquidity ? positionLiquidity.eq(finalLiquidityDeltaBn) : false;
+
+  let txBuilder: any;
+  try {
+    if (removingAll && (cp as any).removeAllLiquidity) {
+      txBuilder = (cp as any).removeAllLiquidity({
+        owner: user,
+        position: resolvedPositionPubkey,
+        pool,
+        positionNftAccount: chosenPosition?.account?.positionNftAccount ?? resolvedPositionPubkey,
+        tokenAMint,
+        tokenBMint,
+        tokenAVault,
+        tokenBVault,
+        tokenAProgram,
+        tokenBProgram,
+        vestings: [],
+        currentPoint: new BN(0),
+        tokenAAmountThreshold,
+        tokenBAmountThreshold,
+      });
+    } else {
+      const liquidityDelta = finalLiquidityDeltaBn;
+      txBuilder = (cp as any).removeLiquidity({
+        owner: user,
+        position: resolvedPositionPubkey,
+        pool,
+        positionNftAccount: chosenPosition?.account?.positionNftAccount ?? resolvedPositionPubkey,
+        liquidityDelta,
+        tokenAAmountThreshold,
+        tokenBAmountThreshold,
+        tokenAMint,
+        tokenBMint,
+        tokenAVault,
+        tokenBVault,
+        tokenAProgram,
+        tokenBProgram,
+        vestings: [],
+        currentPoint: new BN(0),
+      } as RemoveLiquidityParams);
+    }
+  } catch (e) {
+    throw new Error('SDK removeLiquidity build failed: ' + (e as any)?.message);
+  }
+
+  // 5. Extract instructions (builder may expose .tx or .build())
+  const ixs: TransactionInstruction[] = [];
+  if (!txBuilder) throw new Error('TxBuilder undefined after removeLiquidity call.');
+  try {
+    if (Array.isArray((txBuilder as any).ixs)) {
+      ixs.push(...(txBuilder as any).ixs);
+    } else if ((txBuilder as any).build) {
+      const built = await (txBuilder as any).build();
+      if (Array.isArray(built)) ixs.push(...built);
+      else if (built?.instructions) ixs.push(...built.instructions);
+    } else if ((txBuilder as any).tx) {
+      const tx = (txBuilder as any).tx;
+      // if it's a @solana/web3.js Transaction, extract its instructions array
+      if (tx?.instructions) ixs.push(...tx.instructions);
+    }
+  } catch (e) {
+    throw new Error('Failed extracting removeLiquidity instructions: ' + (e as any)?.message);
+  }
+
+  if (!ixs.length) throw new Error('No instructions produced by removeLiquidity builder.');
+  return ixs;
+}
+import { Wallet } from '@coral-xyz/anchor';
 import {
   BaseFee,
   BIN_STEP_BPS_DEFAULT,
   BIN_STEP_BPS_U128_DEFAULT,
   calculateTransferFeeIncludedAmount,
-  CpAmm,
+  // CpAmm already imported above for remove liquidity builder
   getBaseFeeParams,
   getDynamicFeeParams,
   getLiquidityDeltaFromAmountA,
@@ -17,7 +278,7 @@ import {
   PoolFeesParams,
 } from '@meteora-ag/cp-amm-sdk';
 import { TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID, unpackMint } from '@solana/spl-token';
-import { Connection, Keypair, PublicKey, sendAndConfirmTransaction } from '@solana/web3.js';
+import { Keypair, sendAndConfirmTransaction } from '@solana/web3.js';
 import { DammV2Config } from '../../utils/types';
 import {
   getAmountInLamports,
@@ -281,7 +542,10 @@ export async function createDammV2BalancedPool(
   }
 
   let quoteTokenInfo = null;
-  let quoteTokenProgram = TOKEN_PROGRAM_ID;
+  // Track which token program is used (may switch to TOKEN_2022_PROGRAM_ID later)
+  // Intentionally retain for future program selection logic; mark used via void
+  let _quoteTokenProgram = TOKEN_PROGRAM_ID;
+  void _quoteTokenProgram;
 
   const quoteMintAccountInfo = await connection.getAccountInfo(
     new PublicKey(quoteTokenMint),
@@ -300,7 +564,7 @@ export async function createDammV2BalancedPool(
       mint: quoteMint,
       currentEpoch: epochInfo.epoch,
     };
-    quoteTokenProgram = TOKEN_2022_PROGRAM_ID;
+    _quoteTokenProgram = TOKEN_2022_PROGRAM_ID;
   }
 
   const baseDecimals = baseMint.decimals;

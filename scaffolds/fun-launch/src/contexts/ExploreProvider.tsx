@@ -1,10 +1,8 @@
-import { ExploreTab } from '@/components/Explore/types';
+import { ExploreTab, TokenListFilters, TokenListTimeframe } from '@/components/Explore/types';
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 import { useLocalStorage } from 'react-use';
 
-import { TokenListFilters } from '@/components/Explore/types';
-import { TokenListTimeframe } from '@/components/Explore/types';
 import { GemsTokenListQueryArgs } from '@/components/Explore/queries';
 import { StorageKey } from '@/constants';
 
@@ -27,9 +25,13 @@ type ExploreContextType = {
 
 const ExploreContext = createContext<ExploreContextType>({
   mobileTab: DEFAULT_TAB,
-  setMobileTab: () => {},
+  setMobileTab: () => {
+    // Default empty handler
+  },
   filters: undefined,
-  setFilters: () => {},
+  setFilters: () => {
+    // Default empty handler
+  },
   request: {
     [ExploreTab.NEW]: {
       timeframe: EXPLORE_FIXED_TIMEFRAME,
@@ -46,7 +48,9 @@ const ExploreContext = createContext<ExploreContextType>({
     [ExploreTab.GRADUATING]: false,
     [ExploreTab.GRADUATED]: false,
   },
-  setTabPaused: () => {},
+  setTabPaused: () => {
+    // Default empty handler
+  },
 });
 
 const ExploreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

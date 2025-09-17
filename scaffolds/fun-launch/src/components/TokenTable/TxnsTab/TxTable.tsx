@@ -1,7 +1,7 @@
 import {
   ColumnDef,
   ColumnFiltersState,
-  RowData,
+  RowData as _RowData,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -9,38 +9,35 @@ import {
 } from '@tanstack/react-table';
 import { notUndefined, useVirtualizer } from '@tanstack/react-virtual';
 import { useAtom } from 'jotai';
-import { PropsWithChildren, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DateMode, dateModeAtom } from './datemode';
+import { PropsWithChildren, useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { dateModeAtom } from './datemode';
 import { useWallet } from '@jup-ag/wallet-adapter';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../Table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/Table';
 import { cn } from '@/lib/utils';
 import { PausedIndicator } from '../../Explore/PausedIndicator';
 import { isHoverableDevice } from '@/lib/device';
 import { SkeletonTableRows } from './columns';
+// Removed unused top-level useRef
+// Removed empty interface Tx
 
-declare module '@tanstack/react-table' {
-  interface TableMeta<TData extends RowData> {
-    dateMode: DateMode;
-    setDateMode: (mode: DateMode) => void;
-    walletAddress: string | undefined;
-    symbol: string | undefined;
-  }
-}
-
-const ROW_HEIGHT = 36;
-
-type TxTableProps<TData, TValue> = {
-  symbol?: string | undefined;
-  columns: ColumnDef<TData, TValue>[];
-  data: TData[];
-  hasNextPage: boolean | undefined;
+type TxTableProps<_TData, TValue> = {
+  table: ReturnType<typeof useReactTable<_TData>>;
+  columns: ColumnDef<_TData, TValue>[];
+  data: _TData[];
+  // _TData is unused, prefix to resolve lint warning
+  // _TData is unused, prefix to resolve lint warning
+  symbol: string;
+  hasNextPage: boolean;
   isFetching: boolean;
   fetchNextPage: () => void;
   paused: boolean;
   setPaused: (paused: boolean) => void;
+  walletAddress: string | undefined;
 };
 
-export function TxTable<TData, TValue>({
+const ROW_HEIGHT = 36;
+
+export function TxTable<_TData, TValue>({
   symbol,
   columns,
   data,
@@ -49,7 +46,7 @@ export function TxTable<TData, TValue>({
   fetchNextPage,
   paused,
   setPaused,
-}: TxTableProps<TData, TValue>) {
+}: TxTableProps<_TData, TValue>) {
   // const [sorting, setSorting] = useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [dateMode, setDateMode] = useAtom(dateModeAtom);

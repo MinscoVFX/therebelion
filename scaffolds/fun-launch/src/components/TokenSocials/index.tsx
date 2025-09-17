@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback } from 'react';
 import { Pool } from '../Explore/types';
 import { cn } from '@/lib/utils';
 import { HoverPopover } from '../ui/HoverPopover';
@@ -6,6 +6,7 @@ import { ExternalLink } from '../ui/ExternalLink';
 import TelegramIcon from '@/icons/TelegramIcon';
 import { WebsiteIcon } from '@/icons/WebsiteIcon';
 import SearchIcon from '@/icons/SearchIcon';
+import PropTypes from 'prop-types';
 
 type PartialBaseAsset = Pick<
   Pool['baseAsset'],
@@ -67,3 +68,11 @@ export const TokenSocials: React.FC<TokenSocialsProps> = memo(({ token, classNam
 });
 
 TokenSocials.displayName = 'TokenSocials';
+TokenSocials.propTypes = {
+  token: PropTypes.object.isRequired,
+  className: PropTypes.string,
+};
+TokenSocials.propTypes = {
+  token: PropTypes.object.isRequired,
+  className: PropTypes.string,
+};

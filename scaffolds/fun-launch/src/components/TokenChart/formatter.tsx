@@ -38,7 +38,7 @@ export const formatChartPrice = (
 function generateSubscriptNumbers(x: number): string {
   const subscriptNumbers: string[] = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'];
   const xString: string = x.toString();
-  let result: string = '';
+  let result = '';
 
   for (let i = 0; i < xString.length; i++) {
     const digit: number = parseInt(xString.charAt(i), 10);
@@ -70,10 +70,7 @@ export const formatNumber = {
 };
 
 // To find out the precision we should use
-export const getPrecisionTick = (
-  value: number,
-  maxSuffix: number = 6
-): [number, string, string] => {
+export const getPrecisionTick = (value: number, maxSuffix = 6): [number, string, string] => {
   if (value === 0) return [0, '0', '0'];
 
   const firstSD = Decimal.ceil(new Decimal(-1).mul(Decimal.log10(Decimal.abs(value)))).toNumber();

@@ -1,0 +1,74 @@
+name: Prod Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      APP_URL: https://therebelion-fun-launch.vercel.app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - name: Ensure pnpm (composite)
+        uses: ./.github/actions/ensure-pnpm
+      - run: node -v && npm -v && pnpm -v
+      - name: Install dependencies (shallow)
+        run: pnpm install --frozen-lockfile --filter .
+      - name: Ensure script exists
+        run: test -f scripts/prod-smoke.mjs || { echo "missing scripts/prod-smoke.mjs"; exit 1; }
+      - name: Run smoke tests (pnpm script)
+        run: |
+          set -euo pipefail
+          pnpm ci:smoke || true
+          if [ ! -f scripts/prod-smoke-report.json ]; then echo 'Missing prod-smoke-report.json'; exit 1; fi
+          cp scripts/prod-smoke-report.json smoke-report.json
+          pass=$(jq -r '.allPassed' smoke-report.json || echo 'false')
+          sed -n '1,160p' smoke-report.json
+          if [ "$pass" != "true" ]; then echo 'Smoke tests reported failure'; exit 1; fi
+      - name: Show first 120 lines
+        run: sed -n '1,120p' smoke-report.json
+      - name: Always print (debug)
+        if: always()
+        run: |
+          echo '--- ALWAYS PRINT (first 120 lines) ---'
+          if [ -f smoke-report.json ]; then sed -n '1,120p' smoke-report.json; else echo 'smoke-report.json missing'; fi
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-report
+          path: smoke-report.json
+      - name: Comment on PR (if any)
+        if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('smoke-report.json','utf8');
+            const title = '✅ Production Smoke Report';
+            const payload = '```\n' + body.substring(0, 5000) + '\n```';
+            if (context.payload.pull_request) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: `${title}\n\n${payload}`
+              });
+            } else {
+              console.log(title + "\n\n" + payload);
+            }

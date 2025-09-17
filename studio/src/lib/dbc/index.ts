@@ -2,13 +2,17 @@ import {
   Connection,
   Keypair,
   PublicKey,
-  sendAndConfirmTransaction,
   Transaction,
+  Signer,
+  Commitment, // <-- important: accept full Commitment union
 } from '@solana/web3.js';
-import { DbcConfig } from '../../utils/types';
 import { Wallet } from '@coral-xyz/anchor';
+import BN from 'bn.js';
+
+import { DbcConfig } from '../../utils/types';
 import { getQuoteDecimals, modifyComputeUnitPriceIx, runSimulateTransaction } from '../../helpers';
 import { DEFAULT_SEND_TX_MAX_RETRIES } from '../../utils/constants';
+
 import {
   buildCurve,
   buildCurveWithLiquidityWeights,
@@ -23,7 +27,83 @@ import {
   deriveEscrow,
   DynamicBondingCurveClient,
 } from '@meteora-ag/dynamic-bonding-curve-sdk';
-import BN from 'bn.js';
+
+/* -------------------------------------------------------------------------- */
+/*                    Stable send/confirm helper (no CBP add)                 */
+/*   Signs with a fresh blockhash and confirms with the same tuple; retries   */
+/* -------------------------------------------------------------------------- */
+async function sendWithFreshBlockhash(
+  connection: Connection,
+  tx: Transaction,
+  signers: Signer[],
+  opts?: {
+    commitment?: Commitment; // <-- widened type
+    confirmCommitment?: Commitment; // <-- widened type
+    maxRetries?: number;
+    maxAttempts?: number;
+  }
+): Promise<string> {
+  const {
+    commitment: commitmentParam,
+    confirmCommitment: confirmParam,
+    maxRetries = DEFAULT_SEND_TX_MAX_RETRIES,
+    maxAttempts = 3,
+  } = opts ?? {};
+
+  // Normalize to safe, modern values regardless of older aliases (e.g., "recent")
+  const commitment: Commitment =
+    commitmentParam === 'processed' ||
+    commitmentParam === 'confirmed' ||
+    commitmentParam === 'finalized'
+      ? commitmentParam
+      : 'processed';
+
+  const confirmCommitment: Commitment =
+    confirmParam === 'processed' || confirmParam === 'confirmed' || confirmParam === 'finalized'
+      ? confirmParam
+      : 'confirmed';
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // getLatestBlockhashAndContext -> { context, value }
+    const { value, context } = await connection.getLatestBlockhashAndContext(commitment);
+    const { blockhash, lastValidBlockHeight } = value;
+    const minContextSlot = context.slot;
+
+    // (Optional) You already add compute budget via modifyComputeUnitPriceIx upstream.
+    // We do NOT inject additional CBP instructions here to avoid duplicates.
+
+    if (signers.length) tx.setSigners(...signers.map((s) => s.publicKey));
+    tx.recentBlockhash = blockhash;
+    tx.sign(...signers);
+
+    const raw = tx.serialize();
+    const signature = await connection.sendRawTransaction(raw, {
+      skipPreflight: false,
+      preflightCommitment: commitment,
+      maxRetries,
+      minContextSlot,
+    });
+
+    try {
+      await connection.confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        confirmCommitment
+      );
+      return signature;
+    } catch (err: any) {
+      const msg = String(err?.message ?? '');
+      const expired =
+        err?.name === 'TransactionExpiredBlockheightExceededError' ||
+        /block height exceeded|blockhash not found/i.test(msg);
+      if (expired && attempt < maxAttempts) {
+        // Retry with a brand-new blockhash
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('unreachable: sendWithFreshBlockhash loop');
+}
 
 /**
  * Create a DBC config
@@ -94,15 +174,10 @@ export async function createDbcConfig(
     console.log(`> Config simulation successful`);
   } else {
     console.log(`>> Sending create config transaction...`);
-    const createConfigTxHash = await sendAndConfirmTransaction(
-      connection,
-      createConfigTx,
-      [wallet.payer, configKeypair],
-      {
-        commitment: connection.commitment,
-        maxRetries: DEFAULT_SEND_TX_MAX_RETRIES,
-      }
-    ).catch((err) => {
+    const createConfigTxHash = await sendWithFreshBlockhash(connection, createConfigTx, [
+      wallet.payer,
+      configKeypair,
+    ]).catch((err) => {
       console.error('Failed to create config:', err);
       throw err;
     });
@@ -185,15 +260,10 @@ export async function createDbcPool(
     modifyComputeUnitPriceIx(createPoolTx as any, config.computeUnitPriceMicroLamports);
 
     console.log(`>> Sending create pool transaction...`);
-    const createPoolTxHash = await sendAndConfirmTransaction(
-      connection,
-      createPoolTx,
-      [wallet.payer, baseMint],
-      {
-        commitment: connection.commitment,
-        maxRetries: DEFAULT_SEND_TX_MAX_RETRIES,
-      }
-    ).catch((err) => {
+    const createPoolTxHash = await sendWithFreshBlockhash(connection, createPoolTx, [
+      wallet.payer,
+      baseMint,
+    ]).catch((err) => {
       console.error('Failed to create pool:', err);
       throw err;
     });
@@ -296,9 +366,9 @@ export async function claimTradingFee(config: DbcConfig, connection: Connection,
 
       console.log(`> Sending ${txType} trading fee claim transaction...`);
 
-      const txHash = await sendAndConfirmTransaction(connection, transaction, [wallet.payer], {
-        commitment: connection.commitment,
-        maxRetries: DEFAULT_SEND_TX_MAX_RETRIES,
+      const txHash = await sendWithFreshBlockhash(connection, transaction, [wallet.payer], {
+        commitment: connection.commitment ?? 'processed',
+        confirmCommitment: 'confirmed',
       });
 
       console.log(`> ${txType} trading fee claimed successfully with tx hash: ${txHash}`);
@@ -387,9 +457,9 @@ export async function swap(config: DbcConfig, connection: Connection, wallet: Wa
   }
 
   try {
-    const txHash = await sendAndConfirmTransaction(connection, swapTx, [wallet.payer], {
-      commitment: connection.commitment,
-      maxRetries: DEFAULT_SEND_TX_MAX_RETRIES,
+    const txHash = await sendWithFreshBlockhash(connection, swapTx, [wallet.payer], {
+      commitment: connection.commitment ?? 'processed',
+      confirmCommitment: 'confirmed',
     });
 
     console.log(`> Swap tx successful with tx hash: ${txHash}`);
@@ -522,9 +592,9 @@ export async function migrateDammV1(config: DbcConfig, connection: Connection, w
 
           console.log(`> Sending migration transaction [${i + 1}/${transactions.length}]...`);
 
-          const txHash = await sendAndConfirmTransaction(connection, transaction, [wallet.payer], {
-            commitment: connection.commitment,
-            maxRetries: DEFAULT_SEND_TX_MAX_RETRIES,
+          const txHash = await sendWithFreshBlockhash(connection, transaction, [wallet.payer], {
+            commitment: connection.commitment ?? 'processed',
+            confirmCommitment: 'confirmed',
           });
 
           console.log(`> Migration transaction [${i + 1}] successful with tx hash: ${txHash}`);
@@ -738,9 +808,9 @@ export async function migrateDammV1(config: DbcConfig, connection: Connection, w
 
       console.log(`> Sending ${label}...`);
 
-      const txHash = await sendAndConfirmTransaction(connection, transaction, [wallet.payer], {
-        commitment: connection.commitment,
-        maxRetries: DEFAULT_SEND_TX_MAX_RETRIES,
+      const txHash = await sendWithFreshBlockhash(connection, transaction, [wallet.payer], {
+        commitment: connection.commitment ?? 'processed',
+        confirmCommitment: 'confirmed',
       });
 
       console.log(`> ${label} successful with tx hash: ${txHash}`);
@@ -861,9 +931,9 @@ export async function migrateDammV2(config: DbcConfig, connection: Connection, w
 
           console.log(`> Sending migration transaction [${i + 1}/${transactions.length}]...`);
 
-          const txHash = await sendAndConfirmTransaction(connection, transaction, [wallet.payer], {
-            commitment: connection.commitment,
-            maxRetries: DEFAULT_SEND_TX_MAX_RETRIES,
+          const txHash = await sendWithFreshBlockhash(connection, transaction, [wallet.payer], {
+            commitment: connection.commitment ?? 'processed',
+            confirmCommitment: 'confirmed',
           });
 
           console.log(`> Migration transaction [${i + 1}] successful with tx hash: ${txHash}`);
@@ -901,13 +971,13 @@ export async function migrateDammV2(config: DbcConfig, connection: Connection, w
       console.log('> Migration simulation successful');
     } else {
       console.log('> Sending migration to DAMM V2 transaction...');
-      const migrateTxHash = await sendAndConfirmTransaction(
+      const migrateTxHash = await sendWithFreshBlockhash(
         connection,
         migrateTx,
         [wallet.payer, firstPositionNftKeypair, secondPositionNftKeypair],
         {
-          commitment: connection.commitment,
-          maxRetries: DEFAULT_SEND_TX_MAX_RETRIES,
+          commitment: connection.commitment ?? 'processed',
+          confirmCommitment: 'confirmed',
         }
       );
       console.log(`> Migration to DAMM V2 successful with tx hash: ${migrateTxHash}`);

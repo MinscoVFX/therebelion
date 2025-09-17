@@ -1,0 +1,104 @@
+name: Env Guard
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  env-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+      - name: Ensure pnpm (composite)
+        uses: ./.github/actions/ensure-pnpm
+      - name: Install deps (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: Prepare env file
+        run: |
+          if [ -f .env.ci ]; then cp .env.ci .env; else cp .env.example .env || true; fi
+          echo "Using generated .env:"; cat .env || true
+      - name: Validate environment variables
+        run: |
+          node <<'EOF'
+          import fs from 'fs';
+          const requiredJsonArrays = [
+            { key: 'ALLOWED_DBC_PROGRAM_IDS', mustInclude: ['dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN'] },
+            { key: 'ALLOWED_DAMM_V2_PROGRAM_IDS', mustInclude: ['cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG'] }
+          ];
+          const raw = fs.existsSync('.env') ? fs.readFileSync('.env','utf8').split(/\r?\n/) : [];
+          const kv = {};
+          for (const line of raw) {
+            if (!line.trim() || line.trim().startsWith('#')) continue;
+            const eq = line.indexOf('=');
+            if (eq === -1) continue;
+            const k = line.slice(0,eq).trim();
+            const v = line.slice(eq+1).trim();
+            if (k in kv) {
+              console.log(`DUPLICATE_KEY ${k}`);
+            }
+            kv[k]=v;
+          }
+          const errors = [];
+          const warnings = [];
+          function assert(cond,msg){ if(!cond) errors.push(msg); }
+          if (kv.RPC_URL === undefined) {
+            errors.push('RPC_URL missing');
+          } else if (!kv.RPC_URL || kv.RPC_URL === '""') {
+            errors.push('RPC_URL empty');
+          }
+          for (const spec of requiredJsonArrays) {
+            const val = kv[spec.key];
+            if (val === undefined) {
+              warnings.push(`${spec.key} absent (non-fatal)`);
+              continue;
+            }
+            try {
+              const arr = JSON.parse(val);
+              if (!Array.isArray(arr)) {
+                errors.push(`${spec.key} not an array`);
+                continue;
+              }
+              for (const must of spec.mustInclude) {
+                if (!arr.includes(must)) {
+                  errors.push(`${spec.key} missing required id ${must}`);
+                }
+              }
+            } catch (e) {
+              errors.push(`${spec.key} invalid JSON`);
+            }
+          }
+          const summaryLines = [];
+          summaryLines.push('| Status | Detail |');
+          summaryLines.push('|--------|--------|');
+          if (errors.length) for (const e of errors) summaryLines.push(`| ERROR | ${e} |`);
+          if (warnings.length) for (const w of warnings) summaryLines.push(`| WARN | ${w} |`);
+          if (!errors.length && !warnings.length) summaryLines.push('| OK | All checks passed |');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY || '', '### Env Guard Summary\n' + summaryLines.join('\n') + '\n');
+          if (errors.length) {
+            console.error('ENV_VALIDATION_FAILED');
+            for (const e of errors) console.error(' -', e);
+            process.exit(1);
+          }
+          if (warnings.length) {
+            console.log('ENV_VALIDATION_WARNINGS');
+            for (const w of warnings) console.log(' -', w);
+          }
+          console.log('ENV_VALIDATION_OK');
+          EOF
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint --no-fix || true
+      - name: Build
+        run: pnpm build

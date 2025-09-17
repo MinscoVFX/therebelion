@@ -1,0 +1,63 @@
+name: Claim DBC Bonding-Curve Leftovers
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '15 * * * *' # hourly at :15 (UTC)
+
+concurrency:
+  group: claim-dbc-leftovers
+  cancel-in-progress: false
+
+jobs:
+  claim-leftovers:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      RPC_URL: ${{ secrets.RPC_URL }}
+      BASE_MINTS: ${{ secrets.BASE_MINTS }}
+      DBC_CONFIG_KEYS: ${{ secrets.DBC_CONFIG_KEYS }}
+      DBC_PROGRAM_IDS: ${{ secrets.DBC_PROGRAM_IDS }}
+      LEFTOVER_RECEIVER: ${{ secrets.LEFTOVER_RECEIVER }}
+      PK_B58: ${{ secrets.PK_B58 }}
+      PRIVATE_KEY_B58: ${{ secrets.PRIVATE_KEY_B58 }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm (pre-cache guard)
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Ensure pnpm (composite)
+        uses: ./.github/actions/ensure-pnpm
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          need() { [ -n "${!1:-}" ] || { echo "::error::$1 required"; exit 1; }; }
+          need RPC_URL
+          need BASE_MINTS
+          need DBC_CONFIG_KEYS
+          need LEFTOVER_RECEIVER
+          if [ -z "${PK_B58:-}" ] && [ -z "${PRIVATE_KEY_B58:-}" ]; then
+            echo "::error::Provide PK_B58 (preferred) or PRIVATE_KEY_B58"; exit 1
+          fi
+          if [ -z "${DBC_PROGRAM_IDS:-}" ]; then
+            echo "::notice::DBC_PROGRAM_IDS not set; using SDK defaults."
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      # Use dlx so we don't depend on 'tsx' being in your package.json
+      - name: Claim leftovers
+        run: pnpm dlx tsx studio/src/scripts/dbc/claim_leftovers.ts

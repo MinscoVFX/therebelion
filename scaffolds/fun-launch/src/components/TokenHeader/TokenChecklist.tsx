@@ -4,9 +4,9 @@ import {
   AUDIT_TOP_HOLDERS_THRESHOLD,
   getAuditScoreColorCn,
   isAuditTopHoldersPass,
+  getAuditScore,
 } from '../Explore/pool-utils';
 import React from 'react';
-import { getAuditScore } from '../Explore/pool-utils';
 import { cn } from '@/lib/utils';
 import { HoverPopover, HoverPopoverContent, HoverPopoverTrigger } from '../ui/HoverPopover';
 import { formatReadablePercentChange } from '@/lib/format/number';

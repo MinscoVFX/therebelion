@@ -2,17 +2,17 @@ import { ApeClient } from '@/components/Explore/client';
 import {
   GetGemsTokenListRequest,
   GetTxsResponse,
-  ResolvedTokenListFilters,
+  ResolvedTokenListFilters as _ResolvedTokenListFilters,
   TokenListFilters,
-  TokenListSortBy,
-  TokenListSortDir,
+  TokenListSortBy as _TokenListSortBy,
+  TokenListSortDir as _TokenListSortDir,
   TokenListTimeframe,
   resolveTokenListFilters,
 } from './types';
 import { ExtractQueryData } from '@/types/fancytypes';
 
-export type QueryData<T> = T extends (...args: infer OptionsArgs) => {
-  queryFn: (...args: infer Args) => Promise<infer R>;
+export type QueryData<T> = T extends (...args: infer _OptionsArgs) => {
+  queryFn: (...args: infer _Args) => Promise<infer R>;
 }
   ? R
   : never;
@@ -119,7 +119,7 @@ export const ApeQueries = {
       getNextPageParam: (lastPage: GetTxsResponse) => {
         // TODO: update to use BE api response when its returned
         if (lastPage?.txs.length === 0) {
-          return;
+          return undefined;
         }
         const lastTs = lastPage?.txs[lastPage?.txs.length - 1]?.timestamp;
         return {

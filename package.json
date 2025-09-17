@@ -1,52 +1,82 @@
 {
-  "name": "meteora-invent",
-  "version": "0.0.0",
-  "private": true,
-  "description": "Meteora Invent - Monorepo for studio actions and scaffold templates",
-  "author": "Dann Wee <dann@raccoons.dev>",
-  "license": "ISC",
+  "name": "therebelion-launchpad",
+  "version": "1.0.0",
+  "description": "Solana launchpad with Meteora DBC integration",
+  "type": "module",
+  "main": "dist/index.js",
   "packageManager": "pnpm@10.14.0",
-  "engines": {
-    "node": ">=18",
-    "pnpm": ">=10"
-  },
   "scripts": {
-    "build": "turbo build",
-    "dev": "turbo dev",
-    "lint": "turbo lint",
-    "format": "turbo format",
-    "format:check": "turbo format:check",
-    "type-check": "tsc --noEmit -p tsconfig.typecheck.json",
-    "clean": "turbo clean && rm -rf node_modules && rm -rf test-ledger",
-    "studio": "pnpm --filter @meteora-invent/studio",
-    "scaffold": "pnpm --filter '@meteora-invent/scaffold-*'",
-    "validate-env": "turbo validate-env",
-    "studio:damm-v1": "pnpm --filter @meteora-invent/studio run damm-v1:*",
-    "studio:damm-v2": "pnpm --filter @meteora-invent/studio run damm-v2:*",
-    "studio:dlmm": "pnpm --filter @meteora-invent/studio run dlmm:*",
-    "studio:dbc": "pnpm --filter @meteora-invent/studio run dbc:*",
-    "studio:alpha-vault": "pnpm --filter @meteora-invent/studio run alpha-vault:*",
-    "prepare": "husky install",
+    "build": "tsc && tsc-alias && turbo build",
+    "vercel-build": "pnpm --filter @meteora-invent/scaffold-fun-launch build",
+    "vercel:health-check": "node -e \"const u=process.env.APP_URL||process.env.VERCEL_URL||'';if(!u){console.error('APP_URL/VERCEL_URL missing');process.exit(1);}fetch((u.startsWith('http')?u:'https://'+u)+'/api/health').then(r=>r.json()).then(j=>{console.log(j);if(!j.ok){console.error('Health not ok');process.exit(1);}}).catch(e=>{console.error(e);process.exit(1);});\"",
+    "dbc:introspect": "tsx scripts/dbc-introspect.ts",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "coverage": "vitest run --coverage",
+    "ci:coverage": "node scripts/load-env-ci.mjs pnpm coverage",
+    "lint": "pnpm -w exec eslint . --ext .ts,.tsx,.js --max-warnings=0",
+    "typecheck": "pnpm -w exec tsc --noEmit",
+    "format": "prettier --write . && turbo format",
+    "format:check": "prettier --check . && turbo format:check",
     "syncpack:check": "syncpack list-mismatches",
-    "syncpack:fix": "syncpack fix-mismatches"
+    "clean": "rimraf dist",
+    "env:check": "node scripts/env-check.mjs",
+    "preflight": "pnpm typecheck && pnpm lint && pnpm test:run",
+    "health": "pnpm preflight",
+    "health:full": "pnpm env:check && pnpm health",
+    "ci:env": "node scripts/load-env-ci.mjs node -e 'console.log(\"env loaded\")'",
+    "ci:lint": "node scripts/load-env-ci.mjs pnpm lint",
+    "ci:typecheck": "node scripts/load-env-ci.mjs pnpm typecheck",
+    "ci:test": "node scripts/load-env-ci.mjs pnpm test:run",
+    "ci:build": "node scripts/load-env-ci.mjs pnpm build",
+    "ci:all": "pnpm ci:lint && pnpm ci:typecheck && pnpm ci:test && pnpm ci:build",
+    "coverage:badge": "pnpm coverage && node scripts/update-coverage-badge.mjs",
+    "ci:coverage:badge": "pnpm ci:coverage && node scripts/update-coverage-badge.mjs",
+    "smoke": "node scripts/prod-smoke.mjs",
+    "ci:smoke": "APP_URL=$APP_URL node scripts/prod-smoke.mjs"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.30.1",
+    "@meteora-ag/cp-amm-sdk": "^1.1.0",
+    "@meteora-ag/dlmm": "^1.0.0",
+    "@meteora-ag/dynamic-bonding-curve-sdk": "^1.3.5",
+    "@solana/spl-token": "^0.4.13",
+    "@solana/web3.js": "^1.98.2",
+    "bn.js": "^5.2.1",
+    "bs58": "^5.0.0",
+    "dotenv": "^16.4.5",
+    "zod": "^3.25.74"
   },
   "devDependencies": {
-    "@types/node": "^24.3.0",
-    "eslint": "^9.34.0",
-    "husky": "^9.1.7",
-    "lint-staged": "^16.1.5",
-    "prettier": "^3.6.2",
-    "syncpack": "^13.0.4",
-    "turbo": "^2.5.6",
-    "typescript": "^5.9.2"
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/react-hooks": "^8.0.1",
+    "@types/bn.js": "^5.1.5",
+    "@types/node": "^20.19.4",
+    "@typescript-eslint/eslint-plugin": "^8.43.0",
+    "@typescript-eslint/parser": "^8.43.0",
+    "@vitest/coverage-v8": "^1.6.0",
+    "eslint": "^8.57.0",
+    "eslint-import-resolver-typescript": "^3.10.1",
+    "jsdom": "^27.0.0",
+    "prettier": "^3.3.2",
+    "rimraf": "^5.0.7",
+    "syncpack": "^12.3.2",
+    "tsc-alias": "^1.8.10",
+    "tsx": "^4.15.7",
+    "turbo": "^2.3.0",
+    "typescript": "^5.9.2",
+    "vitest": "^1.6.0"
   },
-  "lint-staged": {
-    "*.{js,jsx,ts,tsx}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
-    "*.{json,md,yml,yaml}": [
-      "prettier --write"
-    ]
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@reown/appkit": "1.7.12",
+      "@reown/appkit-scaffold-ui": "1.7.12"
+    }
   }
 }

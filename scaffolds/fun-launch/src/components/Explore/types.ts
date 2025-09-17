@@ -130,7 +130,7 @@ export type TokenListFilters = z.Infer<typeof TokenListFiltersSchema>;
 
 type TokenListFilter = keyof TokenListFilters;
 
-export function resolveTokenListFilter(filter: TokenListFilter, timeframe: TokenListTimeframe) {
+export function resolveTokenListFilter(filter: TokenListFilter, _timeframe: TokenListTimeframe) {
   return filter;
 }
 

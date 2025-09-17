@@ -1,20 +1,17 @@
 # Meteora Studio
 
-A collection of actions for interacting with Meteora's programs to innovate and create token
-launches. Part of the **Meteora Invent** toolkit.
+A collection of scripts for interacting with Meteora's programs to innovate and create token
+launches. Part of the **Meteora Invent** toolkit - the most secure, sustainable and composable
+liquidity layer on Solana.
 
 ## 🏗️ Structure
 
-Studio consists of 4 main pool types, each with dedicated actions and configurations:
+Studio consists of 4 main pool types, each with dedicated scripts and configurations:
 
 - **DLMM** (Dynamic Liquidity Market Maker) - Dynamic fees and precise liquidity concentration
 - **DAMM V2** (Dynamic AMM V2) - Enhanced constant product AMM with advanced features
 - **DAMM V1** (Dynamic AMM V1) - Constant product AMM with lending integration
 - **DBC** (Dynamic Bonding Curve) - Permissionless launch pool protocol
-
-Studio also contains a collection of actions for interacting with other Meteora programs:
-
-- **Alpha Vault** - A complementary anti-bot mechanism used together with a Launch Pool.
 
 ## 🚀 Getting Started
 
@@ -40,41 +37,28 @@ pnpm install
 cp studio/.env.example studio/.env
 ```
 
-Add your private key and RPC URL to the `.env` file.
+Add your private key and RPC URL to the `.env` file. RPC is optional but highly encouraged. Visit
+[Helius](https://www.helius.dev/) to get an RPC URL.
 
-2. Optional: Start a Local Test Validator
-
-_You can also run the studio actions on localnet - http://localhost:8899 with the following command_
-
-```bash
-pnpm studio start-test-validator
-```
-
-3. Generate a keypair from your private key:
+2. Generate a keypair from your private key:
 
 ```bash
-# For devnet (airdrops 5 SOL)
-pnpm generate-keypair --network devnet
-
-# For localnet (airdrops 5 SOL)
-# Ensure that you have already started the local validator with pnpm start-test-validator
-pnpm generate-keypair --network localnet
+pnpm studio generate-keypair
 ```
 
-4. Configure the config files in the `studio/config` directory:
+3. Configure the config files in the `studio/config` directory:
 
 - [DLMM Config](./config/dlmm_config.jsonc)
 - [DAMM v2 Config](./config/damm_v2_config.jsonc)
 - [DAMM v1 Config](./config/damm_v1_config.jsonc)
 - [DBC Config](./config/dbc_config.jsonc)
-- [Alpha Vault Config](./config/alpha_vault_config.jsonc)
 
 **Note:** You can use the provided example configurations as a starting point. Make sure to replace
 the placeholders with your actual values.
 
-## 📋 Available Actions
+## 📋 Available Scripts
 
-### DLMM Actions
+### DLMM Scripts
 
 **Create a Customizable Permissionless DLMM Pool**
 
@@ -100,7 +84,7 @@ pnpm dlmm-seed-liquidity-single-bin --config ./config/dlmm_config.jsonc
 pnpm dlmm-set-pool-status --config ./config/dlmm_config.jsonc
 ```
 
-### DAMM v2 Actions
+### DAMM v2 Scripts
 
 **Create a Balanced Constant Product Pool**
 
@@ -114,43 +98,84 @@ pnpm damm-v2-create-balanced-pool --config ./config/damm_v2_config.jsonc
 pnpm damm-v2-create-one-sided-pool --config ./config/damm_v2_config.jsonc
 ```
 
-**Split Position**
+**Remove Liquidity (Programmatic Builder)**
 
-```bash
-pnpm damm-v2-split-position --config ./config/damm_v2_config.jsonc
+While removal is typically handled by frontends, a low-level helper `buildRemoveLiquidityIx` is
+exported by `@meteora-invent/studio/lib/damm_v2` to compose removal instructions server-side.
+
+Example (pseudo-code):
+
+```ts
+import { buildRemoveLiquidityIx } from '@meteora-invent/studio/lib/damm_v2';
+// ... obtain connection & all required public keys ...
+const ixs = await buildRemoveLiquidityIx({
+  connection,
+  programId, // DAMM v2 program id
+  pool, // pool address
+  lpMint, // LP mint
+  user, // wallet owner
+  userLpAccount, // user's LP token account
+  userAToken, // user's token A ATA
+  userBToken, // user's token B ATA
+  tokenAMint,
+  tokenBMint,
+  tokenAVault,
+  tokenBVault,
+  // Removal amount can be specified in one of four ways (priority order):
+  // 1. liquidityDelta (advanced raw liquidity units)
+  // 2. percent (e.g. 25 for 25%)
+  // 3. lpAmount (legacy param kept for backward compatibility)
+  // 4. omit all -> remove 100% of discovered position liquidity
+  percent: 25, // remove 25% of position liquidity
+  // lpAmount: 1000n,
+  // liquidityDelta: 123456789n,
+  // positionPubkey: someSpecificPosition, // optional explicit position; skips discovery
+});
 ```
 
-**Claim Position Fee**
+Returned value is an array of `TransactionInstruction` you can embed into a transaction.
 
-```bash
-pnpm damm-v2-claim-position-fee --config ./config/damm_v2_config.jsonc
-```
+> NOTES:
+>
+> - If `positionPubkey` is provided discovery is skipped.
+> - If multiple sizing fields are provided, precedence is: `liquidityDelta` > `percent` >
+>   `lpAmount`.
+> - If none of `lpAmount | percent | liquidityDelta` are provided the builder removes 100% of the
+>   position liquidity.
 
-**Add Liquidity**
-
-```bash
-pnpm damm-v2-add-liquidity --config ./config/damm_v2_config.jsonc
-```
-
-**Remove Liquidity**
-
-```bash
-pnpm damm-v2-remove-liquidity --config ./config/damm_v2_config.jsonc
-```
-
-**Close Position**
-
-```bash
-pnpm damm-v2-close-position --config ./config/damm_v2_config.jsonc
-```
-
-### DAMM v1 Actions
+### DAMM v1 Scripts
 
 **Create a Constant Product Pool**
 
 ```bash
 pnpm damm-v1-create-pool --config ./config/damm_v1_config.jsonc
 ```
+
+### Performance & Native Binding Notes
+
+During builds you may observe messages related to loading `next-swc` native bindings or wasm
+fallbacks. This originates from Next.js attempting to load platform-specific Rust compiled binaries.
+If it falls back to wasm you still get correct behavior, only slightly slower incremental builds.
+
+Tips:
+
+1. Keep your workspace architecture aligned with the lockfile generation platform (avoid mixing
+   arm64 vs x64 artifacts).
+2. To force wasm only (diagnostic) you can set `NEXT_DISABLE_SWC_WASM=1` but generally you want
+   native.
+3. Ensure no container volume permissions prevent loading `.node` binary files inside `@next/swc-*`
+   packages.
+4. For CI, prefer a clean `pnpm install --frozen-lockfile` per architecture to avoid stale native
+   artifacts.
+
+You can introspect which flavor loaded at runtime by adding a small check (example only):
+
+```ts
+import { getBinaryMetadata } from 'next/dist/build/swc';
+console.log('swc target triple:', getBinaryMetadata().target);
+```
+
+If `target` is undefined you are likely on the wasm fallback.
 
 **Lock Liquidity**
 
@@ -170,7 +195,7 @@ pnpm damm-v1-create-stake2earn-farm --config ./config/damm_v1_config.jsonc
 pnpm damm-v1-lock-liquidity-stake2earn --config ./config/damm_v1_config.jsonc
 ```
 
-### DBC Actions
+### DBC Scripts
 
 **Create a DBC Config**
 
@@ -208,13 +233,18 @@ pnpm dbc-migrate-to-damm-v2 --config ./config/dbc_config.jsonc
 pnpm dbc-swap --config ./config/dbc_config.jsonc
 ```
 
-### Alpha Vault Actions
+## 🩺 Runtime Health (Scaffold)
 
-**Create an Alpha Vault**
+In the `fun-launch` scaffold a `/api/runtime-health` endpoint reports availability of the Studio
+runtime submodules (`damm_v2`, `dbc`). This is useful for deployment diagnostics when dynamic
+imports fail. The endpoint returns a JSON object like:
 
-```bash
-pnpm alpha-vault-create --config ./config/alpha_vault_config.jsonc
+```json
+{ "damm_v2": true, "dbc": true }
 ```
+
+If a value is `false`, ensure the Studio package is built
+(`pnpm --filter @meteora-invent/studio build`).
 
 ## 📖 Program Details
 
@@ -244,13 +274,6 @@ Vaults. DAMM v2 is a new program, and not an upgrade of the Dynamic AMM v1 progr
 DLMM (Dynamic Liquidity Market Maker) gives LPs access to dynamic fees to capitalize on volatility,
 and precise liquidity concentration all in real-time, with the flexibility to select their preferred
 volatility strategy.
-
-### Alpha Vault
-
-Alpha Vault is a complementary anti-bot mechanism used together with a Launch Pool that provides
-early access for genuine supporters to deposit and purchase tokens before the pool starts trading,
-thereby getting tokens at the earliest price and helping to safeguard the token launch against
-sniper bots.
 
 ## 🤝 Contributing
 

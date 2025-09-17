@@ -1,3 +1,4 @@
+/* eslint-env node */
 module.exports = {
   semi: true,
   trailingComma: 'es5',
@@ -17,21 +18,21 @@ module.exports = {
     {
       files: '*.json',
       options: {
-        printWidth: 80
-      }
+        printWidth: 80,
+      },
     },
     {
       files: '*.jsonc',
       options: {
         printWidth: 80,
-        trailingComma: 'none'
-      }
+        trailingComma: 'none',
+      },
     },
     {
       files: '*.md',
       options: {
-        proseWrap: 'always'
-      }
-    }
-  ]
+        proseWrap: 'always',
+      },
+    },
+  ],
 };
