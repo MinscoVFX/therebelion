@@ -17,6 +17,7 @@ interface ExitBody {
   percent?: number; // optional percent of liquidity to remove (default: 100)
   priorityMicros?: number; // optional priority fee (clamped)
   simulateOnly?: boolean; // optional simulation flag
+  slippageBps?: number; // optional: reserved for future min-out thresholds
 }
 
 /**
@@ -41,6 +42,12 @@ export async function POST(req: NextRequest) {
         'https://api.mainnet-beta.solana.com',
       'confirmed'
     );
+
+    // Accept and clamp optional slippageBps for forward-compatibility (currently unused/no-op)
+    const slippageBps = Number.isFinite((body as any).slippageBps as any)
+      ? Math.max(0, Math.min(Number((body as any).slippageBps), 10_000))
+      : undefined;
+    void slippageBps;
 
     const cp = new CpAmm(connection);
     const helper: any =
