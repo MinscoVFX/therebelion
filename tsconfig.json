@@ -17,7 +17,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": false,
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "types": ["node", "vitest"],
     "baseUrl": ".",
     "paths": {
@@ -30,7 +30,7 @@
     },
     "jsx": "react-jsx"
   },
-  "include": ["src/**/*", "tests/**/*", "scaffolds/**/*"],
+  "include": ["src/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"],
   "ts-node": {
     "esm": true,

@@ -673,7 +673,9 @@ const PoolCreationSuccess = () => {
           </Link>
           <button
             onClick={() => {
-              window.location.reload();
+              if (typeof window !== 'undefined') {
+                window.location.reload();
+              }
             }}
             className="cursor-pointer bg-gradient-to-r from-pink-500 to-purple-500 px-6 py-3 rounded-xl font-medium hover:opacity-90 transition"
           >

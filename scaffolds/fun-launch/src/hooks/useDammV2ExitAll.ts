@@ -103,7 +103,10 @@ export function useDammV2ExitAll() {
           throw new Error(`signing failed: ${e?.message || e}`);
         }
 
-        let conn: Connection = (window as any)._solanaWeb3ConnectionOverride;
+        let conn: Connection;
+        if (typeof window !== 'undefined' && (window as any)._solanaWeb3ConnectionOverride) {
+          conn = (window as any)._solanaWeb3ConnectionOverride;
+        }
         if (!conn) {
           let endpoint: string;
           try {
@@ -112,7 +115,9 @@ export function useDammV2ExitAll() {
             endpoint = 'https://api.mainnet-beta.solana.com';
           }
           conn = new Connection(endpoint, 'confirmed');
-          (window as any)._solanaWeb3ConnectionOverride = conn;
+          if (typeof window !== 'undefined') {
+            (window as any)._solanaWeb3ConnectionOverride = conn;
+          }
         }
 
         let sent = 0;

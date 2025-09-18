@@ -98,8 +98,8 @@ export function useUniversalExit() {
               ? variants
               : [
                   {
-                    tx: items[i].tx,
-                    lastValidBlockHeight: items[i].lastValidBlockHeight,
+                    tx: items[i]!.tx,
+                    lastValidBlockHeight: items[i]!.lastValidBlockHeight,
                     priorityMicros: undefined as unknown as number,
                   },
                 ];
@@ -107,7 +107,9 @@ export function useUniversalExit() {
           for (let a = 0; a < attempts.length; a++) {
             try {
               // Deserialize this attempt’s tx
-              const tryTx = VersionedTransaction.deserialize(Buffer.from(attempts[a].tx, 'base64'));
+              const tryTx = VersionedTransaction.deserialize(
+                Buffer.from(attempts[a]!.tx!, 'base64')
+              );
               // Sign single tx with fallback: prefer signAllTransactions when available for isolation benefits
               let signedOne: VersionedTransaction;
               if (typeof walletLike.signAllTransactions === 'function') {
@@ -141,7 +143,7 @@ export function useUniversalExit() {
                 {
                   signature: sig,
                   blockhash: tryTx.message.recentBlockhash!,
-                  lastValidBlockHeight: attempts[a].lastValidBlockHeight,
+                  lastValidBlockHeight: attempts[a]!.lastValidBlockHeight,
                 },
                 'confirmed'
               );

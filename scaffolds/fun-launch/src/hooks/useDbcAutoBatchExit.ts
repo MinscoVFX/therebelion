@@ -155,7 +155,7 @@ export function useDbcAutoBatchExit() {
               currentIndex: i,
               items: s.items.map((it, idx) => (idx === i ? { ...it, status: 'signed' } : it)),
             }));
-            const sig = await connection.sendRawTransaction(signedTxs[i].serialize(), {
+            const sig = await connection.sendRawTransaction(signedTxs[i]!.serialize(), {
               skipPreflight: false,
               maxRetries: 0,
             });
@@ -168,8 +168,8 @@ export function useDbcAutoBatchExit() {
             await connection.confirmTransaction(
               {
                 signature: sig,
-                blockhash: deserialized[i].message.recentBlockhash!,
-                lastValidBlockHeight: built[i].lastValidBlockHeight,
+                blockhash: deserialized[i]!.message.recentBlockhash!,
+                lastValidBlockHeight: built[i]!.lastValidBlockHeight,
               },
               'confirmed'
             );

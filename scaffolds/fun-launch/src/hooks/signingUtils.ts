@@ -46,12 +46,12 @@ export async function signTransactionsAdaptive(
     const tx = txs[i];
     try {
       if (!wallet.signTransaction) throw new Error('signTransaction not supported by wallet');
-      const signed = await wallet.signTransaction(tx);
+      const signed = await wallet.signTransaction(tx!);
       result.push(signed);
       errors.push(null);
     } catch (e: any) {
       // Push original tx unsiged placeholder so index alignment stays stable.
-      result.push(tx);
+      result.push(tx!);
       errors.push(e?.message || 'sign failed');
     }
   }

@@ -7,7 +7,7 @@ import { clusterApiUrl } from '@solana/web3.js';
 import '@solana/wallet-adapter-react-ui/styles.css';
 import '../src/styles/globals.css';
 
-const network = WalletAdapterNetwork.Devnet;
+const network = WalletAdapterNetwork.Mainnet;
 const endpoint = clusterApiUrl(network);
 const queryClient = new QueryClient({
   defaultOptions: {

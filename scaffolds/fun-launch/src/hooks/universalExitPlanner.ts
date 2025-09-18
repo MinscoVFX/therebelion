@@ -449,8 +449,8 @@ export async function planUniversalExits(opts: PlanOptions): Promise<UniversalEx
   for (const pool of Object.keys(byPool)) {
     const segment = byPool[pool];
     // simple stable partition: claims first
-    ordered.push(...segment.filter((t) => t.kind === 'claim'));
-    ordered.push(...segment.filter((t) => t.kind === 'withdraw'));
+    ordered.push(...segment!.filter((t) => t.kind === 'claim'));
+    ordered.push(...segment!.filter((t) => t.kind === 'withdraw'));
   }
 
   return ordered;
