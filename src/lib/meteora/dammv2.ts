@@ -1,5 +1,5 @@
 // DAMM v2 helpers (stubs only)
-import { buildDammV2RemoveAllLpIxs } from '../../../scaffolds/fun-launch/src/server/dammv2-adapter';
+import { buildDammV2RemoveAllLpIxs } from '../../server/dammv2-adapter';
 import type { Connection, PublicKey } from '@solana/web3.js';
 import type { PoolKeys } from './universalExit';
 export function getDammState() {
