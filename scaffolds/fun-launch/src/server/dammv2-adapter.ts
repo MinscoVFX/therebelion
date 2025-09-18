@@ -35,9 +35,11 @@ function pickRemoveBuilder(
 ):
   | ((args: Record<string, unknown>) => Promise<TransactionInstruction | TransactionInstruction[]>)
   | null {
+  // Updated priority order to match latest Meteora Actions API patterns
   return (
     mod?.buildRemoveLiquidityIx ||
     mod?.removeLiquidityIx ||
+    mod?.actions?.removeLiquidity || // New Actions API pattern
     (mod?.builders && (mod.builders.buildRemoveLiquidityIx || mod.builders.removeLiquidity)) ||
     null
   );
@@ -105,6 +107,8 @@ export async function buildDammV2RemoveAllLpIxs(args: {
     pool: poolKeys.pool,
     authorityPda: poolKeys.authorityPda,
     lpMint: poolKeys.lpMint,
+    tokenAMint: poolKeys.tokenAMint, // Added for Actions API compatibility
+    tokenBMint: poolKeys.tokenBMint, // Added for Actions API compatibility
     tokenAVault: poolKeys.tokenAVault,
     tokenBVault: poolKeys.tokenBVault,
     user: owner,
@@ -113,6 +117,9 @@ export async function buildDammV2RemoveAllLpIxs(args: {
     userBToken,
     lpAmount,
     tokenProgram: TOKEN_PROGRAM_ID,
+    // Actions API compatibility options
+    slippageBps: 50, // 0.5% default slippage
+    connection, // Some Actions API methods require connection
   });
 
   if (!removeIxs) throw new Error('Remove LP builder returned no instructions.');
