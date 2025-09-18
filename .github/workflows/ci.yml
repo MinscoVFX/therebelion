@@ -199,13 +199,9 @@ jobs:
       - name: Append coverage summary
         if: always()
         run: |
-          if [ -f coverage/coverage-summary.json ]; then
-            echo '### Coverage Summary' >> $GITHUB_STEP_SUMMARY
-            echo '\n' >> $GITHUB_STEP_SUMMARY
-            node -e "const s=require('./coverage/coverage-summary.json').total; console.log('| Metric | % | Covered/Total |'); console.log('|--------|---|---------------|'); for (const k of ['lines','statements','functions','branches']) { const m=s[k]; if(!m) continue; console.log(`| ${k} | ${m.pct} | ${m.covered}/${m.total} |`); }" >> $GITHUB_STEP_SUMMARY
-          else
-            echo 'No coverage summary found.' >> $GITHUB_STEP_SUMMARY
-          fi
+          echo '### Coverage Summary' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          node scripts/append-coverage-summary.mjs >> $GITHUB_STEP_SUMMARY
 
       - name: Coverage delta vs baseline
         if: always()
