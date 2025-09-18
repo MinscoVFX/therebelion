@@ -189,9 +189,9 @@ jobs:
           COV_MIN_STATEMENTS: 24
           COV_MIN_FUNCTIONS: 49
           COV_MIN_BRANCHES: 49
-          # Temporarily disable ratchet and allow small tolerance so CI passes while we add tests
+          # Use small tolerance to allow coverage within 2% of thresholds
           COV_RATCHET: 0
-          COV_TOLERANCE: 4
+          COV_TOLERANCE: 2
           # Allow updating baseline automatically only on direct pushes to main (not pull requests)
           COV_UPDATE_BASELINE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && '1' || '0' }}
         run: node scripts/coverage-threshold-check.mjs
