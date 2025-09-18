@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useUnifiedWalletContext } from '@jup-ag/wallet-adapter';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useUniversalExit } from '../../hooks/useUniversalExit';
@@ -25,6 +25,14 @@ export default function ExitPage() {
   });
   const { run: runUniversalExit, state: universalState } = useUniversalExit();
   const { positions: derivedPositions, loading: derivedLoading } = useDerivedDammV2Pools();
+
+  // Whether a NEXT_PUBLIC_MIGRATED_DBC_POOLS env var is provided to the client build.
+  const hasMigratedPoolsEnv =
+    typeof process !== 'undefined' &&
+    Boolean(
+      // NEXT_PUBLIC_ prefix is available client-side when set at build/deploy time
+      (process.env as any).NEXT_PUBLIC_MIGRATED_DBC_POOLS
+    );
 
   // restore prefs
   useEffect(() => {
@@ -75,6 +83,14 @@ export default function ExitPage() {
         <span className="font-semibold"> Universal Exit</span> below (claims DBC fees and removes
         DAMM v2 liquidity).
       </div>
+      {!hasMigratedPoolsEnv && (
+        <div className="mb-4 rounded-md border border-yellow-500/30 bg-yellow-950/20 p-3 text-yellow-300 text-xs">
+          <strong>Note:</strong> `NEXT_PUBLIC_MIGRATED_DBC_POOLS` is not set in this build. The
+          Universal Exit flow will discover positions from your wallet. To whitelist migrated pools
+          (silence planner warnings), set the <code>NEXT_PUBLIC_MIGRATED_DBC_POOLS</code>
+          environment variable in Vercel as a comma-separated list of pool addresses and redeploy.
+        </div>
+      )}
       <p className="text-neutral-400 mb-6 text-sm">
         The dedicated one‑click endpoint returns 501 to steer users to the Universal Exit flow
         during migration. Universal Exit will automatically discover your positions and perform
@@ -156,29 +172,83 @@ export default function ExitPage() {
               // Defensive wrapper: ensure any error is surfaced to the user and console
               try {
                 // log immediate click for quick feedback in console
+                // include prefs, positions summary, and current state to aid debugging
                 // eslint-disable-next-line no-console
                 console.log('Universal Exit clicked', { prefs });
-                await runUniversalExit({
+                // eslint-disable-next-line no-console
+                console.log(
+                  'Universal Exit - derivedPositions (count)',
+                  derivedPositions?.length ?? 0
+                );
+                try {
+                  // eslint-disable-next-line no-console
+                  console.debug(
+                    'Universal Exit - derivedPositions (preview)',
+                    JSON.parse(JSON.stringify(derivedPositions?.slice(0, 5) ?? []))
+                  );
+                } catch {
+                  // ignore circular structure issues
+                }
+                // eslint-disable-next-line no-console
+                console.log('Universal Exit - universalState', universalState);
+
+                const payload = {
                   slippageBps: prefs.slippageBps,
                   priorityMicros: prefs.priorityMicros,
                   include: { dbc: true, dammv2: true },
-                });
+                };
+                // eslint-disable-next-line no-console
+                console.log('Universal Exit - payload', payload);
+
+                // If migrated pools env is not set, provide actionable console guidance once.
+                if (!hasMigratedPoolsEnv) {
+                  // eslint-disable-next-line no-console
+                  console.info(
+                    '[universal-exit] To set migrated pools for this deployment (Vercel):'
+                  );
+                  // eslint-disable-next-line no-console
+                  console.info(
+                    "Set the Vercel Environment Variable 'NEXT_PUBLIC_MIGRATED_DBC_POOLS' to a comma-separated list of pool addresses (e.g. POOL_PUBKEY1,POOL_PUBKEY2) and redeploy."
+                  );
+                }
+
+                await runUniversalExit(payload);
+
+                // eslint-disable-next-line no-console
+                console.info('Universal Exit completed successfully');
               } catch (err: any) {
                 // Surface error so users don't see a silent failure
                 // eslint-disable-next-line no-console
                 console.error('Universal Exit failed', err);
                 try {
+                  // prefer stack for debugging but fall back to message
+                  const msg = err?.stack || err?.message || String(err) || 'Universal Exit failed';
                   // show a simple alert fallback if no toast system available
-                  alert(err?.message || String(err) || 'Universal Exit failed');
+                  alert(msg);
                 } catch {
                   // ignore alert failure
                 }
               }
             }}
-            disabled={universalState.running}
-            className="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50"
+            disabled={universalState.running || derivedLoading || derivedPositions.length === 0}
+            className={`px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 ${
+              derivedLoading || derivedPositions.length === 0 ? 'cursor-not-allowed' : ''
+            }`}
+            title={
+              derivedLoading
+                ? 'Scanning wallet for DAMM v2 positions…'
+                : derivedPositions.length === 0
+                  ? 'No DAMM v2 positions detected in your wallet'
+                  : undefined
+            }
           >
-            {universalState.running ? 'Exiting…' : 'Universal Exit (DBC fees + DAMM v2 withdraw)'}
+            {universalState.running
+              ? 'Exiting…'
+              : derivedLoading
+                ? 'Scanning…'
+                : derivedPositions.length === 0
+                  ? 'No DAMM v2 positions'
+                  : 'Universal Exit (DBC fees + DAMM v2 withdraw)'}
           </button>
         </div>
       </div>

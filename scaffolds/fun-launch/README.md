@@ -108,6 +108,25 @@ You can manage your environment variables in Vercel:
 3. Add each variable from your `.env` file
 4. You can set different values for Production, Preview, and Development environments
 
+#### Recommended Vercel environment variables for Fun Launch
+
+Add the following (at minimum) to your Vercel project settings -> Environment Variables:
+
+- `RPC_URL` or `RPC_ENDPOINT` (server RPC used by API routes)
+- `NEXT_PUBLIC_RPC_URL` (optional client RPC endpoint; only if the client needs direct RPC)
+- `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID`, `R2_BUCKET` (if using R2)
+- `POOL_CONFIG_KEY`
+- `MIGRATED_DBC_POOLS` (optional) — comma-separated list of migrated DBC pool addresses. Set this if
+  you want the DAMM v2 exit planner to only consider a curated list of pools and to remove the
+  `[universal-exit] MIGRATED_DBC_POOLS not set` warning.
+
+Notes:
+
+- Do NOT store private keys (like wallet private keys) in Vercel envs. Use secrets only for
+  server-side API keys (RPC providers, R2 keys, etc.).
+- After updating Vercel environment variables, trigger a redeploy so the server build picks up the
+  new values.
+
 ### Custom Domain (Optional)
 
 1. Go to your project settings in Vercel

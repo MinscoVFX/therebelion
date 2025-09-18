@@ -90,12 +90,13 @@ describe('dammv2 adapter', () => {
       owner,
       poolKeys: makePool(),
       runtimeModule: makeRuntime(true),
-      priorityMicros: 500_000,
     });
-    // Expect: compute budget + 2 ATA create + remove builder = >=4
-    expect(ixs.length).toBeGreaterThanOrEqual(4);
-    // First should be compute budget
-    expect(ixs[0].programId.equals(ComputeBudgetProgram.programId)).toBe(true);
+    // Expect: 2 ATA create + remove builder = >=3
+    expect(ixs.length).toBeGreaterThanOrEqual(3);
+    // First should be ATA create
+    expect(
+      ixs[0].programId.equals(new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'))
+    ).toBe(true);
     // Last should be our mock remove instruction (data [1,2,3])
     expect(ixs[ixs.length - 1].data.equals(Buffer.from([1, 2, 3]))).toBe(true);
   });

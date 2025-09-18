@@ -3,7 +3,7 @@
 import '@/styles/globals.css';
 import React, { useMemo } from 'react';
 
-import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
+import { ConnectionProvider } from '@solana/wallet-adapter-react';
 import { UnifiedWalletProvider } from '@jup-ag/wallet-adapter';
 import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
 import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
@@ -50,27 +50,25 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <QueryClientProvider client={queryClient}>
           <ConnectionProvider endpoint={CLIENT_RPC_ENDPOINT}>
-            <WalletProvider wallets={wallets} autoConnect>
-              <UnifiedWalletProvider
-                wallets={wallets}
-                config={{
-                  env: 'mainnet-beta',
-                  autoConnect: true,
-                  metadata: {
-                    name: 'UnifiedWallet',
-                    description: 'UnifiedWallet',
-                    url: 'https://jup.ag',
-                    iconUrls: ['https://jup.ag/favicon.ico'],
-                  },
-                  theme: 'dark',
-                  lang: 'en',
-                }}
-              >
-                {/* Global toast portal */}
-                <Toaster richColors position="top-right" />
-                {children}
-              </UnifiedWalletProvider>
-            </WalletProvider>
+            <UnifiedWalletProvider
+              wallets={wallets}
+              config={{
+                env: 'mainnet-beta',
+                autoConnect: true,
+                metadata: {
+                  name: 'UnifiedWallet',
+                  description: 'UnifiedWallet',
+                  url: 'https://jup.ag',
+                  iconUrls: ['https://jup.ag/favicon.ico'],
+                },
+                theme: 'dark',
+                lang: 'en',
+              }}
+            >
+              {/* Global toast portal */}
+              <Toaster richColors position="top-right" />
+              {children}
+            </UnifiedWalletProvider>
           </ConnectionProvider>
         </QueryClientProvider>
       </body>
