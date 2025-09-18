@@ -8,7 +8,7 @@ on:
 
 # Global environment defaults (non-secret, deterministic)
 env:
-  RPC_ENDPOINT: https://api.mainnet-beta.solana.com
+  RPC_ENDPOINT: https://api.mainnet-beta.s            node -e "const s=require('./coverage/coverage-summary.json').total; console.log('| Metric | % | Covered/Total |'); console.log('|--------|---|---------------|'); for (const k of ['lines','statements','functions','branches']) { const m=s[k]; if(!m) continue; console.log('| ' + k + ' | ' + m.pct + ' | ' + m.covered + '/' + m.total + ' |'); }" >> $GITHUB_STEP_SUMMARYlana.com
   RPC_URL: https://api.mainnet-beta.solana.com
   NEXT_PUBLIC_RPC_URL: https://api.mainnet-beta.solana.com
   # Blank discriminators ensure code path exercises lazy resolution without failing build

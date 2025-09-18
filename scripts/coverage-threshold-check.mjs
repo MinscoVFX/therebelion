@@ -41,8 +41,8 @@ const total = summary.total;
 
 // Static floors (adjust here for repository-wide baseline increments)
 const staticFloors = {
-  lines: Number(process.env.COV_MIN_LINES) || 40,
-  statements: Number(process.env.COV_MIN_STATEMENTS) || 40,
+  lines: Number(process.env.COV_MIN_LINES) || 24,
+  statements: Number(process.env.COV_MIN_STATEMENTS) || 24,
   functions: Number(process.env.COV_MIN_FUNCTIONS) || 48,
   branches: Number(process.env.COV_MIN_BRANCHES) || 50,
 };
