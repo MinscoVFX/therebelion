@@ -50,7 +50,7 @@ export async function execute({
     tx.feePayer = owner;
     tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
     // For backend, sign with Keypair; for frontend, use wallet adapter
-    // @ts-ignore
+    // @ts-expect-error
     const signedTx = await owner.signTransaction(tx);
     const txid = await connection.sendRawTransaction(signedTx.serialize(), {
       skipPreflight: false,
@@ -60,7 +60,7 @@ export async function execute({
   } catch (err: unknown) {
     let errorMsg = 'Unknown error';
     if (err && typeof err === 'object' && 'message' in err) {
-      errorMsg = (err as any).message;
+      errorMsg = (err as { message: string }).message;
     } else {
       errorMsg = String(err);
     }
