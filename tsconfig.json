@@ -30,7 +30,7 @@
     },
     "jsx": "react-jsx"
   },
-  "include": ["src/**/*", "tests/**/*"],
+  "include": ["src/**/*", "tests/**/*", "scaffolds/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"],
   "ts-node": {
     "esm": true,

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
+import type { PoolKeys } from '../lib/meteora/universalExit';
 
 interface UniversalExitButtonProps {
   owner: string;
-  poolKeys: any;
+  poolKeys: PoolKeys;
   priorityMicros?: number;
 }
 
@@ -39,9 +40,9 @@ export const UniversalExitButton: React.FC<UniversalExitButtonProps> = ({
         setStatus('Error');
         setError(data.result?.error || data.error || 'Unknown error');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setStatus('Error');
-      setError(err?.message || String(err));
+      setError((err as Error)?.message || String(err));
     } finally {
       setLoading(false);
     }

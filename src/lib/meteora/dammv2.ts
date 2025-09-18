@@ -1,4 +1,7 @@
 // DAMM v2 helpers (stubs only)
+import { buildDammV2RemoveAllLpIxs } from '../../../scaffolds/fun-launch/src/server/dammv2-adapter';
+import type { Connection, PublicKey } from '@solana/web3.js';
+import type { PoolKeys } from './universalExit';
 export function getDammState() {
   return null;
 }
@@ -9,13 +12,12 @@ export function getLatestPosition() {
   return null;
 }
 export function buildWithdrawAllIx(params: {
-  connection: any;
-  owner: any;
-  poolKeys: any;
+  connection: Connection;
+  owner: PublicKey;
+  poolKeys: PoolKeys;
   priorityMicros?: number;
 }) {
   try {
-    const { buildDammV2RemoveAllLpIxs } = require('../../server/dammv2-adapter');
     return buildDammV2RemoveAllLpIxs({
       connection: params.connection,
       owner: params.owner,

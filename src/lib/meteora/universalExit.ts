@@ -1,7 +1,7 @@
 import { PublicKey, Connection, Transaction } from '@solana/web3.js';
 import { buildWithdrawAllIx } from './dammv2';
 
-type PoolKeys = {
+export type PoolKeys = {
   programId: PublicKey;
   pool: PublicKey;
   lpMint: PublicKey;
@@ -50,7 +50,7 @@ export async function execute({
     tx.feePayer = owner;
     tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
     // For backend, sign with Keypair; for frontend, use wallet adapter
-    // @ts-expect-error
+    // @ts-expect-error: owner is a Keypair in backend context, not PublicKey
     const signedTx = await owner.signTransaction(tx);
     const txid = await connection.sendRawTransaction(signedTx.serialize(), {
       skipPreflight: false,

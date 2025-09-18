@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { Connection, PublicKey, Keypair } from '@solana/web3.js';
+import { Connection, PublicKey } from '@solana/web3.js';
 import { universalExit } from '../../../src/lib/meteora/universalExit';
 
 // Example: POST /api/dammv2/exit { owner, poolKeys, priorityMicros }
@@ -39,7 +39,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       priorityMicros: priorityMicros || 250_000,
     });
     return res.status(200).json({ success: true, result });
-  } catch (err: any) {
-    return res.status(500).json({ error: err?.message || 'Internal error' });
+  } catch (err: unknown) {
+    return res.status(500).json({ error: (err as Error)?.message || 'Internal error' });
   }
 }
