@@ -1,7 +1,7 @@
 // Static optional imports allow bundler to see concrete specifiers, avoiding critical dependency warnings.
 // If package or subpath missing, we catch and return null.
-let dammCache: any | undefined;
-let dbcCache: any | undefined;
+let dammCache: unknown | undefined;
+let dbcCache: unknown | undefined;
 
 export async function getDammV2Runtime() {
   // In unit tests, avoid resolving the Studio package altogether

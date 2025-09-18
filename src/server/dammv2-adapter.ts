@@ -1,4 +1,3 @@
-// scaffolds/fun-launch/src/server/dammv2-adapter.ts
 import {
   Connection,
   PublicKey,
@@ -12,7 +11,6 @@ import {
 } from '@solana/spl-token';
 import { getDammV2Runtime } from './studioRuntime';
 
-/** DAMM v2 pool keys we care about */
 export type DammV2PoolKeys = {
   programId: PublicKey;
   pool: PublicKey;
@@ -24,21 +22,30 @@ export type DammV2PoolKeys = {
   authorityPda: PublicKey;
 };
 
-async function importDammRuntime(): Promise<any> {
+export interface BuildDammV2RemoveAllLpIxsArgs {
+  connection: Connection;
+  owner: PublicKey;
+  poolKeys: DammV2PoolKeys;
+  priorityMicros?: number;
+  runtimeModule?: Record<string, unknown>;
+}
+
+async function importDammRuntime(): Promise<Record<string, unknown>> {
   const mod = await getDammV2Runtime();
-  if (mod) return mod;
+  if (mod) return mod as Record<string, unknown>;
   throw new Error('Studio DAMM v2 module not found (build @meteora-invent/studio).');
 }
 
 function pickRemoveBuilder(
-  mod: any
+  mod: Record<string, unknown>
 ):
   | ((args: Record<string, unknown>) => Promise<TransactionInstruction | TransactionInstruction[]>)
   | null {
   return (
-    mod?.buildRemoveLiquidityIx ||
-    mod?.removeLiquidityIx ||
-    (mod?.builders && (mod.builders.buildRemoveLiquidityIx || mod.builders.removeLiquidity)) ||
+    (mod as any)?.buildRemoveLiquidityIx ||
+    (mod as any)?.removeLiquidityIx ||
+    ((mod as any)?.builders &&
+      ((mod as any).builders.buildRemoveLiquidityIx || (mod as any).builders.removeLiquidity)) ||
     null
   );
 }
@@ -62,14 +69,9 @@ async function getUserLpAmount(
  * Build all instructions to remove **ALL** lp for the provided DAMM v2 pool.
  * Also ensures ATAs for token A/B exist.
  */
-export async function buildDammV2RemoveAllLpIxs(args: {
-  connection: Connection;
-  owner: PublicKey;
-  poolKeys: DammV2PoolKeys;
-  priorityMicros?: number;
-  /** Optional injected runtime module (test seam) */
-  runtimeModule?: any;
-}): Promise<TransactionInstruction[]> {
+export async function buildDammV2RemoveAllLpIxs(
+  args: BuildDammV2RemoveAllLpIxsArgs
+): Promise<TransactionInstruction[]> {
   const { connection, owner, poolKeys, priorityMicros = 250_000, runtimeModule } = args;
 
   const damm = runtimeModule || (await importDammRuntime());
