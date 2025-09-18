@@ -1,9 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { Connection, PublicKey } from '@solana/web3.js';
-import {
-  buildDammV2RemoveAllLpIxs,
-  DammV2PoolKeys,
-} from '../../../scaffolds/fun-launch/src/server/dammv2-adapter';
+import { Connection, PublicKey, Keypair } from '@solana/web3.js';
+import { universalExit } from '../../../src/lib/meteora/universalExit';
 
 // Example: POST /api/dammv2/exit { owner, poolKeys, priorityMicros }
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -19,9 +16,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       process.env.RPC_URL || 'https://api.mainnet-beta.solana.com',
       'confirmed'
     );
+    // For backend, load keypair from env or file (replace with your keypair logic)
+    // Example: const ownerKeypair = Keypair.fromSecretKey(...)
+    // For demo, use PublicKey only (cannot sign/send tx)
     const ownerPk = new PublicKey(owner);
     // Validate poolKeys shape
-    const keys: DammV2PoolKeys = {
+    const keys = {
       programId: new PublicKey(poolKeys.programId),
       pool: new PublicKey(poolKeys.pool),
       lpMint: new PublicKey(poolKeys.lpMint),
@@ -31,21 +31,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       tokenBVault: new PublicKey(poolKeys.tokenBVault),
       authorityPda: new PublicKey(poolKeys.authorityPda),
     };
-    // Build instructions
-    const ixs = await buildDammV2RemoveAllLpIxs({
+    // Call universalExit logic
+    const result = await universalExit({
       connection,
       owner: ownerPk,
       poolKeys: keys,
       priorityMicros: priorityMicros || 250_000,
     });
-    // For demo: return instruction count and first ix data
-    return res
-      .status(200)
-      .json({
-        success: true,
-        instructionCount: ixs.length,
-        firstIx: ixs[0]?.data?.toString('hex'),
-      });
+    return res.status(200).json({ success: true, result });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Internal error' });
   }

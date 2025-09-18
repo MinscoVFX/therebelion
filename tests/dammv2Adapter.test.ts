@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PublicKey, TransactionInstruction } from '@solana/web3.js';
+import { PublicKey, ComputeBudgetProgram, TransactionInstruction } from '@solana/web3.js';
 import {
   buildDammV2RemoveAllLpIxs,
   DammV2PoolKeys,
