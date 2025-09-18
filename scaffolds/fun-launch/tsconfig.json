@@ -16,6 +16,12 @@
     "moduleResolution": "Bundler",
     "strictNullChecks": false
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    "../../src/env/required.ts"
+  ],
   "exclude": ["node_modules"]
 }

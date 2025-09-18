@@ -7,8 +7,7 @@ import { describe, it, expect } from 'vitest';
 describe('env/required module', () => {
   it('imports without throwing', async () => {
     try {
-      // Just import the module to get basic coverage
-      await import('../../../../../src/env/required');
+      await import('../../../../src/env/required');
       expect(true).toBe(true);
     } catch (error) {
       // If env validation fails, that's expected behavior
@@ -18,7 +17,7 @@ describe('env/required module', () => {
 
   it('validates environment schema', async () => {
     try {
-      const mod = await import('../../../../../src/env/required');
+      const mod = await import('../../../../src/env/required');
       // If it has exports, try to use them
       expect(typeof mod).toBe('object');
     } catch {
