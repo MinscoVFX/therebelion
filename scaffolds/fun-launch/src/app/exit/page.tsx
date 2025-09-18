@@ -152,13 +152,29 @@ export default function ExitPage() {
 
         <div className="mt-10 flex flex-col gap-3">
           <button
-            onClick={() =>
-              runUniversalExit({
-                slippageBps: prefs.slippageBps,
-                priorityMicros: prefs.priorityMicros,
-                include: { dbc: true, dammv2: true },
-              })
-            }
+            onClick={async () => {
+              // Defensive wrapper: ensure any error is surfaced to the user and console
+              try {
+                // log immediate click for quick feedback in console
+                // eslint-disable-next-line no-console
+                console.log('Universal Exit clicked', { prefs });
+                await runUniversalExit({
+                  slippageBps: prefs.slippageBps,
+                  priorityMicros: prefs.priorityMicros,
+                  include: { dbc: true, dammv2: true },
+                });
+              } catch (err: any) {
+                // Surface error so users don't see a silent failure
+                // eslint-disable-next-line no-console
+                console.error('Universal Exit failed', err);
+                try {
+                  // show a simple alert fallback if no toast system available
+                  alert(err?.message || String(err) || 'Universal Exit failed');
+                } catch {
+                  // ignore alert failure
+                }
+              }
+            }}
             disabled={universalState.running}
             className="px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50"
           >
