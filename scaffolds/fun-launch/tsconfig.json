@@ -6,7 +6,7 @@
       "@/*": ["./src/*"]
     },
     "jsx": "preserve",
-    "types": ["react", "react-dom"],
+    "types": ["react", "react-dom", "vitest"],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,

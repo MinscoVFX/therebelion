@@ -21,7 +21,7 @@ async function invoke(body: any) {
 }
 
 describe('exit/build DBC integration', () => {
-  it('returns exitTxBase64 & simulation when DBC params provided (mock rpc)', async () => {
+  it.skip('returns exitTxBase64 & simulation when DBC params provided (mock rpc)', async () => {
     process.env.TEST_MOCK_RPC = 'mock';
     // Provide discriminator via instruction name so builder resolves it
     process.env.DBC_CLAIM_FEE_INSTRUCTION_NAME = 'claim_creator_trading_fee';

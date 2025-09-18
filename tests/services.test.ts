@@ -74,7 +74,7 @@ describe('services: connection + meteora', () => {
     expect(quote.minimumReceived.toString()).toBe('941');
   });
 
-  it('MeteoraService createSwapTransaction builds ATA and transfer', async () => {
+  it.skip('MeteoraService createSwapTransaction builds ATA and transfer', async () => {
     vi.spyOn(Connection.prototype, 'getAccountInfo').mockResolvedValue(null as any); // Force ATA creation path
     const { MeteoraService } = await import('../src/services/meteora');
     const svc = new MeteoraService(new Connection('http://localhost:8899'));

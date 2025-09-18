@@ -2,6 +2,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { vi, describe, test, expect } from 'vitest';
 
 // Mock hooks (relative to this test file)
 vi.mock('../src/hooks/useDerivedDammV2Pools', () => ({
