@@ -1,5 +1,5 @@
 {
-  "extends": "@meteora-invent/config/typescript/base",
+  "extends": "./packages/config/typescript/base.json",
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
