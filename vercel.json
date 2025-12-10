@@ -1,8 +1,8 @@
 {
   "framework": "nextjs",
-  "buildCommand": "pnpm install --frozen-lockfile && pnpm --filter @meteora-invent/studio build && pnpm --filter @meteora-invent/scaffold-fun-launch build",
+  "buildCommand": "bash -lc 'pnpm install --frozen-lockfile && if grep -q \"@meteora-invent/studio\" package.json 2>/dev/null; then pnpm --filter @meteora-invent/studio build && pnpm --filter @meteora-invent/scaffold-fun-launch build && cp -r scaffolds/fun-launch/.next .next || true; else pnpm --filter @meteora-invent/scaffold-fun-launch build; fi'",
   "installCommand": "pnpm install --frozen-lockfile",
-  "outputDirectory": "scaffolds/fun-launch/.next",
+  "outputDirectory": ".next",
   "ignoreCommand": "exit 1",
   "regions": ["iad1"],
   "functions": {
