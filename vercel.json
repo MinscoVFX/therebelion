@@ -1,6 +1,6 @@
 {
   "framework": "nextjs",
-  "buildCommand": "bash -lc 'pnpm install --frozen-lockfile && if grep -q \"@meteora-invent/studio\" package.json 2>/dev/null; then pnpm --filter @meteora-invent/studio build && pnpm --filter @meteora-invent/scaffold-fun-launch build && cp -r scaffolds/fun-launch/.next .next || true; else pnpm --filter @meteora-invent/scaffold-fun-launch build; fi'",
+  "buildCommand": "pnpm run vercel-build:monorepo",
   "installCommand": "pnpm install --frozen-lockfile",
   "outputDirectory": ".next",
   "ignoreCommand": "exit 1",

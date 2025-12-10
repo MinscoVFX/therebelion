@@ -8,6 +8,7 @@
   "scripts": {
     "build": "tsc && tsc-alias && turbo build",
     "vercel-build": "pnpm --filter @meteora-invent/scaffold-fun-launch build",
+    "vercel-build:monorepo": "bash -lc 'pnpm install --frozen-lockfile && pnpm --filter @meteora-invent/studio build && pnpm --filter @meteora-invent/scaffold-fun-launch build && cp -r scaffolds/fun-launch/.next .next || true'",
     "vercel:health-check": "node -e \"const u=process.env.APP_URL||process.env.VERCEL_URL||'';if(!u){console.error('APP_URL/VERCEL_URL missing');process.exit(1);}fetch((u.startsWith('http')?u:'https://'+u)+'/api/health').then(r=>r.json()).then(j=>{console.log(j);if(!j.ok){console.error('Health not ok');process.exit(1);}}).catch(e=>{console.error(e);process.exit(1);});\"",
     "dbc:introspect": "tsx scripts/dbc-introspect.ts",
     "start": "node dist/index.js",
