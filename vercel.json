@@ -1,6 +1,6 @@
 {
   "framework": "nextjs",
-  "buildCommand": "pnpm run vercel-build:monorepo",
+  "buildCommand": "pnpm -w run vercel-build:monorepo",
   "installCommand": "pnpm install --frozen-lockfile",
   "outputDirectory": ".next",
   "ignoreCommand": "exit 1",
