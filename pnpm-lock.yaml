@@ -202,6 +202,9 @@ importers:
       '@jup-ag/wallet-adapter':
         specifier: ^0.2.3
         version: 0.2.3(d90b37292fdb78936be8b2864aa4f914)
+      '@metaplex-foundation/mpl-token-metadata':
+        specifier: ^2.13.0
+        version: 2.13.0(bufferutil@4.0.9)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(utf-8-validate@5.0.10)
       '@meteora-ag/cp-amm-sdk':
         specifier: ^1.1.0
         version: 1.1.0(@types/node@20.19.4)(bufferutil@4.0.9)(fastestsmallesttextencoderdecoder@1.0.22)(jiti@2.4.2)(postcss@8.5.6)(tsx@4.20.3)(typescript@5.8.3)(utf-8-validate@5.0.10)(yaml@2.8.1)
@@ -12231,7 +12234,7 @@ snapshots:
 
   '@scure/bip32@1.7.0':
     dependencies:
-      '@noble/curves': 1.9.1
+      '@noble/curves': 1.9.2
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
 
@@ -17733,7 +17736,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.0.8(typescript@5.8.3)(zod@3.25.74)
+      abitype: 1.1.0(typescript@5.8.3)(zod@3.25.74)
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 5.8.3
@@ -18435,7 +18438,7 @@ snapshots:
 
   rtl-css-js@1.16.1:
     dependencies:
-      '@babel/runtime': 7.27.6
+      '@babel/runtime': 7.28.4
 
   run-parallel@1.2.0:
     dependencies:
