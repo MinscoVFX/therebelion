@@ -2,7 +2,7 @@
   "framework": "nextjs",
   "buildCommand": "pnpm install --frozen-lockfile && pnpm --filter @meteora-invent/studio build && pnpm --filter @meteora-invent/scaffold-fun-launch build",
   "installCommand": "pnpm install --frozen-lockfile",
-  "outputDirectory": ".next",
+  "outputDirectory": "scaffolds/fun-launch/.next",
   "ignoreCommand": "exit 1",
   "regions": ["iad1"],
   "functions": {
