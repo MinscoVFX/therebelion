@@ -119,7 +119,7 @@ export function useAtomicLaunchClientBundle() {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          baseMint: (baseMint ?? walletPublicKey).toBase58(), // just for validation on server
+          baseMint: (baseMint ?? PublicKey.default).toBase58(), // just for validation on server
           payer: walletPublicKey.toBase58(),
           amountSol: String(devBuyAmountSol),
           pool: poolAddress,
